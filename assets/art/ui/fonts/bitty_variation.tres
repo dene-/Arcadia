@@ -1,0 +1,7 @@
+[gd_resource type="FontVariation" format=3 uid="uid://ijltbvp4tjp4"]
+
+[ext_resource type="FontFile" uid="uid://dd30efmw0xqxo" path="res://assets/art/ui/fonts/Bitty.ttf" id="1_knrkf"]
+
+[resource]
+base_font = ExtResource("1_knrkf")
+spacing_top = -5

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="NpcData" format=3 uid="uid://dsay1ohmd52ul"]
+
+[ext_resource type="Script" uid="uid://q4b5ncvrgnnk" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="1_uojo6"]
+[ext_resource type="SpriteFrames" uid="uid://lsew0j0nltr" path="res://game/resources/animation/humans/alchemist_sprite_frames.tres" id="2_frames"]
+[ext_resource type="Resource" uid="uid://c6uxeuj3y8e5v" path="res://game/resources/actors/humans/alchemist_npc_profile.tres" id="3_profile"]
+
+[resource]
+script = ExtResource("1_npc_data")
+combat_layers = ExtResource("1_uojo6")
+able_to_chat = true
+profile = ExtResource("3_profile")
+sprite_frames = ExtResource("2_frames")

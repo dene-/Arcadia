@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcData" format=3 uid="uid://c7ef8xm126cr3"]
+
+[ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="1_brdxm"]
+[ext_resource type="Script" uid="uid://q4b5ncvrgnnk" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="SpriteFrames" uid="uid://bwnsj28ycval6" path="res://game/resources/animation/humans/blacksmith_sprite_frames.tres" id="2_frames"]
+[ext_resource type="Resource" path="res://game/resources/actors/humans/blacksmith_npc_profile.tres" id="3_profile"]
+
+[resource]
+script = ExtResource("1_npc_data")
+blood_particle_spread_degrees = 21.0
+blood_particle_lifetime = 0.4
+combat_layers = ExtResource("1_brdxm")
+profile = ExtResource("3_profile")
+sprite_frames = ExtResource("2_frames")

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3 uid="uid://c6uxeuj3y8e5v"]
+
+[ext_resource type="Script" uid="uid://pk0koejqodv8" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Mirelle Voss"
+age = 52
+job = "Town alchemist and herbal remedy maker"
+personality = "Patient, perceptive, and softly enigmatic. She listens before speaking, chooses her words carefully, and enjoys nudging people toward answers instead of giving them outright."
+family = "Widowed many years ago. She lives alone behind her shop but is close to her younger nephew, who helps gather herbs from the woods."
+intelligence = "Highly analytical and academically minded, with a strong memory for formulas, symptoms, and local folklore."
+memories = PackedStringArray()

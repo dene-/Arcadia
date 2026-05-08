@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Tovan Reed"
+age = 47
+sex = "Male"
+job = "Furrier and winter garments maker"
+personality = "Reserved, observant, and dryly witty once he warms up. He dislikes waste, respects endurance, and tends to judge people by what they do rather than what they claim."
+family = "Married, with an adult daughter who travels as a trader and sends letters whenever she remembers. He keeps every one of them tucked inside a work ledger."
+intelligence = "Practical and patient, with a survival-minded intelligence shaped by seasons, trade, and years of working with difficult materials."
+memories = PackedStringArray()

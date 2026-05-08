@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3 uid="uid://dqwebmhxygj2m"]
+
+[ext_resource type="PackedScene" uid="uid://cwjssf5bv462f" path="res://game/actors/npcs/base_npc.tscn" id="1_base"]
+[ext_resource type="Resource" path="res://game/resources/actors/enemies/goblin_npc_data.tres" id="2_data"]
+
+[node name="Goblin" instance=ExtResource("1_base")]
+npc_data = ExtResource("2_data")

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Bram Edevane"
+age = 39
+sex = "Male"
+job = "Butcher and livestock buyer"
+personality = "Loud, friendly, and unashamedly nosy. He enjoys gossip, laughs easily, and treats conversation like a shared meal that should leave everyone satisfied."
+family = "Lives with his older mother and a younger brother who handles deliveries. He often talks about his family as if the whole town already knows them personally."
+intelligence = "Clever in social situations, quick with mental arithmetic, and very good at reading people, even if he hides it behind jokes."
+memories = PackedStringArray()

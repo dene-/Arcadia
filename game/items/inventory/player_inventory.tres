@@ -1,0 +1,84 @@
+[gd_resource type="Resource" script_class="InventoryData" format=3 uid="uid://c8jt4q02ed31b"]
+
+[ext_resource type="Script" uid="uid://bi0505rw5q35h" path="res://game/items/inventory/inventory_data.gd" id="1_inventory"]
+[ext_resource type="Script" uid="uid://bp32fel62gxkn" path="res://game/items/inventory/inventory_slot_data.gd" id="2_slot"]
+
+[sub_resource type="Resource" id="Resource_slot_0"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_1"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_2"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_3"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_4"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_5"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_6"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_7"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_8"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_9"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_10"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_11"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_12"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_13"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_14"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_15"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_16"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_17"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_18"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_19"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_20"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_21"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_22"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_23"]
+script = ExtResource("2_slot")
+
+[sub_resource type="Resource" id="Resource_slot_24"]
+script = ExtResource("2_slot")
+
+[resource]
+script = ExtResource("1_inventory")
+capacity = 25
+slots = Array[ExtResource("2_slot")]([SubResource("Resource_slot_0"), SubResource("Resource_slot_1"), SubResource("Resource_slot_2"), SubResource("Resource_slot_3"), SubResource("Resource_slot_4"), SubResource("Resource_slot_5"), SubResource("Resource_slot_6"), SubResource("Resource_slot_7"), SubResource("Resource_slot_8"), SubResource("Resource_slot_9"), SubResource("Resource_slot_10"), SubResource("Resource_slot_11"), SubResource("Resource_slot_12"), SubResource("Resource_slot_13"), SubResource("Resource_slot_14"), SubResource("Resource_slot_15"), SubResource("Resource_slot_16"), SubResource("Resource_slot_17"), SubResource("Resource_slot_18"), SubResource("Resource_slot_19"), SubResource("Resource_slot_20"), SubResource("Resource_slot_21"), SubResource("Resource_slot_22"), SubResource("Resource_slot_23"), SubResource("Resource_slot_24")])

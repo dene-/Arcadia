@@ -1,0 +1,82 @@
+[gd_scene format=3 uid="uid://bjv1831fl1by8"]
+
+[ext_resource type="Script" uid="uid://bk8645ie36dhh" path="res://game/ui/inventory/inventory_panel.gd" id="1_inventory_panel"]
+[ext_resource type="Theme" uid="uid://cl6x7v62ql3jl" path="res://assets/art/ui/theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" uid="uid://c4hdywmrg4qap" path="res://game/ui/inventory/inventory_slot.tscn" id="3_slot"]
+
+[node name="InventoryPanel" type="CanvasLayer" unique_id=531272727]
+layer = 12
+script = ExtResource("1_inventory_panel")
+
+[node name="Panel" type="Panel" parent="." unique_id=1000163545]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -94.0
+offset_top = 9.0
+offset_right = 94.0
+offset_bottom = 137.0
+grow_horizontal = 2
+theme = ExtResource("2_theme")
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel" unique_id=1378930866]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 7
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 7
+theme_override_constants/margin_bottom = 6
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer" unique_id=1931438158]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderRow" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer" unique_id=1178584861]
+layout_mode = 2
+
+[node name="HeaderLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/HeaderRow" unique_id=1875849916]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Inventory"
+
+[node name="SummaryLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/HeaderRow" unique_id=177559350]
+layout_mode = 2
+theme = ExtResource("2_theme")
+text = "0/0"
+horizontal_alignment = 2
+
+[node name="SlotScroll" type="ScrollContainer" parent="Panel/MarginContainer/VBoxContainer" unique_id=2097264307]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="SlotGrid" type="GridContainer" parent="Panel/MarginContainer/VBoxContainer/SlotScroll" unique_id=1188481332]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 2
+theme_override_constants/v_separation = 2
+columns = 8
+
+[node name="Slot" parent="Panel/MarginContainer/VBoxContainer/SlotScroll/SlotGrid" unique_id=1647318702 instance=ExtResource("3_slot")]
+layout_mode = 2
+
+[node name="DetailLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer" unique_id=156447314]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="ContextMenu" type="PopupMenu" parent="." unique_id=173089801]
+oversampling_override = 1.0
+theme = ExtResource("2_theme")
+item_count = 3
+item_0/text = "Use"
+item_0/id = 0
+item_1/text = "Drop One"
+item_1/id = 1
+item_2/text = "Drop Stack"
+item_2/id = 2

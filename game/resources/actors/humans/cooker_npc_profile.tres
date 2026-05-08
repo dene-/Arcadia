@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Sella Rowan"
+age = 28
+sex = "Female"
+job = "Inn cook and baker"
+personality = "Warm, energetic, and emotionally transparent. She talks fast when excited, takes pride in feeding people well, and tends to mother strangers without noticing."
+family = "Youngest of five siblings from a farming household. Several relatives still visit the inn often enough that she claims she never truly gets a day off."
+intelligence = "Quick-learning and creative, especially in balancing flavors, managing chaos, and remembering small personal details about almost everyone she serves."
+memories = PackedStringArray()

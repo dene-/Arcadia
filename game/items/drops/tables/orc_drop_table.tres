@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="DropTable" format=3 uid="uid://d2qfmxqke7mll"]
+
+[ext_resource type="Script" uid="uid://cc77gw8517or1" path="res://game/items/drops/drop_table.gd" id="1_table"]
+[ext_resource type="Script" uid="uid://h8qi6bn7hthr" path="res://game/items/drops/drop_table_entry.gd" id="2_entry"]
+[ext_resource type="Resource" uid="uid://cwdpejrk7s5ts" path="res://game/items/data/orc_tusk.tres" id="3_item"]
+[ext_resource type="PackedScene" uid="uid://bhp5gb2xboc8p" path="res://game/items/drops/dropped_item.tscn" id="4_scene"]
+
+[sub_resource type="Resource" id="Resource_orc_tusk"]
+script = ExtResource("2_entry")
+item = ExtResource("3_item")
+drop_scene = ExtResource("4_scene")
+
+[resource]
+script = ExtResource("1_table")
+entries = Array[ExtResource("2_entry")]([SubResource("Resource_orc_tusk")])
+scatter_radius = 9.0

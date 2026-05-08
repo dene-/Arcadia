@@ -1,0 +1,43 @@
+[gd_resource type="SpriteFrames" script_class="ActorSpriteFrames" format=3]
+
+[ext_resource type="Script" uid="uid://bqvotcuqn5s4c" path="res://game/actors/base/actor_sprite_frames.gd" id="1_frames"]
+[ext_resource type="Script" uid="uid://4wcs5pgu73j1" path="res://game/actors/base/actor_animation_clip.gd" id="2_clip"]
+
+[sub_resource type="Resource" id="Resource_idle"]
+script = ExtResource("2_clip")
+animation_name = &"idle"
+sprite_path = "res://assets/art/characters/npc/Jeweller/Minifantasy_NPCsJewellerIdle.png"
+source_row = 1
+
+[sub_resource type="Resource" id="Resource_walk"]
+script = ExtResource("2_clip")
+animation_name = &"walk"
+sprite_path = "res://assets/art/characters/npc/Jeweller/Minifantasy_NPCsJewellerWalk.png"
+source_row = 1
+
+[sub_resource type="Resource" id="Resource_attack"]
+script = ExtResource("2_clip")
+animation_name = &"attack"
+sprite_path = "res://assets/art/characters/npc/Jeweller/Minifantasy_NPCsJewellerWorking.png"
+frame_duration = 0.1
+source_row = 1
+loop = false
+
+[sub_resource type="Resource" id="Resource_hurt"]
+script = ExtResource("2_clip")
+animation_name = &"hurt"
+sprite_path = "res://assets/art/characters/npc/Jeweller/Minifantasy_NPCsJewellerDmg.png"
+frame_duration = 0.1
+source_row = 1
+loop = false
+
+[sub_resource type="Resource" id="Resource_die"]
+script = ExtResource("2_clip")
+animation_name = &"die"
+sprite_path = "res://assets/art/characters/npc/Jeweller/Minifantasy_NPCsJewellerDie.png"
+frame_duration = 0.1
+loop = false
+
+[resource]
+script = ExtResource("1_frames")
+clips = Array[ActorAnimationClip]([SubResource("Resource_idle"), SubResource("Resource_walk"), SubResource("Resource_attack"), SubResource("Resource_hurt"), SubResource("Resource_die")])

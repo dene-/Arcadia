@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="DropItemData" format=3 uid="uid://cwdpejrk7s5ts"]
+
+[ext_resource type="Script" uid="uid://efoj7g52o2k6" path="res://game/items/drops/drop_item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+item_id = &"orc_tusk"
+display_name = "Orc Tusk"
+description = "A heavy tusk from a defeated orc."
+color = Color(0.86, 0.82, 0.67, 1)

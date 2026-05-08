@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Maris Bell"
+age = 41
+sex = "Non-binary"
+job = "Tailor and clothing fitter"
+personality = "Poised, attentive, and quietly mischievous. They notice posture, mood, and hidden tension in an instant, and they enjoy making people feel more impressive than they believed they could be."
+family = "Lives with a longtime partner who manages accounts and an elderly aunt who still insists on criticizing every hem from her rocking chair."
+intelligence = "Socially and creatively intelligent, with an excellent eye for detail, memory for measurements, and a subtle understanding of how appearance shapes confidence."
+memories = PackedStringArray()

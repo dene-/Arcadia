@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Ione Mercer"
+age = 36
+sex = "Female"
+job = "Cloth dyer and pigment specialist"
+personality = "Elegant, exacting, and somewhat dramatic. She has a perfectionist streak, a refined eye for color, and little patience for sloppiness in either work or speech."
+family = "Shares a workshop and household with her older sister. Their family has worked with fabrics for generations, and she is determined not to be the one who lowers the standard."
+intelligence = "Very detail-oriented and artistically intelligent, with strong recall for formulas, shades, and how small changes can transform an entire result."
+memories = PackedStringArray()

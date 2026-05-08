@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Local tooling and editor state
+.venv/
+.vscode/
+tools/server/node_modules/
+tools/server/.env

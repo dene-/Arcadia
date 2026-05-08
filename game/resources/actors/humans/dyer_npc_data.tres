@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="NpcData" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="SpriteFrames" path="res://game/resources/animation/humans/dyer_sprite_frames.tres" id="2_frames"]
+[ext_resource type="Resource" path="res://game/resources/actors/humans/dyer_npc_profile.tres" id="3_profile"]
+
+[resource]
+script = ExtResource("1_npc_data")
+profile = ExtResource("3_profile")
+sprite_frames = ExtResource("2_frames")

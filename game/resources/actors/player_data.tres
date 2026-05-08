@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="PlayerData" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/player_data.gd" id="1_player_data"]
+[ext_resource type="SpriteFrames" path="res://game/resources/animation/player_sprite_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_player_data")
+move_speed = 32.0
+sprite_frames = ExtResource("2_frames")

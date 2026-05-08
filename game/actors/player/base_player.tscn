@@ -1,0 +1,104 @@
+[gd_scene load_steps=18 format=3 uid="uid://c22fi8t3oskwr"]
+
+[ext_resource type="Script" uid="uid://dmc0papp8brfr" path="res://game/actors/player/base_player.gd" id="1_qli6e"]
+[ext_resource type="Resource" path="res://game/resources/actors/player_data.tres" id="2_player_data"]
+[ext_resource type="Resource" path="res://game/items/inventory/player_inventory.tres" id="3_inventory"]
+[ext_resource type="Script" uid="uid://busdnmi7m5vyx" path="res://game/actors/states/state_machine.gd" id="3_1x0cf"]
+[ext_resource type="Script" uid="uid://u38jjg6x5q0p" path="res://game/actors/player/states/idle.gd" id="4_f0s7x"]
+[ext_resource type="Script" uid="uid://cv5hmdkg1xby" path="res://game/actors/player/states/walk.gd" id="5_dkgh4"]
+[ext_resource type="Script" uid="uid://cb4d7bhv8tw8b" path="res://game/actors/player/states/attack.gd" id="6_eqr7r"]
+[ext_resource type="Script" uid="uid://dyfgc0jwhpfp4" path="res://game/actors/player/states/charge_build.gd" id="7_1vgh3"]
+[ext_resource type="Script" uid="uid://qybxep0vxwkl" path="res://game/actors/player/states/charge_loop.gd" id="8_pp8uo"]
+[ext_resource type="Script" uid="uid://ujes211oir6f" path="res://game/actors/player/states/charge_attack.gd" id="9_nik47"]
+[ext_resource type="Script" uid="uid://bdipegjq481md" path="res://game/actors/player/states/jump.gd" id="10_t1l9t"]
+[ext_resource type="Script" uid="uid://dqp2lw34d0e8r" path="res://game/actors/player/states/hurt.gd" id="11_5qh19"]
+[ext_resource type="Script" uid="uid://fe2gg2u4nwqc" path="res://game/actors/player/states/dead.gd" id="12_j20ve"]
+[ext_resource type="Script" path="res://game/actors/player/states/interaction.gd" id="13_interaction"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_jaia2"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1r4n1"]
+size = Vector2(10, 8)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_player_hitbox"]
+size = Vector2(10, 9)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_player_hurtbox"]
+size = Vector2(12, 10)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_pickup"]
+radius = 8.0
+
+[node name="BasePlayer" type="CharacterBody2D" unique_id=1242464380]
+motion_mode = 1
+script = ExtResource("1_qli6e")
+player_data = ExtResource("2_player_data")
+inventory_data = ExtResource("3_inventory")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=330926191]
+texture_filter = 1
+sprite_frames = SubResource("SpriteFrames_jaia2")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=199451087]
+position = Vector2(0, -1)
+shape = SubResource("RectangleShape2D_1r4n1")
+
+[node name="HitBox" type="Area2D" parent="." unique_id=1833745974]
+collision_layer = 8
+collision_mask = 16
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HitBox" unique_id=1156650647]
+position = Vector2(5, 0.5)
+shape = SubResource("RectangleShape2D_player_hitbox")
+
+[node name="HurtBox" type="Area2D" parent="." unique_id=2076163045]
+collision_layer = 16
+collision_mask = 8
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HurtBox" unique_id=1235822578]
+shape = SubResource("RectangleShape2D_player_hurtbox")
+
+[node name="PickupArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 32
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="PickupArea"]
+shape = SubResource("CircleShape2D_pickup")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1280228381]
+
+[node name="StateMachine" type="Node" parent="." unique_id=841993317]
+script = ExtResource("3_1x0cf")
+initial_state = &"idle"
+
+[node name="Idle" type="Node" parent="StateMachine" unique_id=976818948]
+script = ExtResource("4_f0s7x")
+
+[node name="Walk" type="Node" parent="StateMachine" unique_id=453498477]
+script = ExtResource("5_dkgh4")
+
+[node name="Attack" type="Node" parent="StateMachine" unique_id=314671255]
+script = ExtResource("6_eqr7r")
+
+[node name="ChargeBuild" type="Node" parent="StateMachine" unique_id=384652450]
+script = ExtResource("7_1vgh3")
+
+[node name="ChargeLoop" type="Node" parent="StateMachine" unique_id=679575218]
+script = ExtResource("8_pp8uo")
+
+[node name="ChargeAttack" type="Node" parent="StateMachine" unique_id=485939715]
+script = ExtResource("9_nik47")
+
+[node name="Jump" type="Node" parent="StateMachine" unique_id=1003917394]
+script = ExtResource("10_t1l9t")
+
+[node name="Hurt" type="Node" parent="StateMachine" unique_id=1884240135]
+script = ExtResource("11_5qh19")
+
+[node name="Dead" type="Node" parent="StateMachine" unique_id=1429688153]
+script = ExtResource("12_j20ve")
+
+[node name="Interaction" type="Node" parent="StateMachine" unique_id=1061831152]
+script = ExtResource("13_interaction")

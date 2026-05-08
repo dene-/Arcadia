@@ -1,0 +1,135 @@
+[gd_scene format=3 uid="uid://cwjssf5bv462f"]
+
+[ext_resource type="Script" path="res://game/actors/npcs/base_npc.gd" id="1_npc"]
+[ext_resource type="Resource" path="res://game/resources/actors/humans/blacksmith_npc_data.tres" id="2_npc_data"]
+[ext_resource type="Script" path="res://game/actors/states/state_machine.gd" id="3_machine"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/idle.gd" id="4_idle"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/walk.gd" id="5_walk"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/run.gd" id="6_run"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/attack.gd" id="7_attack"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/hurt.gd" id="8_hurt"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/dead.gd" id="9_dead"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/interaction.gd" id="10_interaction"]
+[ext_resource type="Script" path="res://game/ui/hud/enemy_health_bar.gd" id="11_health_bar"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_empty"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(10, 8)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_interaction"]
+size = Vector2(20, 12)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
+size = Vector2(10, 8)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hurtbox"]
+size = Vector2(12, 10)
+
+[sub_resource type="Gradient" id="Gradient_blood_particles"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_blood_particles"]
+gradient = SubResource("Gradient_blood_particles")
+width = 1
+
+[node name="BaseNpc" type="CharacterBody2D" unique_id=512305199]
+motion_mode = 1
+script = ExtResource("1_npc")
+npc_data = ExtResource("2_npc_data")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=591563088]
+texture_filter = 1
+sprite_frames = SubResource("SpriteFrames_empty")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=442629538]
+position = Vector2(0, -1)
+shape = SubResource("RectangleShape2D_body")
+
+[node name="InteractionArea" type="Area2D" parent="." unique_id=1027827382]
+collision_layer = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionArea" unique_id=712555171]
+shape = SubResource("RectangleShape2D_interaction")
+debug_color = Color(0.34259045, 0.605589, 0.40091246, 0.41960785)
+
+[node name="HitBox" type="Area2D" parent="." unique_id=178323690]
+collision_layer = 8
+collision_mask = 16
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HitBox" unique_id=1757919299]
+position = Vector2(8, 0)
+shape = SubResource("RectangleShape2D_hitbox")
+debug_color = Color(0.98855203, 0.10591874, 1.92523e-07, 0.41960785)
+
+[node name="HurtBox" type="Area2D" parent="." unique_id=209315813]
+collision_layer = 16
+collision_mask = 8
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HurtBox" unique_id=978567832]
+shape = SubResource("RectangleShape2D_hurtbox")
+debug_color = Color(0.94971234, 0.10084366, 0.50664335, 0.41960785)
+
+[node name="BloodParticles" type="CPUParticles2D" parent="." unique_id=667432194]
+z_index = 5
+emitting = false
+amount = 8
+lifetime = 0.35
+one_shot = true
+explosiveness = 1.0
+local_coords = false
+direction = Vector2(1, 0)
+spread = 30.0
+gravity = Vector2(0, 60)
+initial_velocity_min = 46.8
+initial_velocity_max = 72.0
+scale_amount_min = 1.0
+scale_amount_max = 1.0
+color = Color(0.76, 0.08, 0.08, 0.95)
+draw_order = 1
+texture = SubResource("GradientTexture1D_blood_particles")
+
+[node name="HealthBar" type="Node2D" parent="." unique_id=1733552231]
+position = Vector2(0, -12)
+z_index = 6
+script = ExtResource("11_health_bar")
+
+[node name="Background" type="ColorRect" parent="HealthBar" unique_id=1368892314]
+offset_left = -6.0
+offset_right = 6.0
+offset_bottom = 1.0
+color = Color(0.08, 0.02, 0.02, 0.85)
+
+[node name="Fill" type="ColorRect" parent="HealthBar" unique_id=162814187]
+offset_left = -6.0
+offset_right = 6.0
+offset_bottom = 1.0
+color = Color(0.9, 0.12, 0.08, 1)
+
+[node name="StateMachine" type="Node" parent="." unique_id=426719322]
+script = ExtResource("3_machine")
+initial_state = &"idle"
+
+[node name="Idle" type="Node" parent="StateMachine" unique_id=255320547]
+script = ExtResource("4_idle")
+
+[node name="Walk" type="Node" parent="StateMachine" unique_id=1956244546]
+script = ExtResource("5_walk")
+
+[node name="Run" type="Node" parent="StateMachine" unique_id=1962149521]
+script = ExtResource("6_run")
+
+[node name="Attack" type="Node" parent="StateMachine" unique_id=1587392555]
+script = ExtResource("7_attack")
+
+[node name="Hurt" type="Node" parent="StateMachine" unique_id=962250554]
+script = ExtResource("8_hurt")
+
+[node name="Dead" type="Node" parent="StateMachine" unique_id=531912546]
+script = ExtResource("9_dead")
+
+[node name="Interaction" type="Node" parent="StateMachine" unique_id=121794205]
+script = ExtResource("10_interaction")

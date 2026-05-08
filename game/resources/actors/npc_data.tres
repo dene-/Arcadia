@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="NpcData" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="SpriteFrames" path="res://game/resources/animation/humans/blacksmith_sprite_frames.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_npc_data")
+blood_particle_spread_degrees = 21.0
+blood_particle_lifetime = 0.4
+interaction_text = "Talksadsas"
+sprite_frames = ExtResource("2_frames")

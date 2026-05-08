@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="NpcData" load_steps=5 format=3 uid="uid://ct87pi86wb7p3"]
+
+[ext_resource type="Script" uid="uid://q4b5ncvrgnnk" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="2_layers"]
+[ext_resource type="SpriteFrames" path="res://game/resources/animation/enemies/wild_orc_sprite_frames.tres" id="3_frames"]
+[ext_resource type="Resource" path="res://game/items/drops/tables/orc_drop_table.tres" id="4_drops"]
+
+[resource]
+script = ExtResource("1_npc_data")
+move_speed = 31.0
+run_speed_multiplier = 1.75
+run_chance = 0.45
+idle_duration_range = Vector2(0.45, 1.0)
+max_health = 3
+attack_damage = 2
+hurt_knockback_speed = 66.0
+blood_particle_spread_degrees = 24.0
+combat_layers = ExtResource("2_layers")
+ai_enabled = true
+detection_range = 92.0
+lose_interest_range = 144.0
+attack_range = 14.0
+attack_cooldown = 0.9
+drop_table = ExtResource("4_drops")
+interaction_enabled = false
+interaction_text = ""
+sprite_frames = ExtResource("3_frames")

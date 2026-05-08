@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3 uid="uid://dvu24sg5w6ufb"]
+
+[ext_resource type="Script" uid="uid://pk0koejqodv8" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Garrin Holt"
+age = 44
+sex = "Male"
+job = "Village blacksmith"
+personality = "Gruff, dependable, and practical. He speaks bluntly, values hard work, and has a dry sense of humor that slips out when people least expect it."
+family = "Married to a cooper from the next town and father of two children, one curious and one stubborn, both often underfoot in the forge yard."
+intelligence = "Sharp in a hands-on, problem-solving way, with strong mechanical intuition and a deep understanding of tools, metal, and labor."
+memories = PackedStringArray()

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="DropItemData" format=3 uid="uid://d2wej4585xgvq"]
+
+[ext_resource type="Script" uid="uid://efoj7g52o2k6" path="res://game/items/drops/drop_item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+item_id = &"goblin_ear"
+display_name = "Goblin Ear"
+description = "A rough trophy from a defeated goblin."
+color = Color(0.36, 0.78, 0.22, 1)

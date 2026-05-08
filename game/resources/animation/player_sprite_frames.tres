@@ -1,0 +1,79 @@
+[gd_resource type="SpriteFrames" script_class="ActorSpriteFrames" format=3 uid="uid://bmsvbdbr8k7mm"]
+
+[ext_resource type="Script" uid="uid://bqvotcuqn5s4c" path="res://game/actors/base/actor_sprite_frames.gd" id="1_nx2lq"]
+[ext_resource type="Script" uid="uid://4wcs5pgu73j1" path="res://game/actors/base/actor_animation_clip.gd" id="2_f7s4y"]
+
+[sub_resource type="Resource" id="Resource_idle"]
+script = ExtResource("2_f7s4y")
+animation_name = &"idle"
+sprite_path = "uid://cyuxoxokdlwju"
+source_row = 1
+
+[sub_resource type="Resource" id="Resource_walk"]
+script = ExtResource("2_f7s4y")
+animation_name = &"walk"
+sprite_path = "res://assets/art/characters/player/HumanWalk.png"
+source_row = 1
+
+[sub_resource type="Resource" id="Resource_attack"]
+script = ExtResource("2_f7s4y")
+animation_name = &"attack"
+sprite_path = "res://assets/art/characters/player/HumanAttack.png"
+frame_duration = 0.1
+source_row = 1
+loop = false
+
+[sub_resource type="Resource" id="Resource_charge_build"]
+script = ExtResource("2_f7s4y")
+animation_name = &"charge_build"
+sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
+frame_duration = 0.1
+end_column = 5
+source_faces_right = true
+loop = false
+
+[sub_resource type="Resource" id="Resource_charge_loop"]
+script = ExtResource("2_f7s4y")
+animation_name = &"charge_loop"
+sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
+frame_duration = 0.1
+source_row = 1
+end_column = 5
+source_faces_right = true
+
+[sub_resource type="Resource" id="Resource_charge_attack"]
+script = ExtResource("2_f7s4y")
+animation_name = &"charge_attack"
+sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
+frame_duration = 0.1
+source_row = 2
+end_column = 5
+source_faces_right = true
+loop = false
+
+[sub_resource type="Resource" id="Resource_jump"]
+script = ExtResource("2_f7s4y")
+animation_name = &"jump"
+sprite_path = "res://assets/art/characters/player/HumanJump.png"
+frame_duration = 0.1
+source_row = 1
+loop = false
+
+[sub_resource type="Resource" id="Resource_hurt"]
+script = ExtResource("2_f7s4y")
+animation_name = &"hurt"
+sprite_path = "res://assets/art/characters/player/HumanDmg.png"
+frame_duration = 0.1
+source_row = 1
+loop = false
+
+[sub_resource type="Resource" id="Resource_die"]
+script = ExtResource("2_f7s4y")
+animation_name = &"die"
+sprite_path = "res://assets/art/characters/player/HumanSpinDie.png"
+frame_duration = 0.1
+loop = false
+
+[resource]
+script = ExtResource("1_nx2lq")
+clips = Array[ExtResource("2_f7s4y")]([SubResource("Resource_idle"), SubResource("Resource_walk"), SubResource("Resource_attack"), SubResource("Resource_charge_build"), SubResource("Resource_charge_loop"), SubResource("Resource_charge_attack"), SubResource("Resource_jump"), SubResource("Resource_hurt"), SubResource("Resource_die")])

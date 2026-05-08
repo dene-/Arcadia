@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="NpcProfile" format=3 uid="uid://cgmljf7okgdq2"]
+
+[ext_resource type="Script" uid="uid://pk0koejqodv8" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
+
+[resource]
+script = ExtResource("1_profile_script")
+profile_name = "Elara Finch"
+age = 33
+job = "Carpenter and home repair craftsperson"
+personality = "Steady, thoughtful, and quietly kind. She prefers doing things properly the first time and has a reassuring calm that makes people trust her with important work."
+family = "Raised by her grandfather, a retired wheelwright. She now supports him and a younger cousin who is apprenticing under her."
+intelligence = "Methodical and spatially gifted, with strong practical reasoning and the habit of planning three steps ahead before lifting a tool."
+memories = PackedStringArray()

@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="NpcData" format=3 uid="uid://cixkpdx84prbl"]
+
+[ext_resource type="Script" uid="uid://q4b5ncvrgnnk" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="1_owric"]
+[ext_resource type="SpriteFrames" uid="uid://b3u76qu1tj5m2" path="res://game/resources/animation/humans/carpenter_sprite_frames.tres" id="2_frames"]
+[ext_resource type="Resource" path="res://game/resources/actors/humans/carpenter_npc_profile.tres" id="3_profile"]
+
+[resource]
+script = ExtResource("1_npc_data")
+combat_layers = ExtResource("1_owric")
+profile = ExtResource("3_profile")
+sprite_frames = ExtResource("2_frames")
