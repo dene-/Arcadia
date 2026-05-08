@@ -62,15 +62,16 @@ Rules:
 ## Branch and PR Workflow
 
 - Before implementing any feature, fix, refactor, or other non-trivial change, create or switch to a dedicated branch. Do not implement new work directly on `master`.
-- Use conventional branch names with the Codex prefix:
-  - `codex/feat/<short-kebab-description>`
-  - `codex/fix/<short-kebab-description>`
-  - `codex/refactor/<short-kebab-description>`
-  - `codex/docs/<short-kebab-description>`
-  - `codex/chore/<short-kebab-description>`
+- Use conventional branch names without tool-specific prefixes:
+  - `feat/<short-kebab-description>`
+  - `fix/<short-kebab-description>`
+  - `refactor/<short-kebab-description>`
+  - `docs/<short-kebab-description>`
+  - `chore/<short-kebab-description>`
 - Choose the branch type to match the expected commit type. Keep the description short, lowercase, and kebab-case.
 - Commit and push only on the current feature branch unless explicitly instructed otherwise. Never force push unless explicitly requested.
-- When asked to create a PR, target `master`.
+- Treat user approval phrases such as `feature is ready`, `looks good`, `ship it`, or `ready` as a request to finish the branch: review the diff, run the relevant validation, commit with the proper Conventional Commit message, push the feature branch, and create a PR targeting `master` unless the user explicitly says not to.
+- When asked to create a PR or when finishing an approved branch, target `master`.
 - Before creating a PR, review all changed code on the branch against `master`, improve anything that does not meet project practices, and run the relevant validation. Then create the PR with a concise title, a summary of changes, and validation results.
 - After opening the PR, leave review and merge decisions to the user on GitHub.
 
