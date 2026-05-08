@@ -24,6 +24,8 @@ var _item: DropItemDataResource
 var _can_pick_up: bool = false
 var _pickup_delay_token: int = 0
 
+@onready var icon_sprite: Sprite2D = $IconSprite
+
 func _ready() -> void:
 	add_to_group("world_drops")
 	_apply_item_data()
@@ -52,6 +54,9 @@ func collect_into(inventory: InventoryDataResource) -> bool:
 	return remaining < previous_count
 
 func _draw() -> void:
+	if _item != null and _item.icon != null:
+		return
+
 	var marker_color := Color(1.0, 1.0, 1.0, 1.0)
 	if _item != null:
 		marker_color = _item.color
@@ -62,6 +67,9 @@ func _draw() -> void:
 func _apply_item_data() -> void:
 	if _item != null:
 		name = _item.get_display_name().to_pascal_case()
+	if icon_sprite != null:
+		icon_sprite.texture = _item.icon if _item != null else null
+		icon_sprite.visible = icon_sprite.texture != null
 	queue_redraw()
 
 func _begin_pickup_delay() -> void:

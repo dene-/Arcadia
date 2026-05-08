@@ -10,5 +10,8 @@ collision_layer = 32
 collision_mask = 0
 script = ExtResource("1_drop")
 
+[node name="IconSprite" type="Sprite2D" parent="."]
+texture_filter = 1
+
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_pickup")
