@@ -59,6 +59,21 @@ Rules:
 - Add `BREAKING CHANGE:` in the footer for breaking changes.
 - Use default Git messages for merge and revert commits.
 
+## Branch and PR Workflow
+
+- Before implementing any feature, fix, refactor, or other non-trivial change, create or switch to a dedicated branch. Do not implement new work directly on `master`.
+- Use conventional branch names with the Codex prefix:
+  - `codex/feat/<short-kebab-description>`
+  - `codex/fix/<short-kebab-description>`
+  - `codex/refactor/<short-kebab-description>`
+  - `codex/docs/<short-kebab-description>`
+  - `codex/chore/<short-kebab-description>`
+- Choose the branch type to match the expected commit type. Keep the description short, lowercase, and kebab-case.
+- Commit and push only on the current feature branch unless explicitly instructed otherwise. Never force push unless explicitly requested.
+- When asked to create a PR, target `master`.
+- Before creating a PR, review all changed code on the branch against `master`, improve anything that does not meet project practices, and run the relevant validation. Then create the PR with a concise title, a summary of changes, and validation results.
+- After opening the PR, leave review and merge decisions to the user on GitHub.
+
 ## Architecture Rules
 
 - Keep reusable actor scene child names stable: `AnimatedSprite2D`, `HitBox`, `HitBox/CollisionShape2D`, `HurtBox`, and `StateMachine`.
