@@ -38,13 +38,15 @@ macOS or Linux:
 ./tools/run_godot_tests.sh
 ```
 
+The wrapper scripts can be run from the project root or from inside `tools/`; they resolve the Godot project path automatically.
+
 Direct Godot command:
 
 ```bash
 $GODOT --headless --path . --script res://tests/test_runner.gd
 ```
 
-If `godot` is on `PATH`, replace `$GODOT` with `godot`.
+Run the direct command from the project root. If `godot` is on `PATH`, replace `$GODOT` with `godot`.
 
 ## Write Tests
 

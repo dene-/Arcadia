@@ -22,6 +22,8 @@ export GODOT="/path/to/godot"
 ./tools/run_godot_tests.sh
 ```
 
+The test wrapper scripts can be run from the project root or from inside `tools/`.
+
 Run script checks for changed `.gd` files and a short smoke test after scene, resource, actor, input, or autoload changes:
 
 ```bash

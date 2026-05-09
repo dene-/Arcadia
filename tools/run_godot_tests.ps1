@@ -8,5 +8,7 @@ if ([string]::IsNullOrWhiteSpace($Godot)) {
     $Godot = "godot"
 }
 
-& $Godot --headless --path . --script res://tests/test_runner.gd
+$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+
+& $Godot --headless --path $ProjectRoot --script res://tests/test_runner.gd
 exit $LASTEXITCODE
