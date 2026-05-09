@@ -92,8 +92,8 @@ func _create_drag_preview(at_position: Vector2) -> Control:
 	assert(preview_slot != null, "InventorySlot drag preview requires a Control duplicate.")
 	preview_slot.position = -at_position.round()
 	preview_slot.modulate = Color(1.0, 1.0, 1.0, 0.78)
-	preview_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview_root.add_child(preview_slot)
+	preview_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return preview_root
 
 func _format_slot_text() -> String:
