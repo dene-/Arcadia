@@ -74,7 +74,7 @@ Rules:
 - After each completed agent chat turn that changes repository files, commit the completed changes with the proper Conventional Commit message and push the current feature branch, unless the user explicitly asks not to, the work is blocked, or the changes are only a checkpoint the user has asked to keep uncommitted.
 - Treat user approval phrases such as `feature is ready`, `looks good`, `ship it`, or `ready` as a request to finish the branch: review the diff, run the relevant validation, commit with the proper Conventional Commit message, push the feature branch, and create a PR targeting `master` unless the user explicitly says not to.
 - When asked to create a PR or when finishing an approved branch, target `master`.
-- Before creating a PR, review all changed code on the branch against `master`, improve anything that does not meet project practices, and run the relevant validation. Then create the PR with a concise title and summary of changes; do not add a dedicated validation section unless explicitly requested.
+- Before creating a PR, review all changed code on the branch against `master`, improve anything that does not meet project practices, and run the relevant validation. Then create the PR with a concise title and summary of changes.
 - After opening the PR, leave review and merge decisions to the user on GitHub.
 
 ## Architecture Rules
