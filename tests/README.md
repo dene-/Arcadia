@@ -20,4 +20,6 @@ The wrapper scripts resolve the project root automatically, so they also work wh
 
 The runner discovers `tests/unit/*_test.gd` recursively. Test scripts must extend `"res://tests/test_case.gd"` and expose zero-argument `test_*` methods.
 
+Reusable test doubles live in `tests/fixtures/`. Prefer pure Resource, RefCounted, and helper-method tests before adding scene-level tests that require physics, rendering, autoloads, or backend services.
+
 See `docs/godot_testing.md` for setup, direct Godot commands, and assertion helpers.

@@ -80,6 +80,12 @@ Available assertions:
 - `assert_null(value, message)`
 - `assert_not_null(value, message)`
 
+## Current Coverage
+
+The suite currently covers inventory stack behavior, item metadata, NPC profile payloads, dialog pagination, dialog typewriter behavior, dialog backend payload/parse helpers, and the actor state machine.
+
+Put small reusable test doubles in `tests/fixtures/`. Prefer pure `Resource`, `RefCounted`, and helper-method tests before adding scene-level tests that depend on physics, rendering, autoloads, or backend services.
+
 ## Agent Validation
 
 Agents should run tests after changing gameplay, UI, Resources, scenes, autoloads, or input behavior:
