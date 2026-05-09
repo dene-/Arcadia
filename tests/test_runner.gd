@@ -6,8 +6,17 @@ const TEST_METHOD_PREFIX := "test_"
 
 var _test_count: int = 0
 var _failure_count: int = 0
+var _has_run: bool = false
 
-func _initialize() -> void:
+func _process(_delta: float) -> bool:
+	if _has_run:
+		return false
+
+	_has_run = true
+	_run_tests()
+	return false
+
+func _run_tests() -> void:
 	var test_files := _discover_tests(TEST_ROOT)
 	test_files.sort()
 
