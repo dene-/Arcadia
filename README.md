@@ -10,14 +10,26 @@ Open the project with Godot 4.6. The main scene is:
 res://game/world/scenes/world.tscn
 ```
 
-Use the `GODOT` user environment variable when available:
+Set `GODOT` to the Godot 4.6 executable when `godot` is not already on `PATH`.
 
 ```powershell
-& ([Environment]::GetEnvironmentVariable('GODOT','User')) --headless --path . --script res://path/to/script.gd --check-only
-& ([Environment]::GetEnvironmentVariable('GODOT','User')) --headless --path . --quit-after 2
+$env:GODOT = "C:\Path\To\Godot_v4.6.2-stable_win64.exe"
+.\tools\run_godot_tests.ps1
 ```
 
-Run script checks for changed `.gd` files and a short smoke test after scene, resource, actor, input, or autoload changes.
+```bash
+export GODOT="/path/to/godot"
+./tools/run_godot_tests.sh
+```
+
+Run script checks for changed `.gd` files and a short smoke test after scene, resource, actor, input, or autoload changes:
+
+```bash
+$GODOT --headless --path . --script res://path/to/script.gd --check-only
+$GODOT --headless --path . --quit-after 2
+```
+
+See `docs/godot_testing.md` for test authoring and agent validation steps.
 
 ## Folder Map
 
