@@ -24,6 +24,7 @@ var _pending_death: bool = false
 var _hurt_knockback_velocity: Vector2 = Vector2.ZERO
 var _dialog_locked: bool = false
 var _target: Node2D
+var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
 
@@ -182,14 +183,15 @@ func update_enemy_ai(delta: float) -> StringName:
 	if _target == null:
 		return &""
 
-	var target_offset := _target.global_position - global_position
+	var target_position := _target.global_position
+	var target_offset := target_position - global_position
 	var target_distance := target_offset.length()
 	if target_distance > npc_data.lose_interest_range:
 		_target = null
 		current_move_direction = Vector2.ZERO
 		return &"idle"
 
-	if target_distance <= npc_data.attack_range:
+	if is_in_lateral_attack_position(target_position):
 		current_move_direction = Vector2.ZERO
 		set_facing_from_direction(target_offset)
 		if _attack_cooldown_remaining <= 0.0:
@@ -204,8 +206,8 @@ func update_enemy_ai(delta: float) -> StringName:
 			return &"idle"
 		return &""
 
-	current_move_direction = target_offset.normalized()
-	set_facing_from_direction(current_move_direction)
+	current_move_direction = _get_direction_to_lateral_attack_position(target_position)
+	_set_facing_toward_target(target_position)
 	return &"run"
 
 func get_enemy_chase_direction() -> Vector2:
@@ -213,14 +215,35 @@ func get_enemy_chase_direction() -> Vector2:
 		current_move_direction = Vector2.ZERO
 		return Vector2.ZERO
 
-	var offset := _target.global_position - global_position
-	if offset.length() <= npc_data.attack_range:
+	var target_position := _target.global_position
+	if is_in_lateral_attack_position(target_position):
 		current_move_direction = Vector2.ZERO
 		return Vector2.ZERO
 
-	current_move_direction = offset.normalized()
-	set_facing_from_direction(current_move_direction)
+	current_move_direction = _get_direction_to_lateral_attack_position(target_position)
+	_set_facing_toward_target(target_position)
 	return current_move_direction
+
+func get_lateral_attack_position(target_position: Vector2) -> Vector2:
+	var side_sign := _get_attack_side_sign(target_position)
+	return target_position + Vector2(float(side_sign) * _get_attack_side_offset(), 0.0)
+
+func is_in_lateral_attack_position(target_position: Vector2) -> bool:
+	var target_offset := target_position - global_position
+	if absf(target_offset.y) > npc_data.attack_vertical_tolerance:
+		return false
+
+	var horizontal_distance := absf(target_offset.x)
+	var attack_side_offset := _get_attack_side_offset()
+	var minimum_horizontal_distance := maxf(
+		attack_side_offset - npc_data.attack_slot_arrival_distance,
+		1.0
+	)
+	minimum_horizontal_distance = minf(minimum_horizontal_distance, npc_data.attack_range)
+	return (
+		horizontal_distance >= minimum_horizontal_distance
+		and horizontal_distance <= npc_data.attack_range
+	)
 
 func can_see_target(target: Node2D) -> bool:
 	if target == null or not is_instance_valid(target):
@@ -403,6 +426,40 @@ func _refresh_target() -> void:
 		closest_distance_sq = distance_sq
 
 	_target = closest_target
+	if _target != null:
+		_target_attack_side_sign = _get_attack_side_sign(_target.global_position)
+
+func _get_direction_to_lateral_attack_position(target_position: Vector2) -> Vector2:
+	var attack_position := get_lateral_attack_position(target_position)
+	var offset := attack_position - global_position
+	if offset.length() <= npc_data.attack_slot_arrival_distance:
+		return Vector2.ZERO
+	return offset.normalized()
+
+func _get_attack_side_offset() -> float:
+	var preferred_offset := maxf(npc_data.attack_side_offset, npc_data.soft_collision_distance)
+	return minf(preferred_offset, npc_data.attack_range)
+
+func _get_attack_side_sign(target_position: Vector2) -> int:
+	var horizontal_offset := global_position.x - target_position.x
+	if horizontal_offset < 0.0:
+		_target_attack_side_sign = -1
+	elif horizontal_offset > 0.0:
+		_target_attack_side_sign = 1
+	elif facing == Facing.LEFT:
+		_target_attack_side_sign = -1
+	else:
+		_target_attack_side_sign = 1
+
+	return _target_attack_side_sign
+
+func _set_facing_toward_target(target_position: Vector2) -> void:
+	var target_offset := target_position - global_position
+	if not is_zero_approx(target_offset.x):
+		set_facing_from_direction(target_offset)
+		return
+
+	set_facing_from_direction(Vector2(float(_target_attack_side_sign) * -1.0, 0.0))
 
 func _spawn_drops() -> void:
 	if _drops_spawned or npc_data.drop_table == null:
