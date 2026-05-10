@@ -12,12 +12,13 @@ For tools that do not support Codex skills, follow the same Godot 4.6 rules from
 
 Use the `GODOT` environment variable when available:
 
-```powershell
-& ([Environment]::GetEnvironmentVariable('GODOT','User')) --headless --path . --script res://path/to/script.gd --check-only
-& ([Environment]::GetEnvironmentVariable('GODOT','User')) --headless --path . --quit-after 2
+```bash
+$GODOT --headless --path . --script res://path/to/script.gd --check-only
+$GODOT --headless --path . --script res://tests/test_runner.gd
+$GODOT --headless --path . --quit-after 2
 ```
 
-Run script checks for changed `.gd` files and a short smoke test after scene, resource, actor, input, or autoload changes.
+PowerShell agents can run `.\tools\run_godot_tests.ps1`. macOS and Linux agents can run `./tools/run_godot_tests.sh`. Run script checks for changed `.gd` files, the Godot test runner after gameplay/UI/resource changes, and a short smoke test after scene, resource, actor, input, or autoload changes.
 
 ## Commit Messages
 
