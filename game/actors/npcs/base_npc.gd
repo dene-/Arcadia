@@ -56,7 +56,7 @@ func _ready() -> void:
 	interaction_area.monitoring = npc_data.interaction_enabled
 	interaction_area.monitorable = npc_data.interaction_enabled
 
-	state_machine.initialize(self)
+	state_machine.initialize(self )
 
 # -- Dialog & interaction -----------------------------------------------------
 
@@ -66,7 +66,7 @@ func interact(interactor: Node = null) -> void:
 
 	var dialog_manager := get_node_or_null("/root/DialogManager")
 	if dialog_manager != null:
-		dialog_manager.call("request_npc_dialog", self)
+		dialog_manager.call("request_npc_dialog", self )
 	interacted.emit(interactor)
 
 func get_dialog_text() -> String:

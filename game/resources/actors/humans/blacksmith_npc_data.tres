@@ -2,13 +2,31 @@
 
 [ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="1_brdxm"]
 [ext_resource type="Script" uid="uid://q4b5ncvrgnnk" path="res://game/resources/actors/npc_data.gd" id="1_npc_data"]
+[ext_resource type="Script" uid="uid://h8qi6bn7hthr" path="res://game/items/drops/drop_table_entry.gd" id="2_6iehx"]
 [ext_resource type="SpriteFrames" uid="uid://bwnsj28ycval6" path="res://game/resources/animation/humans/blacksmith_sprite_frames.tres" id="2_frames"]
-[ext_resource type="Resource" path="res://game/resources/actors/humans/blacksmith_npc_profile.tres" id="3_profile"]
+[ext_resource type="PackedScene" uid="uid://bhp5gb2xboc8p" path="res://game/items/drops/dropped_item.tscn" id="3_3qhkg"]
+[ext_resource type="Resource" uid="uid://cwdpejrk7s5ts" path="res://game/items/data/orc_tusk.tres" id="3_g5tbu"]
+[ext_resource type="Resource" uid="uid://dvu24sg5w6ufb" path="res://game/resources/actors/humans/blacksmith_npc_profile.tres" id="3_profile"]
+[ext_resource type="Script" uid="uid://cc77gw8517or1" path="res://game/items/drops/drop_table.gd" id="4_3qhkg"]
+
+[sub_resource type="Resource" id="Resource_n6esr"]
+script = ExtResource("2_6iehx")
+item = ExtResource("3_g5tbu")
+max_count = 6
+drop_scene = ExtResource("3_3qhkg")
+metadata/_custom_type_script = "uid://h8qi6bn7hthr"
+
+[sub_resource type="Resource" id="Resource_k3ndw"]
+script = ExtResource("4_3qhkg")
+entries = Array[ExtResource("2_6iehx")]([SubResource("Resource_n6esr")])
+metadata/_custom_type_script = "uid://cc77gw8517or1"
 
 [resource]
 script = ExtResource("1_npc_data")
+roam_radius = 0.0
 blood_particle_spread_degrees = 21.0
 blood_particle_lifetime = 0.4
 combat_layers = ExtResource("1_brdxm")
+drop_table = SubResource("Resource_k3ndw")
 profile = ExtResource("3_profile")
 sprite_frames = ExtResource("2_frames")
