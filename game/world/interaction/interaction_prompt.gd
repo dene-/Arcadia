@@ -29,6 +29,11 @@ func _physics_process(_delta: float) -> void:
 			dialog_manager.call("advance_dialog")
 		return
 
+	if get_tree().get_first_node_in_group("blocking_player_input") != null:
+		if _current_target != null:
+			_set_prompt_target(null)
+		return
+
 	var next_target := _find_closest_interactable()
 	if next_target != _current_target:
 		_set_prompt_target(next_target)

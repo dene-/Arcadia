@@ -3,62 +3,46 @@ extends RefCounted
 
 const SAFE_PAGE_CHARACTER_LIMIT: int = 110
 
-func paginate(text: String) -> Array[String]:
+## Pass the laid-out dialog label to account for font metrics, wrapping, and explicit newlines.
+func paginate(text: String, label: RichTextLabel = null) -> Array[String]:
 	if text.is_empty():
 		return [""]
 
-	var chunks := _split_into_chunks(text, SAFE_PAGE_CHARACTER_LIMIT)
-	return _assemble_pages(chunks, SAFE_PAGE_CHARACTER_LIMIT)
-
-func _split_into_chunks(text: String, character_limit: int) -> Array[String]:
-	var chunks: Array[String] = []
-	var current := ""
-
-	for word in text.split(" ", false):
-		if word.length() > character_limit:
-			if not current.is_empty():
-				chunks.append(current)
-				current = ""
-			var start := 0
-			while start < word.length():
-				chunks.append(word.substr(start, character_limit))
-				start += character_limit
-			continue
-
-		if current.is_empty():
-			current = word
-			continue
-
-		var candidate := "%s %s" % [current, word]
-		if candidate.length() <= character_limit:
-			current = candidate
-		else:
-			chunks.append(current)
-			current = word
-
-	if not current.is_empty():
-		chunks.append(current)
-	return chunks
-
-func _assemble_pages(chunks: Array[String], character_limit: int) -> Array[String]:
 	var pages: Array[String] = []
-	var current_page := ""
-
-	for chunk in chunks:
-		if current_page.is_empty():
-			current_page = chunk
-			continue
-
-		var candidate := "%s %s" % [current_page, chunk]
-		if candidate.length() <= character_limit:
-			current_page = candidate
-		else:
-			pages.append(current_page)
-			current_page = chunk
-
-	if not current_page.is_empty():
-		pages.append(current_page)
-
+	var remaining := text.strip_edges()
+	while not remaining.is_empty():
+		var length := mini(remaining.length(), SAFE_PAGE_CHARACTER_LIMIT)
+		if label != null:
+			var low := 1
+			var high := length
+			while low < high:
+				var middle := (low + high + 1) / 2
+				if _fits_label(remaining.substr(0, middle), label):
+					low = middle
+				else:
+					high = middle - 1
+			length = low
+		if length < remaining.length() and remaining[length] not in [" ", "\n"]:
+			var word_break := maxi(
+				remaining.rfind(" ", length - 1), remaining.rfind("\n", length - 1)
+			)
+			if word_break > 0:
+				length = word_break
+		pages.append(remaining.substr(0, length).strip_edges())
+		remaining = remaining.substr(length).strip_edges()
 	if pages.is_empty():
-		pages.append("")
+		return [""]
 	return pages
+
+func _fits_label(text: String, label: RichTextLabel) -> bool:
+	var paragraph := TextParagraph.new()
+	var available_size := label.size - label.get_theme_stylebox(&"normal").get_minimum_size()
+	paragraph.width = maxf(available_size.x, 1.0)
+	paragraph.break_flags = (
+		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	)
+	paragraph.line_spacing = label.get_theme_constant(&"line_separation")
+	paragraph.add_string(
+		text, label.get_theme_font(&"normal_font"), label.get_theme_font_size(&"normal_font_size")
+	)
+	return paragraph.get_size().y <= available_size.y

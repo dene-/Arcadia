@@ -21,7 +21,7 @@ const INDICATOR_BOTTOM_MARGIN: float = 5.0
 var _dialog_panel: Panel
 var _dialog_text: RichTextLabel
 var _next_page_indicator: Control
-var _replies_container: Control
+var _replies_container: ScrollContainer
 var _reply_buttons: Array[Button] = []
 var _chat_container: Control
 var _chat_line_edit: LineEdit
@@ -61,7 +61,9 @@ func _process(delta: float) -> void:
 		return
 
 	var phase := Time.get_ticks_msec() / 1000.0 * INDICATOR_BOB_SPEED
-	_next_page_indicator.position = _indicator_base_position + Vector2(0.0, sin(phase) * INDICATOR_BOB_DISTANCE)
+	_next_page_indicator.position = (
+		_indicator_base_position + Vector2(0.0, sin(phase) * INDICATOR_BOB_DISTANCE)
+	).round()
 
 func _input(event: InputEvent) -> void:
 	if not _is_open:
@@ -151,7 +153,7 @@ func _bind_dialog_ui() -> bool:
 	_dialog_panel = current_scene.get_node_or_null(DIALOG_PANEL_PATH) as Panel
 	_dialog_text = current_scene.get_node_or_null(DIALOG_TEXT_PATH) as RichTextLabel
 	_next_page_indicator = current_scene.get_node_or_null(DIALOG_NEXT_PAGE_INDICATOR_PATH) as Control
-	_replies_container = current_scene.get_node_or_null(REPLIES_CONTAINER_PATH) as Control
+	_replies_container = current_scene.get_node_or_null(REPLIES_CONTAINER_PATH) as ScrollContainer
 	_chat_container = current_scene.get_node_or_null(CHAT_CONTAINER_PATH) as Control
 	_chat_line_edit = current_scene.get_node_or_null(CHAT_LINE_EDIT_PATH) as LineEdit
 	_chat_send_button = current_scene.get_node_or_null(CHAT_SEND_BUTTON_PATH) as Button
@@ -189,6 +191,7 @@ func _start_dialog(source: Node) -> void:
 	_able_to_chat = _source_is_able_to_chat(source)
 	_page_index = 0
 	_is_waiting_for_backend = true
+	_typewriter.reset(_dialog_text)
 	_dialog_text.text = LOADING_DIALOG
 	_dialog_panel.show()
 	_is_open = true
@@ -199,7 +202,7 @@ func _configure_dialog_text() -> void:
 	_dialog_text.scroll_active = false
 	_dialog_text.scroll_following = false
 	_dialog_text.fit_content = false
-	_dialog_text.visible_characters_behavior = TextServer.VC_CHARS_BEFORE_SHAPING
+	_dialog_text.visible_characters_behavior = TextServer.VC_CHARS_AFTER_SHAPING
 
 func _source_is_able_to_chat(source: Node) -> bool:
 	return source != null and source.has_method("is_able_to_chat") and (source.call("is_able_to_chat") as bool)
@@ -265,7 +268,7 @@ func _apply_dialog_result(result: Dictionary) -> void:
 	_is_waiting_for_backend = false
 	_active_text = str(result.get("response", ""))
 	_active_replies = _get_replies_from_result(result)
-	_active_pages = _paginator.paginate(_active_text)
+	_active_pages = _paginator.paginate(_active_text, _dialog_text)
 	if _active_pages.is_empty():
 		_active_pages.append(_active_text)
 	_show_current_page()
@@ -293,6 +296,7 @@ func _update_reply_ui() -> void:
 			button.set_meta("reply_text", reply_text)
 			button.show()
 		_replies_container.show()
+		_replies_container.scroll_vertical = 0
 
 	if can_show and _able_to_chat and _chat_container != null:
 		_chat_container.show()
@@ -323,7 +327,7 @@ func _bind_reply_buttons() -> void:
 	if _replies_container == null:
 		return
 
-	for child in _replies_container.get_children():
+	for child in _replies_container.get_node("ReplyList").get_children():
 		var button := child as Button
 		if button == null:
 			continue
@@ -344,6 +348,7 @@ func _send_player_reply(player_message: String) -> void:
 	_active_pages.clear()
 	_active_replies.clear()
 	_is_waiting_for_backend = true
+	_typewriter.reset(_dialog_text)
 	_dialog_text.text = LOADING_DIALOG
 	_update_next_page_indicator()
 
