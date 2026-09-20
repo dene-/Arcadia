@@ -17,6 +17,9 @@ enum Facing {
 var facing: Facing = Facing.RIGHT
 var max_health: int = 1
 var health: int = 1
+## Rooms share a running simulation but remain separate sensory and interaction spaces.
+var world_space: StringName = &"outdoors"
+var world_space_label: String = "Rekala"
 
 var _attack_hitbox_enabled: bool = false
 var _current_attack_damage: int = 1

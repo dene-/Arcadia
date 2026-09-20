@@ -15,6 +15,7 @@ var _offsets: Dictionary[String, Vector2] = {}
 
 func available() -> bool:
 	for sheet: String in [PLAINS, SWAMP, TOWN, TOWN_II, FARM,
+		"Minifantasy_TownsIIStuccoBuildingIndoorTileset.png",
 		"Minifantasy_ForgottenPlainsPropsShadows.png", "Minifantasy_MurkySwampPropsShadows.png",
 		"Minifantasy_MurkySwampGrassToGrass.png", "Minifantasy_TownsIIWindmillFrames.png",
 		"Minifantasy_FarmTileset.png", "Minifantasy_CraftingAndProfessionsBlacksmithProps.png",

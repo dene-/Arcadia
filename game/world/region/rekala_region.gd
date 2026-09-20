@@ -53,10 +53,16 @@ func rebuild() -> void:
 	_spawn_enemies()
 	if not Engine.is_editor_hint():
 		if town_life_enabled:
+			var buildings := TownBuildings.new()
+			buildings.name = "Buildings"
+			buildings.seed_value = world_seed
+			generated.add_child(buildings)
 			var life := TownLife.new()
 			life.name = "TownLife"
 			generated.add_child(life)
 		var player: Node2D = get_node("BasePlayer")
+		player.world_space = &"outdoors"
+		player.world_space_label = "Rekala"
 		player.position = RegionLayout.PLAYER_SPAWN
 		var camera: Camera2D = player.get_node("Camera2D")
 		camera.limit_left = RegionLayout.BOUNDS.position.x * 8

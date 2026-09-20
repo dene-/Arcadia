@@ -171,7 +171,8 @@ func _near(a: BaseNpc, b: BaseNpc) -> bool:
 
 func _player_near(speaker: BaseNpc) -> bool:
 	for player: Node2D in get_tree().get_nodes_in_group(&"players"):
-		if speaker.global_position.distance_to(player.global_position) <= 200:
+		if player is BasePlayer and player.world_space == speaker.world_space \
+			and speaker.global_position.distance_to(player.global_position) <= 200:
 			return true
 	return false
 

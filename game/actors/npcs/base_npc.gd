@@ -25,6 +25,11 @@ var state_time_remaining: float = 0.0
 var daily_routine: NpcDailyRoutine
 var life_context: Dictionary = {}
 var life_revision: int = 0
+var _awake_sprite_position: Vector2
+var _awake_interaction_position: Vector2
+var _awake_hurt_position: Vector2
+var _sleeping: bool = false
+var _woke_at: int = -90001
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _patrol_index: int = 0
@@ -108,7 +113,8 @@ func get_perceived_name() -> String:
 	return "a hostile creature" if npc_data != null and npc_data.ai_enabled else "a creature"
 
 func can_speak_reaction() -> bool:
-	return health > 0 and not _dialog_locked and Time.get_ticks_msec() >= _reaction_cooldown_until
+	return health > 0 and not _dialog_locked and not _sleeping \
+		and Time.get_ticks_msec() >= _reaction_cooldown_until
 
 func reserve_spoken_reaction() -> bool:
 	if not can_speak_reaction():
@@ -117,12 +123,14 @@ func reserve_spoken_reaction() -> bool:
 	return true
 
 func show_spoken_reaction(text: String) -> bool:
-	if health <= 0 or _dialog_locked:
+	if health <= 0 or _dialog_locked or _sleeping:
 		return false
 	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
 	if bubble == null:
 		return false
 	bubble.call("say", text)
+	if get_npc_profile() != null:
+		get_node("/root/WorldEvents").publish(WorldEvent.speech(self, text))
 	return true
 
 func get_cognitive_context() -> Dictionary:
@@ -134,6 +142,8 @@ func get_cognitive_context() -> Dictionary:
 	current.merge(life_context.duplicate(true), true)
 	current.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
 	if is_inside_tree():
+		if profile != null:
+			current.recent_ambient = get_node("/root/NpcCognition").ambient.recent(String(profile.npc_id))
 		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
 		if not players.is_empty() and players[0] is BasePlayer:
 			current.player_identity = players[0].get_social_identity()
@@ -141,10 +151,47 @@ func get_cognitive_context() -> Dictionary:
 		current.merge(daily_routine.context(global_position), true)
 		if _dialog_locked:
 			current.activity = "conversation (interrupted " + daily_routine.activity + ")"
+	current.world_space = String(world_space)
+	current.location = world_space_label
+	current.sleeping = _sleeping
+	current.recently_awakened = not _sleeping and Time.get_ticks_msec() - _woke_at < 90000
 	return current
 
 func can_follow_routine() -> bool:
-	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run"]
+	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
+
+func show_sleep_pose(sleeping: bool) -> void:
+	_sleeping = sleeping
+	var indicator: Label = get_node_or_null("SleepIndicator")
+	if indicator != null:
+		indicator.visible = sleeping
+	if sleeping:
+		_awake_sprite_position = animated_sprite.position
+		_awake_interaction_position = interaction_area.position
+		_awake_hurt_position = hurt_box.position
+		# The bed supplies solid collision; interaction and damage follow the visible sleeper.
+		body_collision_shape.set_deferred("disabled", true)
+		interaction_area.position += Vector2(0, -16)
+		hurt_box.position += Vector2(0, -16)
+		play_animation(&"idle", true, 1.0)
+		animated_sprite.pause()
+		animated_sprite.rotation = -PI / 2
+		animated_sprite.position += Vector2(0, -20)
+	else:
+		_woke_at = Time.get_ticks_msec()
+		body_collision_shape.set_deferred("disabled", health <= 0)
+		interaction_area.position = _awake_interaction_position
+		hurt_box.position = _awake_hurt_position
+		animated_sprite.rotation = 0
+		animated_sprite.position = _awake_sprite_position
+
+func is_sleeping() -> bool:
+	return _sleeping
+
+func wake_from_noise() -> void:
+	if _sleeping:
+		life_revision += 1
+		state_machine.transition_to(&"idle", {}, true)
 
 func is_able_to_chat() -> bool:
 	return npc_data != null and npc_data.able_to_chat
@@ -190,6 +237,8 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 	if health <= 0 or state_machine.is_in_state(&"dead"):
 		return
 
+	if amount > 0:
+		wake_from_noise()
 	set_health(health - maxi(amount, 0))
 	if amount > 0:
 		life_revision += 1

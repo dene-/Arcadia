@@ -12,6 +12,8 @@
 [ext_resource type="Script" path="res://game/actors/npcs/states/interaction.gd" id="10_interaction"]
 [ext_resource type="Script" path="res://game/ui/hud/enemy_health_bar.gd" id="11_health_bar"]
 [ext_resource type="PackedScene" path="res://game/ui/dialog/npc_reaction_bubble.tscn" id="reaction_bubble"]
+[ext_resource type="Script" path="res://game/actors/npcs/states/sleep.gd" id="sleep_state"]
+[ext_resource type="Theme" path="res://assets/art/ui/theme.tres" id="ui_theme"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_empty"]
 
@@ -45,6 +47,18 @@ texture_filter = 1
 sprite_frames = SubResource("SpriteFrames_empty")
 
 [node name="ReactionBubble" parent="." instance=ExtResource("reaction_bubble")]
+
+[node name="SleepIndicator" type="Label" parent="."]
+visible = false
+offset_left = -3.0
+offset_top = -36.0
+offset_right = 8.0
+offset_bottom = -20.0
+mouse_filter = 2
+theme = ExtResource("ui_theme")
+theme_override_colors/font_color = Color(0.9, 0.94, 1, 1)
+text = "z"
+z_index = 20
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=442629538]
 position = Vector2(0, -1)
@@ -136,3 +150,6 @@ script = ExtResource("9_dead")
 
 [node name="Interaction" type="Node" parent="StateMachine" unique_id=121794205]
 script = ExtResource("10_interaction")
+
+[node name="Sleep" type="Node" parent="StateMachine"]
+script = ExtResource("sleep_state")

@@ -282,6 +282,7 @@ test("decision stage excludes archive; dialogue receives updated state and recal
 
 test("observations classify independently of dialogue and cannot blame an unseen player", async (t) => {
   let seen,
+    generated,
     generations = 0;
   const post = await server(t, {
     decide: async (input) => {
@@ -299,7 +300,8 @@ test("observations classify independently of dialogue and cannot blame an unseen
         ),
       };
     },
-    generate: async () => {
+    generate: async (input) => {
+      generated = JSON.parse(input.input[0].content);
       generations++;
       return { output_text: '{"response":"Keep away!”"}' };
     },
@@ -329,6 +331,10 @@ test("observations classify independently of dialogue and cannot blame an unseen
   body.event.sense = "sight";
   body.event.speech_allowed = true;
   body.event.text = "I saw the player attack someone.";
+  body.event.participants = [{ name: "Mirelle", role: "hurt_person", relationship: { affection: 0.8 } }];
+  body.context.current.recent_ambient = [{ speaker: "Elora", text: "Mirelle, are you hurt?" }];
+  body.context.current.location = "Mirelle's home and shop";
+  body.context.current.recently_awakened = true;
   const seenEvent = await post("/observe", body);
   assert.ok(seenEvent.body.policy.relationship_delta.trust < 0);
   body.answers = seenEvent.body.answers;
@@ -336,6 +342,8 @@ test("observations classify independently of dialogue and cannot blame an unseen
   assert.equal(spoken.status, 200);
   assert.equal(spoken.body.response, 'Keep away!"');
   assert.equal(generations, 1);
+  assert.deepEqual(generated.event.participants, body.event.participants);
+  assert.deepEqual(generated.context.current, body.context.current);
   body.npc.profile.cognition = { verbal_reactivity: 0 };
   assert.equal((await post("/react", body)).body.response, "");
   assert.equal(generations, 1);

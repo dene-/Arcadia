@@ -4,7 +4,8 @@ extends RefCounted
 ## Converts a real combat event into only what this observer could perceive.
 static func observe(observer: BaseNpc, victim: BaseActor, attacker: BaseActor,
 		fatal: bool) -> Dictionary:
-	if observer.health <= 0 or not observer.npc_data.perception_enabled:
+	if observer.health <= 0 or not observer.npc_data.perception_enabled \
+		or observer.world_space != victim.world_space:
 		return {}
 	var sees_victim: bool = can_see(observer, victim)
 	var sees_attacker: bool = is_instance_valid(attacker) and can_see(observer, attacker)
@@ -32,6 +33,20 @@ static func observe(observer: BaseNpc, victim: BaseActor, attacker: BaseActor,
 		event.text = "I heard sounds of fighting nearby, but could not see what happened."
 	else:
 		return {}
+	event.participants = []
+	for participant: BaseActor in [victim, attacker]:
+		if event.sense == "hearing" or not is_instance_valid(participant) or not can_see(observer, participant):
+			continue
+		var identity: String = "player" if participant.is_in_group("players") else ""
+		if participant is BaseNpc and participant.get_npc_profile() != null \
+			and observer.is_in_group(&"town_residents") and participant.is_in_group(&"town_residents"):
+			identity = String(participant.get_npc_profile().npc_id)
+		var visible_person: Dictionary = {"id": identity, "name": _recognized_name(observer, participant),
+			"role": "hurt_person" if participant == victim else "aggressor"}
+		for neighbor: Dictionary in observer.life_context.get("known_townspeople", []):
+			if neighbor.id == identity:
+				visible_person.relationship = neighbor.relationship.duplicate(true)
+		event.participants.append(visible_person)
 	return event
 
 static func _recognized_name(observer: BaseNpc, target: BaseActor) -> String:
@@ -41,6 +56,8 @@ static func _recognized_name(observer: BaseNpc, target: BaseActor) -> String:
 	return target.get_perceived_name()
 
 static func can_see(observer: BaseNpc, target: BaseActor) -> bool:
+	if observer.world_space != target.world_space or observer.is_sleeping():
+		return false
 	if observer == target:
 		return true
 	if observer.npc_data.vision_radius <= 0.0 or observer.global_position.distance_to(

@@ -60,9 +60,10 @@ func select_activity(id: String, activity: Dictionary, duration: float, diagnost
 	person.until = minute + clampf(duration, 5, 120)
 	person.decision = diagnostic.duplicate(true)
 
-func remember_position(id: String, position: Vector2) -> void:
+func remember_position(id: String, position: Vector2, space: String = "outdoors") -> void:
 	if _people.has(id):
 		_people[id].position = [position.x, position.y]
+		_people[id].space = space
 
 func interrupt(id: String) -> void:
 	if _people.has(id):
@@ -120,6 +121,8 @@ static func _number(value: Variant) -> bool:
 
 static func _valid_person(person: Variant) -> bool:
 	if not person is Dictionary:
+		return false
+	if not person.get("space", "outdoors") is String or person.get("space", "outdoors").length() > 200:
 		return false
 	for key: String in ["plan_day", "encounters"]:
 		if not NpcMemory.is_integer(person.get(key)):

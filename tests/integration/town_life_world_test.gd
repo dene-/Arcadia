@@ -66,7 +66,14 @@ func _run() -> void:
 		if npc.get_npc_profile().social_traits.size() != 5:
 			failures.append("Missing temperament: " + npc.name)
 		for place: Dictionary in life._places.values():
-			if life.navigation.route(npc.global_position, place.position).is_empty():
+			var space := StringName(place.get("space", "outdoors"))
+			var destination: Vector2 = place.position
+			if space != &"outdoors":
+				var room: NpcInterior = life.buildings.rooms[space]
+				if room.navigation.route(room.entrance, destination).is_empty():
+					failures.append("No interior route to " + place.label)
+				destination = room.outside
+			if life.navigation.route(npc.global_position, destination).is_empty():
 				failures.append("No route from %s to %s" % [npc.name, place.label])
 	var witness: BaseNpc = residents[0]
 	var witness_id: String = String(witness.get_npc_profile().npc_id)

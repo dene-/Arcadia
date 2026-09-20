@@ -21,6 +21,7 @@ const INDICATOR_BOTTOM_MARGIN: float = 5.0
 const FAREWELL_HOLD_SECONDS: float = 1.5
 var _dialog_panel: Panel
 var _dialog_text: RichTextLabel
+var _speaker_name: Label
 var _next_page_indicator: Control
 var _replies_container: Control
 var _reply_buttons: Array[Button] = []
@@ -160,6 +161,8 @@ func close_dialog() -> void:
 	_page_index = 0
 	if _dialog_text != null:
 		_dialog_text.text = ""
+	if _speaker_name != null:
+		_speaker_name.text = ""
 	_typewriter.reset(_dialog_text)
 	if _dialog_panel != null:
 		_dialog_panel.hide()
@@ -179,6 +182,7 @@ func _bind_dialog_ui() -> bool:
 
 	_dialog_panel = current_scene.get_node_or_null(DIALOG_PANEL_PATH) as Panel
 	_dialog_text = current_scene.get_node_or_null(DIALOG_TEXT_PATH) as RichTextLabel
+	_speaker_name = current_scene.get_node_or_null(String(DIALOG_PANEL_PATH) + "/SpeakerName") as Label
 	_next_page_indicator = current_scene.get_node_or_null(DIALOG_NEXT_PAGE_INDICATOR_PATH) as Control
 	_replies_container = current_scene.get_node_or_null(REPLIES_CONTAINER_PATH) as Control
 	_chat_container = current_scene.get_node_or_null(CHAT_CONTAINER_PATH) as Control
@@ -214,6 +218,9 @@ func _start_dialog(source: Node) -> void:
 	_dialog_generation += 1
 	_conversation.cancel()
 	_active_source = source
+	if _speaker_name != null:
+		_speaker_name.text = source.get_npc_profile().profile_name if source is BaseNpc \
+			and source.get_npc_profile() != null else ""
 	_active_text = ""
 	_active_pages.clear()
 	_active_replies.clear()

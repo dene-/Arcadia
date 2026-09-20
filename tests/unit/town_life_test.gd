@@ -74,6 +74,7 @@ func test_world_save_migrates_old_life_and_rejects_corruption_atomically() -> vo
 	var save := NpcWorldSave.new()
 	save.region_seed = 42
 	save.life.ensure_person("a", 42, ["a", "b"], ["square"])
+	save.life.remember_position("a", Vector2(4096, 4096), "home:a")
 	save.life.personality_for("a", 42)
 	save.life.rumors.observe("a", "Mirelle", _event(), _policy(), save.life.minute)
 	save.mark_dead(&"b")
@@ -82,6 +83,7 @@ func test_world_save_migrates_old_life_and_rejects_corruption_atomically() -> vo
 	assert_eq(loaded.life.get_person("a").plan,
 		JSON.parse_string(JSON.stringify(save.life.get_person("a").plan)))
 	assert_eq(loaded.life.rumors.get_known("a", 480)[0].text, _event().text)
+	assert_eq(loaded.life.get_person("a").space, "home:a")
 	var data: Dictionary = save.to_data()
 	data.world.life.minute = -1
 	assert_false(loaded.from_data(data))

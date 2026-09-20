@@ -8,6 +8,13 @@ var subject: BaseActor
 var instigator: BaseActor
 var facts: Dictionary = {}
 
+static func speech(speaker: BaseActor, text: String) -> WorldEvent:
+	var event := WorldEvent.new()
+	event.kind = &"actor_spoke"
+	event.subject = speaker
+	event.facts = {"text": text}
+	return event
+
 static func damage(victim: BaseActor, attacker: BaseActor) -> WorldEvent:
 	var event := WorldEvent.new()
 	event.kind = &"actor_died" if victim.health <= 0 else &"actor_hurt"

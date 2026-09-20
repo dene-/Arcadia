@@ -9,6 +9,7 @@ var _grid := AStarGrid2D.new()
 var _occupants: Dictionary[String, WeakRef] = {}
 var _destinations: Dictionary[String, Vector2] = {}
 var ready: bool = false
+var area: Rect2i = AREA
 
 func register(id: String, actor: Node2D) -> void:
 	_occupants[id] = weakref(actor)
@@ -18,7 +19,7 @@ func release(id: String) -> void:
 	_destinations.erase(id)
 
 func build(space: PhysicsDirectSpaceState2D, actor_bodies: Array[RID] = []) -> void:
-	_grid.region = AREA
+	_grid.region = area
 	_grid.cell_size = Vector2.ONE * CELL_SIZE
 	_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_grid.update()
@@ -29,8 +30,8 @@ func build(space: PhysicsDirectSpaceState2D, actor_bodies: Array[RID] = []) -> v
 	query.collision_mask = 1
 	# CharacterBody2D also uses layer 1: baking residents would leave permanent phantom obstacles.
 	query.exclude = actor_bodies
-	for y: int in range(AREA.position.y, AREA.end.y):
-		for x: int in range(AREA.position.x, AREA.end.x):
+	for y: int in range(area.position.y, area.end.y):
+		for x: int in range(area.position.x, area.end.x):
 			var cell := Vector2i(x, y)
 			query.transform = Transform2D(0, Vector2(cell) * CELL_SIZE + Vector2(0, -1))
 			_grid.set_point_solid(cell, not space.intersect_shape(query, 1).is_empty())
@@ -68,7 +69,7 @@ func route(from: Vector2, to: Vector2, id: String = "") -> PackedVector2Array:
 			for y: int in range(-1, 2):
 				for x: int in range(-1, 2):
 					var cell: Vector2i = center + Vector2i(x, y)
-					if cell != start and cell != end and AREA.has_point(cell) and not _grid.is_point_solid(cell):
+					if cell != start and cell != end and area.has_point(cell) and not _grid.is_point_solid(cell):
 						_grid.set_point_solid(cell, true)
 						temporary.append(cell)
 	var path: PackedVector2Array = _grid.get_point_path(start, end)
@@ -105,7 +106,7 @@ func avoid(id: String, position: Vector2, desired: Vector2) -> Vector2:
 
 func is_clear(point: Vector2) -> bool:
 	var cell := Vector2i((point / CELL_SIZE).round())
-	return ready and AREA.has_point(cell) and not _grid.is_point_solid(cell)
+	return ready and area.has_point(cell) and not _grid.is_point_solid(cell)
 
 func _has_space(id: String, point: Vector2) -> bool:
 	for other: String in _destinations:
@@ -119,14 +120,14 @@ func _has_space(id: String, point: Vector2) -> bool:
 
 func _nearest_cell(point: Vector2) -> Vector2i:
 	var center := Vector2i((point / CELL_SIZE).round())
-	center.x = clampi(center.x, AREA.position.x, AREA.end.x - 1)
-	center.y = clampi(center.y, AREA.position.y, AREA.end.y - 1)
+	center.x = clampi(center.x, area.position.x, area.end.x - 1)
+	center.y = clampi(center.y, area.position.y, area.end.y - 1)
 	for radius: int in range(12):
 		for y: int in range(-radius, radius + 1):
 			for x: int in range(-radius, radius + 1):
 				if maxi(absi(x), absi(y)) != radius:
 					continue
 				var cell: Vector2i = center + Vector2i(x, y)
-				if AREA.has_point(cell) and not _grid.is_point_solid(cell):
+				if area.has_point(cell) and not _grid.is_point_solid(cell):
 					return cell
 	return center

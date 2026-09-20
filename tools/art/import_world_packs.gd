@@ -9,6 +9,7 @@ const PACKS: Dictionary = {
 		"Minifantasy_MurkySwampGrassToGrass.png"],
 	"Towns_v": ["Minifantasy_TownsProps.png", "Minifantasy_TownsPropsShadows.png"],
 	"Towns2": ["Minifantasy_TownsIIProps.png", "Minifantasy_TownsIIPropsShadows.png",
+		"Minifantasy_TownsIIStuccoBuildingIndoorTileset.png",
 		"Minifantasy_TownsIIStoneBridgeTileset.png", "Minifantasy_TownsIIWindmillFrames.png"],
 	"CraftingAndProfessions": ["Minifantasy_CraftingAndProfessionsBlacksmithProps.png",
 		"Minifantasy_CraftingAndProfessionsWoodworkProps.png", "Minifantasy_CraftingAndProfessionsTailorProps.png"],

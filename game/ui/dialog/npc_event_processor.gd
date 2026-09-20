@@ -123,6 +123,7 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 	if not source.reserve_spoken_reaction():
 		return "cooldown"
 	var state: Dictionary = store.snapshot(payload.npc.id)
+	payload.context.current.merge(source.get_cognitive_context(), true)
 	payload.context.relationship = state.relationship
 	payload.context.memories = NpcMemoryRetriever.new().retrieve(state.memories,
 		payload.event.text, payload.context.current, job.profile.get_cognition(), store.turn)
@@ -136,10 +137,22 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 		return "expired_during_generation"
 	if not text is String or text.strip_edges().is_empty() or text.length() > 160:
 		return "generation_failed"
+	if _repeats_recent_speech(source.get_cognitive_context(), text):
+		return "repeated_line"
 	if source.show_spoken_reaction(text):
 		store.record_spoken_reaction(payload.npc.id, text)
 		return "displayed"
 	return "dead_or_in_dialogue"
+
+static func _repeats_recent_speech(current: Dictionary, text: String) -> bool:
+	var normalized: String = " ".join(text.to_lower().strip_edges().split(" ", false))
+	if normalized.length() < 12:
+		return false # Brief cries and interjections can naturally recur.
+	for line: Dictionary in current.get("recent_ambient", []):
+		var previous: String = " ".join(String(line.text).to_lower().strip_edges().split(" ", false))
+		if previous == normalized:
+			return true
+	return false
 
 func _speech_block(source: BaseNpc, event: Dictionary, check_capacity: bool = true) -> String:
 	if source == null:

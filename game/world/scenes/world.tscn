@@ -129,7 +129,7 @@ layout_mode = 2
 size_flags_vertical = 8
 
 [node name="DialogPanel" type="Panel" parent="UI/Container/VBoxContainer" unique_id=1026008566]
-custom_minimum_size = Vector2(0, 45)
+custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 theme = ExtResource("1_ic0uy")
 
@@ -141,7 +141,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 6
+theme_override_constants/margin_top = 19
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 6
 
@@ -150,6 +150,15 @@ layout_mode = 2
 text = "Lorem ipsum dolor sit amet, consectetu'\"!-_r adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. U"
 scroll_active = false
 tab_size = 2
+
+[node name="SpeakerName" type="Label" parent="UI/Container/VBoxContainer/DialogPanel"]
+offset_left = 8.0
+offset_top = 3.0
+offset_right = 218.0
+offset_bottom = 17.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.28, 0.12, 0.06, 1)
+text = ""
 
 [node name="NextPageIndicator" type="NinePatchRect" parent="UI/Container/VBoxContainer/DialogPanel" unique_id=817155606]
 layout_mode = 1

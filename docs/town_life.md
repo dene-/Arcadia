@@ -10,10 +10,12 @@ The saved world seed generates each resident's personality, speech style, initia
 | `TownLifeState` | Saved personalities, plans, relationship graph, positions and social history |
 | `NpcTemperament` / `NpcRoutinePlan` | Seeded personality generation and daily preferences |
 | `TownNavigation` | Static walkability, temporary actor obstacles and destination reservations |
+| `TownBuildings` / `NpcInterior` | Enterable furnished rooms, door transitions and navigation between spaces |
 | `NpcDailyRoutine` | Route following, local avoidance and retries; actor states retain physics/animation |
 | `TownEncounters` | Nearby two-way social sessions, model calls and interruption guards |
 | `TownRumors` | Per-person accounts, provenance, confidence, expiry and loop prevention |
 | `NpcMemoryStore` | Long-term admission and bounded changes to feelings toward the player |
+| `NpcAmbientHistory` | Short-lived audible speech context for varied reactions; never creates factual memories |
 
 `DialogManager` continues to own only player conversation UI. Town life is attached to the generated region, not another Autoload. New activities can extend the place catalog and routine candidates without changing actor states or dialogue UI.
 
@@ -23,7 +25,9 @@ The clock advances 1.5 game minutes per real second by default, with a day/night
 
 Moving bodies are excluded from the static navigation bake. Live routes detour around residents and Den, destinations reserve personal space, and local steering lets approaching walkers yield. Blocked routes are retried. Optional visits and social destinations avoid crowded venues. Encounters arise from proximity along routes or at destinations, rather than a global gathering command.
 
-Work and rest currently represent activities at outdoor workplaces and doorsteps. This does not simulate crafting, inventory consumption, house interiors or sleep animations.
+Each resident has an enterable home and shop, furnished with a bed, meal table and work area. Press the existing interact key (E) near the exterior door to enter, and near the interior door to leave. Rooms use the owned Towns/Towns II artwork; run the world-pack importer when installing those assets on another checkout. Doors are currently unlocked.
+
+Residents walk through their own doors to work, eat and rest. Rest places them in bed with a sleeping pose. Interaction or nearby combat wakes them, and dialogue receives the room, activity and recent awakening. Sleeping residents cannot see events or initiate speech. Separate rooms have independent navigation and perception boundaries; actors keep their identity and cognition through transitions. Saved room membership restores residents indoors after restarting. Crafting and food consumption are not simulated.
 
 ## Social decisions and knowledge
 
@@ -39,6 +43,8 @@ Residents initially know the names, jobs and homes of the other townspeople. Dir
 Conversations require proximity, line of sight, availability and individual cooldowns. At most three pairs converse concurrently. The listener gets a turn after a greeting. Resting residents do not initiate these encounters. Injury, death, player dialogue, separation and a session deadline invalidate pending results and release both actors. Model refusal or service failure never fabricates a conversation or new information.
 
 Audible exchanges generate speech bubbles when Den is nearby. Offscreen exchanges use the same social and listener decisions but omit dialogue generation. For an audible rumor, successful speech must precede the knowledge transfer. Speech stays direct, uses ASCII quote normalization, and follows the existing dialogue style rules. Bubbles fit their text up to `maximum_width`, wrap vertically and use the theme font at its native size; neither text nor its parent is scaled to fit.
+
+Ambient dialogue has its own voice guidance: one immediate thought shaped by personality, familiarity and circumstance. Witnesses receive their own relationship to recognized participants; hearing alone never supplies identities. Each awake listener keeps at most six nearby utterances for 45 seconds so generation can respond to what others just said. Exact repeated long combat reactions are suppressed even when simultaneous requests return the same words. Player dialogue displays the speaker's actual profile name above the text at the native font size.
 
 Only perceived events and admitted conversation claims/statements enter the rumor ledger. Each account retains its original observer, immediate source, chain, evidence basis, confidence and event ID. A listener cannot learn an account the speaker does not know. Accounts cannot circulate back through the same chain or gain confidence through repetition. Chains stop after four transfers. Each person keeps at most 32 recent accounts, expiring after three game hours or seven game days depending on importance/admission. Memory admission remains a separate listener decision.
 
@@ -61,6 +67,7 @@ GODOT=/Applications/Godot.app/Contents/MacOS/Godot
 "$GODOT" --headless --path . --log-file /tmp/arcadia-unit.log --script res://tests/test_runner.gd
 "$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-traffic.log --script res://tests/integration/town_traffic_test.gd
 "$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-life.log --script res://tests/integration/town_life_world_test.gd
+"$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-interiors.log --script res://tests/integration/town_interiors_test.gd
 cd tools/server
 GODOT="$GODOT" npm test
 ```

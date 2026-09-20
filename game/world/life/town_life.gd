@@ -8,6 +8,7 @@ var save_game: NpcWorldSave
 var backend: DialogBackendClient
 var navigation := TownNavigation.new()
 var encounters: TownEncounters
+var buildings: TownBuildings
 var _actors: Dictionary[String, BaseNpc] = {}
 var _places: Dictionary[String, Dictionary] = {}
 var _public_people: Array[Dictionary] = []
@@ -33,6 +34,8 @@ func _ready() -> void:
 		if actor is PhysicsBody2D and not actor.get_rid() in bodies:
 			bodies.append(actor.get_rid())
 	navigation.build(get_parent().get_world_2d().direct_space_state, bodies)
+	buildings = get_parent().get_node("Buildings")
+	buildings.prepare_navigation(navigation, bodies)
 	for player: Node2D in get_tree().get_nodes_in_group(&"players"):
 		navigation.register("player:%d" % player.get_instance_id(), player)
 	_build_places()
@@ -53,10 +56,8 @@ func _ready() -> void:
 		npc.daily_routine.navigation = navigation
 		npc.daily_routine.npc_id = id
 		var saved: Dictionary = save_game.life.get_person(id)
-		if saved.position.size() == 2:
-			var restored := Vector2(saved.position[0], saved.position[1])
-			if navigation.is_clear(restored):
-				npc.global_position = restored
+		buildings.restore(npc, id, saved)
+		_revisions[id] = npc.life_revision
 		if _places.has(saved.place):
 			_travel(npc, id, {"place": saved.place, "kind": saved.activity})
 		_update_context(npc, id)
@@ -73,6 +74,7 @@ func _ready() -> void:
 	add_child(overlay)
 	_clock = Label.new()
 	_clock.theme = preload("res://assets/art/ui/theme.tres")
+	_clock.add_theme_color_override("font_color", Color(0.96, 0.91, 0.78))
 	_clock.add_theme_color_override("font_shadow_color", Color(0.12, 0.1, 0.08, 0.8))
 	_clock.add_theme_constant_override("shadow_offset_y", 1)
 	_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -95,12 +97,17 @@ func _process(delta: float) -> void:
 		var npc: BaseNpc = _actors[id]
 		if not is_instance_valid(npc) or npc.health <= 0:
 			navigation.release(id)
+			if is_instance_valid(npc):
+				buildings.release(npc, id)
 			_actors.erase(id)
 			continue
 		if _revisions[id] != npc.life_revision:
 			_revisions[id] = npc.life_revision
 			save_game.life.interrupt(id)
 		npc.daily_routine.update(npc.global_position, delta, not npc.can_follow_routine())
+		if not encounters.is_busy(id):
+			buildings.advance(npc, id)
+			_revisions[id] = npc.life_revision
 	if _tick < 1.0:
 		return
 	_tick = 0.0
@@ -128,6 +135,9 @@ func _process(delta: float) -> void:
 	var hour: float = fmod(save_game.life.minute / 60.0, 24.0)
 	var daylight: float = smoothstep(5.0, 8.0, hour) * (1.0 - smoothstep(18.0, 21.0, hour))
 	_light.color = Color(0.48, 0.53, 0.7).lerp(Color.WHITE, daylight)
+	for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
+		if player.world_space != &"outdoors":
+			_light.color = Color(1, 0.96, 0.88)
 	if _save_elapsed >= 15.0:
 		_save_elapsed = 0.0
 		_save()
@@ -147,9 +157,11 @@ func _build_places() -> void:
 		var data: NpcData = load("res://game/resources/actors/humans/%s_npc_data.tres" % home.job)
 		var profile: NpcProfile = data.profile
 		var id: String = String(profile.npc_id)
-		var foot := Vector2(home.cell * 8)
-		_places["home:" + id] = {"label": profile.profile_name + "'s doorstep", "position": foot + Vector2(0, 24)}
-		_places["work:" + id] = {"label": profile.profile_name + "'s workplace", "position": foot + Vector2(32, 32)}
+		var room: NpcInterior = buildings.rooms[StringName("home:" + id)]
+		_places["home:" + id] = {"label": profile.profile_name + "'s home", "position": room.bed_spot,
+			"space": "home:" + id}
+		_places["work:" + id] = {"label": profile.profile_name + "'s shop", "position": room.work_spot,
+			"space": "home:" + id}
 		_public_people.append({"id": id, "name": profile.profile_name, "job": profile.job,
 			"home": profile.profile_name + "'s house in Rekala"})
 
@@ -231,11 +243,14 @@ func _add_option(options: Array[Dictionary], id: String, kind: String, place: St
 
 func _travel(npc: BaseNpc, id: String, selected: Dictionary) -> void:
 	var place: Dictionary = _places.get(selected.place, _places["home:" + id])
+	var space := StringName(place.get("space", "outdoors"))
 	var random := NpcRoutinePlan.random_for(save_game.region_seed,
 		"%s:spot:%s:%s" % [id, save_game.life.day(), selected.place])
 	var offset := Vector2(random.randi_range(-2, 2), random.randi_range(-1, 1)) * 8.0
-	var destination: Vector2 = navigation.reserve_destination(id, place.position + offset)
-	npc.daily_routine.travel(npc.global_position, destination, selected.kind, place.label)
+	var destination: Vector2 = place.position + (offset if space == &"outdoors" else Vector2.ZERO)
+	if selected.kind == "meal" and buildings.rooms.has(space):
+		destination = buildings.rooms[space].meal_spot
+	buildings.travel(npc, id, space, destination, selected.kind, place.label)
 	npc.state_time_remaining = 0.0
 
 func _update_context(npc: BaseNpc, id: String) -> void:
@@ -257,7 +272,7 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 func _save() -> Error:
 	for id: String in _actors:
 		if is_instance_valid(_actors[id]) and _actors[id].health > 0:
-			save_game.life.remember_position(id, _actors[id].global_position)
+			save_game.life.remember_position(id, _actors[id].global_position, String(_actors[id].world_space))
 	var error: Error = save_game.save_file()
 	if error != OK:
 		push_warning("Town life could not be saved: %s" % error)

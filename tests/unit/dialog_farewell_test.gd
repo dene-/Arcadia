@@ -23,6 +23,7 @@ func before_each() -> void:
 	var container: Node = _add(ui, Control.new(), "Container")
 	var column: Node = _add(container, VBoxContainer.new(), "VBoxContainer")
 	var panel: Node = _add(column, Panel.new(), "DialogPanel")
+	_add(panel, Label.new(), "SpeakerName")
 	var text_container: Node = _add(panel, Control.new(), "DialogContainer")
 	_add(text_container, RichTextLabel.new(), "DialogText")
 	_add(panel, Control.new(), "NextPageIndicator")
@@ -58,6 +59,15 @@ func _add(parent: Node, child: Node, node_name: String) -> Node:
 func _reply(text: String, ending: bool = false) -> void:
 	_manager._apply_dialog_result({"response": text, "replies": ["Yes", "No", "Bye"],
 		"end_conversation": ending})
+
+func test_nameplate_uses_the_actual_npc_identity_and_clears_on_close() -> void:
+	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
+	_scene.add_child(npc)
+	_manager.close_dialog()
+	_manager._start_dialog(npc)
+	assert_eq(_manager._speaker_name.text, npc.get_npc_profile().profile_name)
+	_manager.close_dialog()
+	assert_eq(_manager._speaker_name.text, "")
 
 func test_farewell_reveals_then_closes_without_showing_chat_or_replies() -> void:
 	_reply("Hello.")

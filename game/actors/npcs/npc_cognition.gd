@@ -6,6 +6,7 @@ var store: NpcMemoryStore = save_game.memory
 var backend: DialogBackendClient
 var events: NpcEventProcessor
 var perception := NpcPerceptionRouter.new()
+var ambient := NpcAmbientHistory.new()
 
 func _ready() -> void:
 	store.memories_admitted.connect(_on_memories_admitted)
@@ -28,6 +29,9 @@ func resume(source: BaseNpc) -> void:
 		events.resume(profile, source.get_cognitive_context(), source)
 
 func _on_world_event(event: WorldEvent) -> void:
+	if event.kind == &"actor_spoke":
+		ambient.record(event.subject, event.facts.text, get_tree().get_nodes_in_group(&"npc_observers"))
+		return
 	var origin_id: String = save_game.life.issue_event_id()
 	# World truth is recorded synchronously at the lethal hit, before any network call.
 	if event.kind == &"actor_died" and event.subject is BaseNpc:
@@ -37,6 +41,8 @@ func _on_world_event(event: WorldEvent) -> void:
 	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
 		var observed: Dictionary = perception.perceive(observer, event)
 		if not observed.is_empty():
+			if observer != event.subject:
+				observer.wake_from_noise()
 			observed.origin_id = origin_id
 			events.observe(observer.get_npc_profile(), observer.get_cognitive_context(),
 				observed, observer)
