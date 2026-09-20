@@ -21,6 +21,8 @@ class FakeBackend extends DialogBackendClient:
 		return {"response": "Keep away!"}
 
 class SpeakingNpc extends BaseNpc:
+	func get_cognitive_context() -> Dictionary:
+		return {"activity": "idle"}
 	var spoken: Array[String] = []
 	func show_spoken_reaction(text: String) -> bool:
 		spoken.append(text)
@@ -172,10 +174,48 @@ func test_late_reaction_cannot_speak_through_a_freed_npc() -> void:
 	assert_eq(backend.reaction_calls, 1)
 	await processor.wait_for_assessment("test_observer")
 	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.08)
+	processor.observe(_profile(), {}, _event("touch"), npc)
+	await tree.process_frame
+	await processor.wait_for_assessment("test_observer")
+	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.16)
+	assert_eq(backend.payloads.size(), 2)
 	npc.free()
 	backend.release_reaction.emit()
 	await processor.flush("test_observer")
 	assert_true(processor.store.snapshot("test_observer").recent_dialogue.is_empty())
 	processor.queue_free()
 	await tree.process_frame
+	backend.free()
+
+func test_speech_generation_has_a_global_limit_without_blocking_assessment() -> void:
+	var tree: SceneTree = Engine.get_main_loop()
+	var processor := NpcEventProcessor.new()
+	processor.persist = false
+	processor.store = NpcMemoryStore.new()
+	var backend := FakeBackend.new()
+	backend.policy = _policy()
+	backend.policy.speak = true
+	backend.hold_reaction = true
+	processor.backend = backend
+	tree.root.add_child(processor)
+	var sources: Array[BaseNpc] = []
+	for index: int in range(3):
+		var npc := SpeakingNpc.new()
+		npc.npc_data = NpcData.new()
+		sources.append(npc)
+		var profile: NpcProfile = _profile()
+		profile.npc_id = StringName("speaker_%s" % index)
+		processor.observe(profile, {}, _event(), npc)
+	await tree.process_frame
+	assert_eq(backend.payloads.size(), 3)
+	assert_eq(backend.reaction_calls, 2)
+	assert_eq(processor.store.turn, 3)
+	assert_eq(processor.store.snapshot("speaker_2").observations[0].diagnostics.speech_result, "speech_capacity")
+	backend.release_reaction.emit()
+	for index: int in range(3):
+		await processor.flush("speaker_%s" % index)
+	processor.queue_free()
+	await tree.process_frame
+	for source: BaseNpc in sources:
+		source.free()
 	backend.free()

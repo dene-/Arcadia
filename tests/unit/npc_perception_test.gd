@@ -94,11 +94,15 @@ func test_wall_blocks_identity_and_distant_npcs_do_not_observe() -> void:
 
 func test_damage_dispatch_attributes_player_and_reports_lethal_hit_only_once() -> void:
 	var observer: Observer = _actor(Vector2.ZERO)
-	observer.add_to_group("npc_observers")
+	var bus: Node = observer.get_node("/root/WorldEvents")
+	var capture: Callable = func(event: WorldEvent) -> void:
+		observer.received.append(NpcPerceptionRouter.new().perceive(observer, event))
+	bus.occurred.connect(capture)
 	var victim: Observer = _actor(Vector2(20, 0))
 	var player: Observer = _actor(Vector2(25, 0))
 	player.add_to_group("players")
 	# Initialize the real actor states; this exercises BaseNpc.take_damage rather than a fake event.
+	victim.npc_data.profile = null
 	victim.state_machine.initialize(victim)
 	player.hit_box.set_meta("owner", player)
 	victim.take_damage(3, player.hit_box)
@@ -107,6 +111,7 @@ func test_damage_dispatch_attributes_player_and_reports_lethal_hit_only_once() -
 	assert_true(observer.received[0].player_involved)
 	victim.take_damage(3, player.hit_box)
 	assert_eq(observer.received.size(), 1)
+	bus.occurred.disconnect(capture)
 
 func test_reaction_bubble_is_temporary_and_cooldown_blocks_repeated_speech() -> void:
 	var npc: Observer = _actor(Vector2.ZERO)

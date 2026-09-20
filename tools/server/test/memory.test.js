@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import {
   QUESTIONS,
   EVENT_QUESTIONS,
   decisionPolicy,
+  observationPolicy,
 } from "../src/npc-decisions.js";
 import { createApp } from "../src/app.js";
 
@@ -135,7 +137,7 @@ test("uncertain choices cannot alter trust and probability 0.5 is not intensity"
   raw.should_remember.noul = 0.5;
   const result = decisionPolicy(raw);
   assert.equal(result.relationship_delta.trust, 0);
-  assert.equal(result.response_mode, "UNCERTAIN");
+  assert.equal(result.response_mode, "DEFENSIVE");
   assert.equal(result.remember, false);
 });
 test("malformed Jev outputs are rejected before policy application", () => {
@@ -509,3 +511,20 @@ test(
     assert.doesNotMatch(stderr, /SCRIPT ERROR/);
   },
 );
+
+// Captured from the approved live probe: ordinary blacksmith, injured by the player.
+test("live assault judgment admits memory and speech; moderate speech judgments remain usable", () => {
+  const raw = JSON.parse(readFileSync(new URL("../../../tests/fixtures/jev_assault_decision.json", import.meta.url)));
+  const event = { sense: "touch", player_involved: true, speech_allowed: true };
+  const policy = observationPolicy(raw, event, { verbal_reactivity: 0.5 });
+  assert.equal(policy.speak, true);
+  assert.equal(policy.remember, true);
+  assert.equal(policy.response_mode, "DEFENSIVE");
+  assert.ok(policy.relationship_delta.trust < 0);
+  raw.should_speak.noul = 0.6;
+  assert.equal(observationPolicy(raw, event).speak, true);
+  raw.should_speak.noul = 0.3;
+  assert.equal(observationPolicy(raw, event).speak, false);
+  raw.should_speak.noul = 0.99;
+  assert.equal(observationPolicy(raw, { ...event, speech_allowed: false }).speak, false);
+});

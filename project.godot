@@ -18,6 +18,8 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+WorldEvents="*res://game/world/events/world_events.gd"
+NpcCognition="*res://game/actors/npcs/npc_cognition.gd"
 DialogManager="*res://game/ui/dialog/dialog_manager.tscn"
 
 [display]

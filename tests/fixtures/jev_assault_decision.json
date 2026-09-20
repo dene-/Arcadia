@@ -1,0 +1,111 @@
+{
+  "response_mode": {
+    "type": "choice",
+    "choice": "DEFENSIVE",
+    "confidence": 0.64,
+    "probabilities": {
+      "DEFENSIVE": 0.71,
+      "UNCERTAIN": 0,
+      "WARM": 0,
+      "REFUSE": 0,
+      "GUARDED": 0.25,
+      "NEUTRAL": 0.04
+    }
+  },
+  "should_remember": {
+    "type": "noul",
+    "noul": 0.85
+  },
+  "memory_importance": {
+    "type": "score",
+    "score": 2.85,
+    "confidence": 0.83,
+    "legend": {
+      "0": "Routine small talk without lasting consequence.",
+      "1": "Minor personally relevant information or small favor.",
+      "2": "Meaningful agreement, useful discovery or notable encounter.",
+      "3": "Serious threat, betrayal, kindness or major commitment.",
+      "4": "Life-changing event involving survival, loved ones or core identity."
+    },
+    "probabilities": {
+      "0": 0,
+      "1": 0.02,
+      "2": 0.11,
+      "3": 0.84,
+      "4": 0.03
+    }
+  },
+  "emotional_intensity": {
+    "type": "score",
+    "score": 2.25,
+    "confidence": 0.56,
+    "legend": {
+      "0": "Emotionally routine.",
+      "1": "Mildly affecting.",
+      "2": "Clearly emotional.",
+      "3": "Strong emotion.",
+      "4": "Overwhelming emotion."
+    },
+    "probabilities": {
+      "0": 0.01,
+      "1": 0.12,
+      "2": 0.49,
+      "3": 0.38,
+      "4": 0
+    }
+  },
+  "should_speak": {
+    "type": "noul",
+    "noul": 0.77
+  },
+  "trust_change": {
+    "type": "choice",
+    "choice": "NEGATIVE",
+    "confidence": 0.98,
+    "probabilities": {
+      "NEGATIVE": 0.99,
+      "POSITIVE": 0,
+      "UNCHANGED": 0.01
+    }
+  },
+  "respect_change": {
+    "type": "choice",
+    "choice": "NEGATIVE",
+    "confidence": 0.94,
+    "probabilities": {
+      "NEGATIVE": 0.96,
+      "POSITIVE": 0,
+      "UNCHANGED": 0.04
+    }
+  },
+  "affection_change": {
+    "type": "choice",
+    "choice": "NEGATIVE",
+    "confidence": 0.95,
+    "probabilities": {
+      "NEGATIVE": 0.97,
+      "POSITIVE": 0,
+      "UNCHANGED": 0.03
+    }
+  },
+  "fear_change": {
+    "type": "choice",
+    "choice": "POSITIVE",
+    "confidence": 0.73,
+    "probabilities": {
+      "POSITIVE": 0.82,
+      "NEGATIVE": 0.05,
+      "UNCHANGED": 0.13
+    }
+  },
+  "suspicion_change": {
+    "type": "choice",
+    "choice": "POSITIVE",
+    "confidence": 0.87,
+    "probabilities": {
+      "NEGATIVE": 0.05,
+      "POSITIVE": 0.91,
+      "UNCHANGED": 0.04
+    }
+  }
+}

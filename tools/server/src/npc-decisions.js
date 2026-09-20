@@ -4,7 +4,7 @@ export const THRESHOLDS = Object.freeze({
   retrieve: 0.5,
   belief: 0.8,
   choice: 0.65,
-  speak: 0.75,
+  speak: 0.5,
 });
 export const RELATIONSHIP_SCALES = {
   familiarity:
@@ -80,7 +80,7 @@ export const QUESTIONS = {
   response_mode: {
     type: "choice",
     instructions:
-      "Which response style fits this NPC and interaction? Use identity, current state and existing relationship. Other questions in this batch are independent.",
+      "Which response style fits this NPC addressing the player NOW? Use context.current.current_concerns, physical_state, identity and existing relationship. A greeting does not erase an assault, witnessed killing, fear or distrust. Previously assessed evidence can shape the response without changing relationship scores again. Other questions are independent.",
     criteria: {
       NEUTRAL: "Ordinary in-character conversation.",
       WARM: "Open and friendly.",
@@ -122,7 +122,7 @@ export const EVENT_QUESTIONS = {
   should_speak: {
     type: "noul",
     instructions:
-      "Would this NPC spontaneously say a short audible reaction to event.text right now? Consider npc.profile.personality, cognition.attention, cognition.verbal_reactivity, current danger and relationship. Silence is normal for minor, repetitive or distant events. Hurt, shock, relief or a personally meaningful event can provoke speech. Do not speak merely because an event was noticed. event.speech_allowed must be true; 0 verbal_reactivity means remain silent.",
+      "Would this person naturally say something aloud in response to the NEW event.text? Evaluate a spontaneous exclamation, protest, warning or remark, not starting a conversation. Use npc.profile.personality, npc.profile.cognition.verbal_reactivity, their physical state and relationship. Being personally attacked or witnessing a killing can warrant an immediate protest or warning; mundane distant noise often does not. Decide from this new event, not previous speech decisions. Ignore technical delivery eligibility: game code handles cooldowns and timing.",
   },
 };
 for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
@@ -194,7 +194,7 @@ export function decisionPolicy(raw) {
     importance,
     emotional_intensity: answers.emotional_intensity.score / 4,
     interaction_intent: choice("interaction_intent", "OTHER"),
-    response_mode: choice("response_mode", "UNCERTAIN"),
+    response_mode: answers.response_mode.choice,
     relationship_delta: relationshipDelta,
   };
 }
@@ -218,10 +218,7 @@ export function observationPolicy(raw, event, cognition = {}) {
     update_belief: false,
     importance,
     emotional_intensity: answers.emotional_intensity.score / 4,
-    response_mode:
-      answers.response_mode.confidence >= THRESHOLDS.choice
-        ? answers.response_mode.choice
-        : "NEUTRAL",
+    response_mode: answers.response_mode.choice,
     relationship_delta,
     speak:
       event.speech_allowed === true &&

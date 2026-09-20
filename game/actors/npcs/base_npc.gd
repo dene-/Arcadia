@@ -44,6 +44,15 @@ func _ready() -> void:
 	assert(npc_data != null, "BaseNpc requires an NpcData resource.")
 	assert(npc_data.sprite_frames != null, "BaseNpc requires a SpriteFrames resource.")
 
+	var cognition: Node = get_node("/root/NpcCognition")
+	var profile: NpcProfile = get_npc_profile()
+	if profile != null and cognition.save_game.is_dead(profile.npc_id):
+		# No death animation, event, loot or provider call is replayed during loading.
+		hide()
+		process_mode = Node.PROCESS_MODE_DISABLED
+		queue_free()
+		return
+
 	spawn_position = global_position
 	_rng.randomize()
 	if npc_data.ai_enabled:
@@ -65,14 +74,12 @@ func _ready() -> void:
 	state_machine.initialize(self)
 	if get_npc_profile() != null and not get_npc_profile().npc_id.is_empty():
 		add_to_group(&"npc_observers")
-		var manager: Node = get_node_or_null("/root/DialogManager")
-		if manager != null:
-			manager.call("resume_npc_observations", self)
+		get_node("/root/NpcCognition").resume(self)
 
 # -- Dialog & interaction -----------------------------------------------------
 
 func interact(interactor: Node = null) -> void:
-	if not npc_data.interaction_enabled:
+	if health <= 0 or not npc_data.interaction_enabled:
 		return
 
 	var dialog_manager := get_node_or_null("/root/DialogManager")
@@ -97,14 +104,6 @@ func get_perceived_name() -> String:
 		return "a person"
 	return "a hostile creature" if npc_data != null and npc_data.ai_enabled else "a creature"
 
-func perceive_combat_event(victim: BaseActor, attacker: BaseActor, fatal: bool) -> void:
-	var observation: Dictionary = NpcPerception.observe(self, victim, attacker, fatal)
-	if observation.is_empty():
-		return
-	var manager: Node = get_node_or_null("/root/DialogManager")
-	if manager != null:
-		manager.call("observe_npc_event", self, observation)
-
 func can_speak_reaction() -> bool:
 	return health > 0 and not _dialog_locked and Time.get_ticks_msec() >= _reaction_cooldown_until
 
@@ -126,7 +125,8 @@ func show_spoken_reaction(text: String) -> bool:
 func get_cognitive_context() -> Dictionary:
 	var profile: NpcProfile = get_npc_profile()
 	return {"location": profile.home if profile != null else "",
-		"activity": "conversation", "physical_state": "injured" if health < max_health else "well",
+		"activity": "conversation" if _dialog_locked else String(state_machine.get_current_state_name()),
+		"physical_state": "injured" if health < max_health else "well",
 		"sensory_cues": []}
 
 func is_able_to_chat() -> bool:
@@ -434,8 +434,8 @@ func _get(property: StringName) -> Variant:
 		return null
 	var profile: NpcProfile = get_npc_profile()
 	var id: String = String(profile.npc_id) if profile != null else ""
-	var manager: Node = get_node_or_null("/root/DialogManager") if is_inside_tree() else null
-	var store: NpcMemoryStore = manager.call("get_memory_store") if manager != null else null
+	var cognition: Node = get_node_or_null("/root/NpcCognition") if is_inside_tree() else null
+	var store: NpcMemoryStore = cognition.store if cognition != null else null
 	var state: Dictionary = store.snapshot(id) if store != null and not id.is_empty() else {}
 	match field:
 		"npc_id":

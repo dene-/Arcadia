@@ -7,6 +7,7 @@ const OPENING_GREETINGS: Array[String] = ["Hi.", "Hey.", "Hello.", "Hi there.", 
 var store: NpcMemoryStore = NpcMemoryStore.new()
 var retriever: NpcMemoryRetriever = NpcMemoryRetriever.new()
 var persist: bool = true
+var save_callback: Callable
 var _generation: int = 0
 
 func cancel() -> void:
@@ -24,10 +25,7 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	store.ensure_npc(profile)
 	var id: String = String(profile.npc_id)
 	var state: Dictionary = store.snapshot(id)
-	var perception: Dictionary = current.duplicate(true)
-	perception["recent_events"] = state.recent_events.duplicate()
-	# These events were already assessed; they are context, not fresh relationship evidence.
-	perception["past_observations"] = state.observations.duplicate(true)
+	var perception: Dictionary = NpcCognitiveContext.build(state, current)
 	var payload: Dictionary = {
 		"protocol_version": 1, "npc": {"id": id, "profile": profile.to_backend_profile()},
 		"player": {"message": message},
@@ -52,7 +50,7 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	if not store.commit_exchange(id, message, result, policy, recalled, state.recent_events):
 		return {}
 	if persist:
-		var error: Error = store.save_file()
+		var error: Error = save_callback.call() if save_callback.is_valid() else store.save_file()
 		if error != OK:
 			push_warning("NPC memory could not be saved: %s" % error)
 	return result

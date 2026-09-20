@@ -92,7 +92,7 @@ func report_damage_event(source: Area2D) -> void:
 		var source_owner: Variant = source.get_meta("owner", null)
 		if is_instance_valid(source_owner):
 			attacker = source_owner as BaseActor
-	get_tree().call_group(&"npc_observers", "perceive_combat_event", self, attacker, health <= 0)
+	get_node("/root/WorldEvents").publish(WorldEvent.damage(self, attacker))
 
 func play_animation(animation_name: StringName, restart: bool = false, speed_scale: float = 1.0) -> void:
 	var resolved_animation := resolve_animation_name(animation_name)

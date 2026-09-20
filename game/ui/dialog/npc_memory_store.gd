@@ -94,10 +94,18 @@ func commit_observation(npc_id: String, observation_id: int, policy: Dictionary)
 			state.relationship = NpcRelationshipState.changed(state.relationship, policy.relationship_delta)
 		if policy.remember:
 			_admit(state.memories, {"type": "episodic", "source": "observed_event",
-				"gist": observation.text, "topics": ["combat"],
+				"gist": observation.text, "topics": observation.get("topics", ["combat"]),
+				"people": ["player"] if observation.player_involved else [],
 				"sensory_cues": ["sounds of fighting"] if observation.sense == "hearing" else []}, policy)
 		return true
 	return false
+
+## Diagnostics belong to the observation, never to model input or authored profiles.
+func annotate_observation(npc_id: String, id: int, diagnostics: Dictionary) -> void:
+	for record: Dictionary in _states.get(npc_id, {}).get("observations", []):
+		if record.id == id:
+			record["diagnostics"] = diagnostics.duplicate(true)
+			return
 
 func record_spoken_reaction(npc_id: String, text: String) -> void:
 	if not _states.has(npc_id):

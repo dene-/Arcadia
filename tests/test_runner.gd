@@ -17,6 +17,13 @@ func _process(_delta: float) -> bool:
 	return false
 
 func _run_tests() -> void:
+	# Exercise the real application boundary without touching the player's save or providers.
+	var cognition: Node = root.get_node("NpcCognition")
+	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-tests-%s.json" % OS.get_process_id())
+	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
+	cognition.save_game.dead_npcs.clear()
+	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
+	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
 	var test_files := _discover_tests(TEST_ROOT)
 	test_files.sort()
 
@@ -28,6 +35,7 @@ func _run_tests() -> void:
 	for test_file: String in test_files:
 		await _run_test_file(test_file)
 
+	DirAccess.remove_absolute(cognition.save_game.path)
 	print("")
 	if _failure_count == 0:
 		print("Godot tests passed: %d" % _test_count)

@@ -15,6 +15,11 @@ func retrieve(memories: Array, message: String, current: Dictionary,
 		var text: String = memory.gist + " " + " ".join(memory.topics)
 		var relevance: float = _overlap(words, text)
 		var entities: float = _overlap(words, " ".join(memory.people + memory.places))
+		# Presence is a recall cue even when the player only says hello.
+		for participant: String in current.get("participants", []):
+			if participant in memory.people or (participant == "player"
+				and memory.source == "observed_event" and memory.gist.contains("the player")):
+				entities = 1.0
 		var sensory: float = _overlap(sensory_words, " ".join(memory.sensory_cues))
 		var prospective: bool = memory.type == "prospective" and not memory.completed
 		if relevance == 0.0 and entities == 0.0 and sensory == 0.0 and not prospective:

@@ -165,7 +165,10 @@ It owns dialog session flow:
 Helper classes:
 
 - `NpcConversation`: Jev decisions, context construction and successful exchange commits
-- `NpcEventProcessor`: background observation classification and conditional spoken reactions
+- `NpcCognition`: shared cognition service, independent of dialogue presentation
+- `NpcEventProcessor`: bounded background assessment and separate speech generation
+- `WorldEvents` / `NpcPerceptionRouter`: world facts and extensible perception adapters
+- `NpcWorldSave`: atomic named-NPC deaths and memory persistence
 - `NpcPerception`: sight, hearing and self-injury evidence for NPC observers
 - `NpcMemoryStore`: save-owned memory, relationships, recent dialogue and observed events
 - `NpcMemoryRetriever`: relevant memory selection and filtered recall

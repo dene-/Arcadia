@@ -47,25 +47,24 @@ var _page_index: int = 0
 var _indicator_base_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
-	var memory_error: Error = _conversation.store.load_file()
-	if memory_error != OK:
-		push_warning("NPC memory save could not be loaded: %s" % memory_error)
 	call_deferred("_bind_dialog_ui")
 	set_process(false)
 
 	_speech_player = DialogVoicePlayer.new()
 	add_child(_speech_player)
 
-	_backend_client = DialogBackendClient.new()
-	add_child(_backend_client)
-	_events = NpcEventProcessor.new()
-	_events.store = _conversation.store
-	_events.backend = _backend_client
-	add_child(_events)
+	var cognition: Node = get_node("/root/NpcCognition")
+	_conversation.store = cognition.store
+	_conversation.save_callback = cognition.save_game.save_file
+	_backend_client = cognition.backend
+	_events = cognition.events
 
 
 func _process(delta: float) -> void:
 	if _is_open and (not is_instance_valid(_active_source) or get_tree().current_scene != _bound_scene):
+		close_dialog()
+		return
+	if _is_open and _active_source is BaseActor and _active_source.health <= 0:
 		close_dialog()
 		return
 	_update_typewriter(delta)
@@ -268,18 +267,9 @@ func record_npc_event(profile: NpcProfile, event: String) -> void:
 	if profile == null or profile.npc_id.is_empty():
 		return
 	_conversation.store.record_event(profile, event)
-	var error: Error = _conversation.store.save_file()
+	var error: Error = _conversation.save_callback.call()
 	if error != OK:
 		push_warning("NPC event could not be saved: %s" % error)
-
-func observe_npc_event(source: BaseNpc, event: Dictionary) -> void:
-	var profile: NpcProfile = source.get_npc_profile()
-	if profile == null or profile.npc_id.is_empty():
-		return
-	_events.observe(profile, source.get_cognitive_context(), event, source)
-
-func resume_npc_observations(source: BaseNpc) -> void:
-	_events.resume(source.get_npc_profile(), source.get_cognitive_context(), source)
 
 func get_memory_store() -> NpcMemoryStore:
 	return _conversation.store

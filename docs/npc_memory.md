@@ -120,3 +120,7 @@ Validated with Godot 4.7.1 and Node 24.19.0. All 18 changed/new GDScript files p
 The existing `npc_ai_test.gd::test_lateral_attack_position_respects_soft_collision_distance` also fails on untouched master `c9d3b4a` under 4.7.1 (43/44 tests). Its attack-distance implementation was left unchanged. Separately, `npm audit` reports existing low/moderate advisories in `body-parser` and `qs`; adding the TypeSafe SDK did not change either locked dependency. Those maintenance issues need a separate review.
 
 The headless editor import also emits existing inventory `@tool`/placeholder-instance errors on both untouched master and this branch; the runtime game smoke test is clean. The sandbox cannot write the editor's global settings file, so validation logs were directed to `/tmp`.
+
+## World-state persistence update
+
+The running game now uses `NpcCognition` to own cognition independently of dialogue UI. `user://npc_world.json` stores memories and named-NPC deaths atomically; `npc_memory.json` is a legacy import source. See [NPC perception and persistence](npc_perception.md) for event adapters, live reaction diagnostics, migration behavior and the explicit reset command.
