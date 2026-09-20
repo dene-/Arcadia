@@ -50,12 +50,34 @@ func test_roads_reach_every_home_camp_and_crossing_without_entering_water() -> v
 	for row: int in RegionLayout.BRIDGES:
 		assert_true(visited.has(Vector2i(RegionLayout.river_left_at(row) + 4, row)))
 
-func test_cottage_pattern_references_real_tiles_and_visible_alternatives() -> void:
-	var pattern: TileMapPattern = load("res://game/resources/world/cottage_pattern.tres")
+func test_cottage_patterns_reference_real_tiles_and_visible_alternatives() -> void:
 	var tiles: TileSet = load("res://game/resources/world/town_tileset.tres")
-	assert_true(pattern.get_used_cells().size() >= 30)
-	for cell: Vector2i in pattern.get_used_cells():
-		var source: TileSetAtlasSource = tiles.get_source(pattern.get_cell_source_id(cell))
-		var coords: Vector2i = pattern.get_cell_atlas_coords(cell)
-		assert_true(source.has_tile(coords))
-		assert_true(source.has_alternative_tile(coords, pattern.get_cell_alternative_tile(cell)))
+	for pattern: TileMapPattern in [RegionTown.COTTAGE_WALLS, RegionTown.COTTAGE_ROOF]:
+		assert_false(pattern.is_empty())
+		for cell: Vector2i in pattern.get_used_cells():
+			var source: TileSetAtlasSource = tiles.get_source(pattern.get_cell_source_id(cell))
+			var coords: Vector2i = pattern.get_cell_atlas_coords(cell)
+			assert_true(source.has_tile(coords))
+			assert_true(source.has_alternative_tile(coords, pattern.get_cell_alternative_tile(cell)))
+
+func test_every_house_width_keeps_opaque_walls_beneath_the_roof_gable() -> void:
+	var town := RegionTown.new()
+	var atlas: TileSetAtlasSource = RegionTown.TILES.get_source(0)
+	var image: Image = atlas.texture.get_image()
+	for extra: int in [0, 2, 4]:
+		var house := Node2D.new()
+		town._house_layer(house, "Walls", RegionTown.COTTAGE_WALLS, extra)
+		town._house_layer(house, "Roof", RegionTown.COTTAGE_ROOF, extra)
+		var walls: TileMapLayer = house.get_node("Walls")
+		var roof: TileMapLayer = house.get_node("Roof")
+		assert_eq(walls.position, roof.position)
+		# These pixels exposed grass when roof cells replaced walls in one layer.
+		for y: int in range(24, 32):
+			for x: int in range(16, 40 + extra * 8):
+				var cell := Vector2i(x / 8, y / 8)
+				var pixel := Vector2i(x % 8, y % 8)
+				var wall_alpha: float = image.get_pixelv(walls.get_cell_atlas_coords(cell) * 8 + pixel).a
+				var roof_alpha: float = image.get_pixelv(roof.get_cell_atlas_coords(cell) * 8 + pixel).a
+				assert_eq(maxf(wall_alpha, roof_alpha), 1.0,
+					"Transparent gable at %s, extra width %s" % [Vector2i(x, y), extra])
+		house.free()

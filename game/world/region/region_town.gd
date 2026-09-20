@@ -4,7 +4,8 @@ class_name RegionTown
 extends RefCounted
 
 const TILES: TileSet = preload("res://game/resources/world/town_tileset.tres")
-const COTTAGE: TileMapPattern = preload("res://game/resources/world/cottage_pattern.tres")
+const COTTAGE_WALLS: TileMapPattern = preload("res://game/resources/world/cottage_walls_pattern.tres")
+const COTTAGE_ROOF: TileMapPattern = preload("res://game/resources/world/cottage_roof_pattern.tres")
 const NPC: PackedScene = preload("res://game/actors/npcs/base_npc.tscn")
 var art := RegionArt.new()
 
@@ -48,25 +49,32 @@ func _house(parent: Node2D, foot: Vector2, index: int) -> void:
 	house.name = "House%s" % index
 	house.position = foot
 	parent.add_child(house)
-	var walls := TileMapLayer.new()
-	walls.tile_set = TILES
 	var extra: int = 4 if index == 4 else (2 if index in [0, 3, 5] else 0)
+	var colors: Array[Color] = [Color.WHITE, Color(0.72, 0.87, 1), Color(1, 0.88, 0.72)]
+	house.modulate = colors[index % colors.size()]
+	# Keep walls underneath transparent roof pixels, including the triangular gable.
+	# Child order draws the roof over the walls; the whole house still sorts at its feet.
+	_house_layer(house, "Walls", COTTAGE_WALLS, extra)
+	_house_layer(house, "Roof", COTTAGE_ROOF, extra)
+	RegionArt.barrier(house, Vector2(0, -9), Vector2(40 + extra * 8, 18))
+	art.sprite(parent, RegionArt.PLAINS, Rect2i(72, 64, 24, 16), foot + Vector2(-35, -4))
+
+func _house_layer(house: Node2D, layer_name: String, source: TileMapPattern, extra: int) -> void:
+	var layer := TileMapLayer.new()
+	layer.name = layer_name
+	layer.tile_set = TILES
 	var pattern := TileMapPattern.new()
-	for cell: Vector2i in COTTAGE.get_used_cells():
+	for cell: Vector2i in source.get_used_cells():
 		var target: Vector2i = cell + Vector2i(extra if cell.x > 3 else 0, 0)
 		var repetitions: int = extra + 1 if cell.x == 3 else 1
 		for offset: int in range(repetitions):
-			var atlas_cell: Vector2i = COTTAGE.get_cell_atlas_coords(cell)
-			if cell.x == 3 and cell.y >= 4 and offset != extra / 2:
-				atlas_cell = COTTAGE.get_cell_atlas_coords(Vector2i(2, cell.y))
+			var atlas_cell: Vector2i = source.get_cell_atlas_coords(cell)
+			if layer_name == "Walls" and cell.x == 3 and cell.y >= 4 and offset != extra / 2:
+				atlas_cell = source.get_cell_atlas_coords(Vector2i(2, cell.y))
 			pattern.set_cell(target + Vector2i(offset, 0), 0, atlas_cell, 0)
-	walls.position = Vector2(-pattern.get_size().x * 4, -48)
-	walls.set_pattern(Vector2i.ZERO, pattern)
-	var colors: Array[Color] = [Color.WHITE, Color(0.72, 0.87, 1), Color(1, 0.88, 0.72)]
-	walls.modulate = colors[index % colors.size()]
-	house.add_child(walls)
-	RegionArt.barrier(house, Vector2(0, -9), Vector2(40 + extra * 8, 18))
-	art.sprite(parent, RegionArt.PLAINS, Rect2i(72, 64, 24, 16), foot + Vector2(-35, -4))
+	layer.position = Vector2(-(COTTAGE_ROOF.get_size().x + extra) * 4, -48)
+	layer.set_pattern(Vector2i.ZERO, pattern)
+	house.add_child(layer)
 
 func _workplace(parent: Node2D, job: String, foot: Vector2) -> void:
 	var sheet: String = RegionArt.TOWN

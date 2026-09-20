@@ -31,7 +31,7 @@ The importer copies selected original sheets to ignored `assets/art/world_packs/
 - `region_town.gd`: cottage patterns, work props, farm, windmill and named NPC instances. NPC data is duplicated before local roam tuning; profiles keep their stable IDs.
 - `region_art.gd`: cached atlas textures, prop origins and solid footprints. Trees sort at their feet and collide only at their trunks.
 - `rekala_region.gd`: scene composition and save integration. Generated nodes appear beneath `World/Region` in the Remote tree.
-- `game/resources/world/`: extracted reusable TileSets and the cottage TileMapPattern, retaining the original atlas coordinates.
+- `game/resources/world/`: reusable TileSets and separate cottage wall/roof TileMapPatterns. Each house draws its Roof layer over Walls so transparent roof pixels reveal the building underneath. Both layers share one origin and the house's depth sorting.
 
 Select the World node in the editor to change `Preview Seed` and click **Rebuild region preview**. Editor previews never touch the player save. Runtime actors are spawned when the game runs. The runtime seed comes from the save, not the preview setting. New landmarks should reserve their footprint before the tree pass and connect to the road graph. Keep saved landmark positions stable when extending a released world.
 
