@@ -22,11 +22,12 @@ func test_to_backend_profile_maps_all_fields() -> void:
 	assert_eq(payload["personality"], "Patient")
 	assert_eq(payload["family"], "Has two siblings")
 	assert_eq(payload["intelligence"], "Careful speaker")
-	assert_eq(payload["memories"], "Met the player, Lost a needle")
+	assert_false(payload.has("memories"))
+	assert_eq(profile.memories.size(), 2)
 
-func test_to_backend_profile_uses_empty_memory_string_when_no_memories_exist() -> void:
+func test_backend_profile_never_exposes_the_memory_archive() -> void:
 	var profile := NpcProfileResource.new()
 
 	var payload := profile.to_backend_profile()
 
-	assert_eq(payload["memories"], "")
+	assert_false(payload.has("memories"))

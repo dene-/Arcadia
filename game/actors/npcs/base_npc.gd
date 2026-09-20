@@ -77,6 +77,15 @@ func get_backend_profile() -> Dictionary:
 		return {}
 	return npc_data.profile.to_backend_profile()
 
+func get_npc_profile() -> NpcProfile:
+	return npc_data.profile if npc_data != null else null
+
+func get_cognitive_context() -> Dictionary:
+	var profile: NpcProfile = get_npc_profile()
+	return {"location": profile.home if profile != null else "",
+		"activity": "conversation", "physical_state": "injured" if health < max_health else "well",
+		"sensory_cues": []}
+
 func is_able_to_chat() -> bool:
 	return npc_data != null and npc_data.able_to_chat
 
@@ -117,6 +126,10 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 	if state_machine.is_in_state(&"dead"):
 		return
 
+	if amount > 0:
+		var manager: Node = get_node_or_null("/root/DialogManager")
+		if manager != null:
+			manager.call("record_npc_event", get_npc_profile(), "I was physically injured.")
 	set_health(health - maxi(amount, 0))
 	apply_hit_reaction(source)
 	set_hitbox_enabled(false)

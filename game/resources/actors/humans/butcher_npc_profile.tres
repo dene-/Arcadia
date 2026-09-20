@@ -2,8 +2,28 @@
 
 [ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
 
+[ext_resource type="Script" path="res://game/resources/actors/npc_cognition_profile.gd" id="cognition_script"]
+[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="knowledge_script"]
+[ext_resource type="Resource" path="res://game/resources/actors/knowledge/rekala_common.tres" id="town"]
+
+[sub_resource type="Resource" id="Cognition"]
+script = ExtResource("cognition_script")
+factual_recall = 0.6
+social_recall = 0.9
+name_recall = 0.8
+
+[sub_resource type="Resource" id="TradeKnowledge"]
+script = ExtResource("knowledge_script")
+knowledge_id = &"butcher"
+title = "Butcher expertise"
+knowledge = "Preparing meat, livestock buying, ordinary prices and local trading habits."
+limitations = "No knowledge of private affairs unless personally told."
+
 [resource]
 script = ExtResource("1_profile_script")
+npc_id = &"bram_edevane"
+cognition = SubResource("Cognition")
+knowledge_packs = Array[ExtResource("knowledge_script")]([ExtResource("town"), SubResource("TradeKnowledge")])
 profile_name = "Bram Edevane"
 age = 39
 sex = "Male"

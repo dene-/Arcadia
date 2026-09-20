@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="NpcKnowledgePack" format=3]
+
+[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+knowledge_id = &"rekala_common"
+title = "Life in Rekala"
+knowledge = "Rekala is a village in the Kingdom of Rekia. Residents know ordinary village life and local trade."
+limitations = "No access to secret politics, distant events, private conversations or another person's memories. Rumors require attribution."

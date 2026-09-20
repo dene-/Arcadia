@@ -26,7 +26,7 @@ func _run_tests() -> void:
 		return
 
 	for test_file: String in test_files:
-		_run_test_file(test_file)
+		await _run_test_file(test_file)
 
 	print("")
 	if _failure_count == 0:
@@ -79,7 +79,7 @@ func _run_test_file(test_file: String) -> void:
 
 	print("Running %s" % test_file)
 	for method_name: StringName in test_methods:
-		_run_test_method(test_file, test_case, method_name)
+		await _run_test_method(test_file, test_case, method_name)
 
 func _is_valid_test_case(test_case: Variant) -> bool:
 	return (
@@ -103,7 +103,7 @@ func _run_test_method(test_file: String, test_case: Object, method_name: StringN
 	_test_count += 1
 	test_case.clear_failures()
 	test_case.before_each()
-	test_case.call(method_name)
+	await test_case.call(method_name)
 	test_case.after_each()
 
 	var failures: Array = test_case.get_failures()

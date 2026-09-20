@@ -5,7 +5,7 @@ signal dialog_advanced(page_index: int)
 signal dialog_finished(source: Node)
 
 const LOADING_DIALOG: String = "..."
-const PLACEHOLDER_DIALOG: String = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+const PLACEHOLDER_DIALOG: String = "I cannot talk just now. Try me again in a moment."
 const DIALOG_PANEL_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel"
 const DIALOG_TEXT_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/DialogContainer/DialogText"
 const DIALOG_NEXT_PAGE_INDICATOR_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/NextPageIndicator"
@@ -27,6 +27,8 @@ var _chat_container: Control
 var _chat_line_edit: LineEdit
 var _chat_send_button: Button
 var _chat_cancel_button: Button
+var _conversation: NpcConversation = NpcConversation.new()
+var _dialog_generation: int = 0
 var _backend_client: DialogBackendClient
 var _speech_player: DialogVoicePlayer
 var _paginator: DialogPaginator = DialogPaginator.new()
@@ -44,6 +46,9 @@ var _page_index: int = 0
 var _indicator_base_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	var memory_error: Error = _conversation.store.load_file()
+	if memory_error != OK:
+		push_warning("NPC memory save could not be loaded: %s" % memory_error)
 	call_deferred("_bind_dialog_ui")
 	set_process(false)
 
@@ -55,6 +60,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _is_open and (not is_instance_valid(_active_source) or get_tree().current_scene != _bound_scene):
+		close_dialog()
+		return
 	_update_typewriter(delta)
 
 	if _next_page_indicator == null or not _next_page_indicator.visible:
@@ -74,20 +82,25 @@ func is_dialog_open() -> bool:
 	return _is_open
 
 func request_npc_dialog(source: Node) -> void:
+	if not is_instance_valid(source):
+		return
+	if _is_open:
+		close_dialog()
 	if not _bind_dialog_ui():
 		return
 
 	_start_dialog(source)
+	var generation: int = _dialog_generation
 	dialog_started.emit(source, "")
 	await get_tree().process_frame
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	if not _bind_dialog_ui():
 		close_dialog()
 		return
 
 	var backend_result := await _resolve_dialog_text_async(source, "")
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	_apply_dialog_result(backend_result)
 
@@ -120,7 +133,9 @@ func close_dialog() -> void:
 		return
 	_bind_dialog_ui()
 
-	var finished_source := _active_source
+	_dialog_generation += 1
+	_conversation.cancel()
+	var finished_source: Node = _active_source if is_instance_valid(_active_source) else null
 	_active_source = null
 	_active_text = ""
 	_active_pages.clear()
@@ -182,6 +197,8 @@ func _has_next_page() -> bool:
 	return _page_index + 1 < _active_pages.size()
 
 func _start_dialog(source: Node) -> void:
+	_dialog_generation += 1
+	_conversation.cancel()
 	_active_source = source
 	_active_text = ""
 	_active_pages.clear()
@@ -242,23 +259,35 @@ func _play_speech_sound_for_character(character: String, character_index: int) -
 		return
 	_speech_player.play_character(character, character_index)
 
-func _resolve_dialog_text_async(source: Node, player_message: String) -> Dictionary:
-	if source != null and source.has_method("get_backend_profile") and _backend_client != null:
-		var backend_profile: Dictionary = source.call("get_backend_profile") as Dictionary
-		if backend_profile is Dictionary and not backend_profile.is_empty():
-			var result: Dictionary = await _backend_client.request_dialog(backend_profile, player_message)
-			var response: String = result.get("response", "")
-			if not response.is_empty():
-				return {
-					"response": response.strip_edges().replace("\r\n", "\n"),
-					"replies": result.get("replies", []),
-				}
+func record_npc_event(profile: NpcProfile, event: String) -> void:
+	if profile == null or profile.npc_id.is_empty():
+		return
+	_conversation.store.record_event(profile, event)
+	var error: Error = _conversation.store.save_file()
+	if error != OK:
+		push_warning("NPC event could not be saved: %s" % error)
 
-	if source != null and source.has_method("get_dialog_text"):
-		var source_text := str(source.call("get_dialog_text")).strip_edges().replace("\r\n", "\n")
+func get_memory_store() -> NpcMemoryStore:
+	return _conversation.store
+
+func _resolve_dialog_text_async(source: Node, player_message: String) -> Dictionary:
+	if is_instance_valid(source) and source.has_method("get_npc_profile"):
+		var profile: NpcProfile = source.call("get_npc_profile")
+		if profile != null and not profile.npc_id.is_empty():
+			var current: Dictionary = source.call("get_cognitive_context")
+			var generation: int = _dialog_generation
+			var source_ref: WeakRef = weakref(source)
+			var still_current: Callable = func() -> bool:
+				return source_ref.get_ref() != null and _is_open and _active_source == source_ref.get_ref() \
+					and generation == _dialog_generation and get_tree().current_scene == _bound_scene
+			var result: Dictionary = await _conversation.request(
+				profile, current, player_message, _backend_client, still_current)
+			if not result.is_empty():
+				return result
+	if is_instance_valid(source) and source.has_method("get_dialog_text"):
+		var source_text: String = str(source.call("get_dialog_text")).strip_edges()
 		if not source_text.is_empty():
 			return {"response": source_text, "replies": []}
-
 	return {"response": PLACEHOLDER_DIALOG, "replies": []}
 
 func _apply_dialog_result(result: Dictionary) -> void:
@@ -337,7 +366,7 @@ func _bind_reply_buttons() -> void:
 			button.pressed.connect(_on_reply_button_pressed.bind(button_index))
 
 func _send_player_reply(player_message: String) -> void:
-	if not _is_open or _active_source == null:
+	if not _is_open or not is_instance_valid(_active_source) or _is_waiting_for_backend:
 		return
 	_clear_reply_ui()
 	_page_index = 0
@@ -348,8 +377,9 @@ func _send_player_reply(player_message: String) -> void:
 	_update_next_page_indicator()
 
 	var source := _active_source
+	var generation: int = _dialog_generation
 	var backend_result := await _resolve_dialog_text_async(source, player_message)
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	_apply_dialog_result(backend_result)
 

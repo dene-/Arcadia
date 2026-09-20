@@ -3,57 +3,36 @@ extends Node
 
 const CHAT_ENDPOINT: String = "http://127.0.0.1:3536/chat"
 
-## HTTP endpoint used by DialogManager to request generated NPC dialog.
 @export var chat_endpoint: String = CHAT_ENDPOINT
+@export var decision_endpoint: String = "http://127.0.0.1:3536/decide"
 
-var _http_request: HTTPRequest
+func request_decision(payload: Dictionary) -> Dictionary:
+	return await _request(decision_endpoint, payload)
 
-func _ready() -> void:
-	_ensure_http_request()
+func request_dialog(payload: Dictionary) -> Dictionary:
+	return await _request(chat_endpoint, payload)
 
-func request_dialog(profile: Dictionary, player_message: String = "") -> Dictionary:
-	_ensure_http_request()
-	if _http_request == null:
-		return {}
-
-	var payload := _build_payload(profile, player_message)
-	var error := _http_request.request(
-		chat_endpoint,
-		["Content-Type: application/json"],
-		HTTPClient.METHOD_POST,
-		JSON.stringify(payload)
-	)
+func _request(endpoint: String, payload: Dictionary) -> Dictionary:
+	# Independent requests prevent close/reopen from colliding with a pending HTTPRequest.
+	var request := HTTPRequest.new()
+	request.timeout = 45.0
+	request.body_size_limit = 98304
+	add_child(request)
+	var error: Error = request.request(endpoint, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, JSON.stringify(payload))
 	if error != OK:
+		request.queue_free()
 		push_warning("Dialog backend request failed to start: %s" % error)
 		return {}
-
-	var result: Array = await _http_request.request_completed
-	var response_code: int = result[1]
-	var response_body: PackedByteArray = result[3]
-	if response_code < 200 or response_code >= 300:
-		push_warning("Dialog backend returned HTTP %s" % response_code)
+	var result: Array = await request.request_completed
+	request.queue_free()
+	if result[0] != HTTPRequest.RESULT_SUCCESS or result[1] < 200 or result[1] >= 300:
+		push_warning("Dialog backend unavailable (HTTP %s)." % result[1])
 		return {}
-
-	return _parse_response_body(response_body)
-
-func _ensure_http_request() -> void:
-	if _http_request != null:
-		return
-
-	_http_request = HTTPRequest.new()
-	add_child(_http_request)
-
-func _build_payload(profile: Dictionary, player_message: String) -> Dictionary:
-	var payload: Dictionary = {
-		"npcData": JSON.stringify(profile),
-	}
-	if not player_message.is_empty():
-		payload["playerMessage"] = player_message
-	return payload
+	return _parse_response_body(result[3])
 
 func _parse_response_body(response_body: PackedByteArray) -> Dictionary:
-	var body_string: String = response_body.get_string_from_utf8().strip_edges()
-	var json := JSON.new()
-	if json.parse(body_string) == OK and json.data is Dictionary:
-		return json.data as Dictionary
-	return {}
+	var parser := JSON.new()
+	if parser.parse(response_body.get_string_from_utf8()) != OK:
+		return {}
+	return parser.data if parser.data is Dictionary else {}
