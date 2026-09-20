@@ -18,6 +18,7 @@ const INDICATOR_BOB_DISTANCE: float = 2.0
 const INDICATOR_BOB_SPEED: float = 4.0
 const INDICATOR_RIGHT_MARGIN: float = 5.0
 const INDICATOR_BOTTOM_MARGIN: float = 5.0
+const FAREWELL_HOLD_SECONDS: float = 1.5
 var _dialog_panel: Panel
 var _dialog_text: RichTextLabel
 var _next_page_indicator: Control
@@ -43,6 +44,8 @@ var _active_replies: Array[String] = []
 var _able_to_chat: bool = false
 var _is_open: bool = false
 var _is_waiting_for_backend: bool = false
+var _end_after_response: bool = false
+var _farewell_remaining: float = -1.0
 var _page_index: int = 0
 var _indicator_base_position: Vector2 = Vector2.ZERO
 
@@ -67,6 +70,11 @@ func _process(delta: float) -> void:
 	if _is_open and _active_source is BaseActor and _active_source.health <= 0:
 		close_dialog()
 		return
+	if _farewell_remaining >= 0.0:
+		_farewell_remaining -= delta
+		if _farewell_remaining <= 0.0:
+			close_dialog()
+			return
 	_update_typewriter(delta)
 
 	if _next_page_indicator == null or not _next_page_indicator.visible:
@@ -123,7 +131,7 @@ func advance_dialog() -> void:
 		return
 
 	if not _has_next_page():
-		if not _active_replies.is_empty() or _able_to_chat:
+		if not _end_after_response and (not _active_replies.is_empty() or _able_to_chat):
 			return
 		close_dialog()
 		return
@@ -147,6 +155,8 @@ func close_dialog() -> void:
 	_able_to_chat = false
 	_is_open = false
 	_is_waiting_for_backend = false
+	_end_after_response = false
+	_farewell_remaining = -1.0
 	_page_index = 0
 	if _dialog_text != null:
 		_dialog_text.text = ""
@@ -208,6 +218,8 @@ func _start_dialog(source: Node) -> void:
 	_active_pages.clear()
 	_active_replies.clear()
 	_able_to_chat = _source_is_able_to_chat(source)
+	_end_after_response = false
+	_farewell_remaining = -1.0
 	_page_index = 0
 	_is_waiting_for_backend = true
 	_dialog_text.text = LOADING_DIALOG
@@ -301,6 +313,8 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 
 func _apply_dialog_result(result: Dictionary) -> void:
 	_is_waiting_for_backend = false
+	_end_after_response = result.get("end_conversation", false) == true
+	_farewell_remaining = -1.0
 	_active_text = str(result.get("response", ""))
 	_active_replies = _get_replies_from_result(result)
 	_active_pages = _paginator.paginate(_active_text)
@@ -321,6 +335,12 @@ func _update_reply_ui() -> void:
 
 	var on_last_page := not _has_next_page()
 	var can_show := _is_open and not _is_waiting_for_backend and not _typewriter.is_revealing() and on_last_page
+	if _end_after_response:
+		if _chat_container != null:
+			_chat_container.hide()
+		if can_show and _farewell_remaining < 0.0:
+			_farewell_remaining = FAREWELL_HOLD_SECONDS
+		return
 
 	if can_show and not _able_to_chat and _replies_container != null and not _active_replies.is_empty():
 		var visible_reply_count: int = mini(_active_replies.size(), _reply_buttons.size())
@@ -375,7 +395,8 @@ func _bind_reply_buttons() -> void:
 			button.pressed.connect(_on_reply_button_pressed.bind(button_index))
 
 func _send_player_reply(player_message: String) -> void:
-	if not _is_open or not is_instance_valid(_active_source) or _is_waiting_for_backend:
+	if not _is_open or not is_instance_valid(_active_source) \
+		or _is_waiting_for_backend or _end_after_response:
 		return
 	_clear_reply_ui()
 	_page_index = 0

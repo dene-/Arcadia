@@ -53,6 +53,8 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 		var error: Error = save_callback.call() if save_callback.is_valid() else store.save_file()
 		if error != OK:
 			push_warning("NPC memory could not be saved: %s" % error)
+	# Only the assessed policy can end a completed exchange, never generated dialogue metadata.
+	result["end_conversation"] = policy.get("end_conversation", false)
 	return result
 
 func _is_current(generation: int, current_guard: Callable) -> bool:

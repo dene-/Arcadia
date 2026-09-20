@@ -140,6 +140,57 @@ test("uncertain choices cannot alter trust and probability 0.5 is not intensity"
   assert.equal(result.response_mode, "DEFENSIVE");
   assert.equal(result.remember, false);
 });
+test("farewell decisions require clear intent and can accompany other intents", () => {
+  for (const probability of [0.1, 0.5, 0.79, 0.8, 0.99]) {
+    const policy = decisionPolicy(answers({
+      interaction_intent: "FAREWELL",
+      should_end_conversation: probability,
+    }));
+    assert.equal(policy.end_conversation, probability >= 0.8);
+  }
+  const raw = threat();
+  raw.should_end_conversation.noul = 0.95;
+  assert.equal(decisionPolicy(raw).interaction_intent, "THREAT");
+  assert.equal(decisionPolicy(raw).end_conversation, true);
+  raw.should_end_conversation.noul = "yes";
+  assert.throws(() => decisionPolicy(raw));
+});
+test("farewell assessment reaches generation as policy with full player context", async (t) => {
+  for (const [message, probability] of [
+    ["Bye", 0.99],
+    ["See you tomorrow", 0.98],
+    ["I have to go", 0.95],
+    ["That is all, thanks", 0.9],
+    ["How do you say goodbye in Rekala?", 0.02],
+    ["Before I go, where is the inn?", 0.05],
+    ["I am not leaving yet", 0.01],
+  ]) {
+    // These are labeled mock decisions, not an evaluation of live model accuracy.
+    const post = await server(t, {
+      decide: async ({ state, questions }) => {
+        assert.equal(state.player.message, message);
+        assert.equal(state.context.recent_dialogue[0].text, "Need anything else?");
+        assert.equal(questions.should_end_conversation.type, "noul");
+        return { answers: answers({ should_end_conversation: probability }) };
+      },
+      generate: async ({ input, instructions }) => {
+        const data = JSON.parse(input[0].content);
+        assert.equal(data.policy.end_conversation, probability >= 0.8);
+        assert.match(instructions, /brief in-character farewell/);
+        return { output_text: JSON.stringify(dialogue({ response: "Take care." })) };
+      },
+    });
+    const body = request();
+    body.player.message = message;
+    body.context.recent_dialogue = [{ speaker: "npc", text: "Need anything else?" }];
+    const judgment = await post("/decide", body);
+    assert.equal(judgment.status, 200);
+    body.answers = judgment.body.answers;
+    const reply = await post("/chat", body);
+    assert.equal(reply.status, 200);
+    assert.equal(reply.body.response, "Take care.");
+  }
+});
 test("malformed Jev outputs are rejected before policy application", () => {
   for (const change of [
     (a) => delete a.trust_change,
@@ -462,7 +513,7 @@ test(
     const path = await mkdtemp(`${tmpdir()}/arcadia-http-test-`);
     t.after(() => rm(path, { recursive: true, force: true }));
     const listener = createApp({
-      decide: async ({ questions }) => ({
+      decide: async ({ questions, state }) => ({
         answers: questions.should_speak
           ? answers(
               {
@@ -473,13 +524,17 @@ test(
               },
               EVENT_QUESTIONS,
             )
-          : threat(),
+          : state.player.message === "See you tomorrow."
+            ? answers({ interaction_intent: "FAREWELL", should_end_conversation: 0.99 })
+            : threat(),
       }),
       generate: async (input) => ({
         output_text: JSON.stringify(
           input.text.format.name === "npc_reaction"
             ? { response: "Keep away!" }
-            : dialogue(),
+            : JSON.parse(input.input[0].content).policy.end_conversation
+              ? dialogue({ response: "Until tomorrow.", memory_writes: [] })
+              : dialogue(),
         ),
       }),
     }).listen(0, "127.0.0.1");

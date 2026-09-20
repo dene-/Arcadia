@@ -5,6 +5,7 @@ export const THRESHOLDS = Object.freeze({
   belief: 0.8,
   choice: 0.65,
   speak: 0.5,
+  end_conversation: 0.8,
 });
 export const RELATIONSHIP_SCALES = {
   familiarity:
@@ -56,6 +57,7 @@ export const QUESTIONS = {
       "What is the main intent of `player.message`, interpreted using recent dialogue? Choose OTHER when unclear.",
     criteria: {
       GREETING: "Greeting or small talk.",
+      FAREWELL: "Taking leave or ending this conversation now.",
       QUESTION: "Asking for information or recollection.",
       REQUEST: "Asking the NPC to do something.",
       THREAT: "Intimidation or intent to harm.",
@@ -66,6 +68,11 @@ export const QUESTIONS = {
       APOLOGY: "Apology or reconciliation.",
       OTHER: "No other intent clearly fits.",
     },
+  },
+  should_end_conversation: {
+    type: "noul",
+    instructions:
+      "Does `player.message`, interpreted with `context.recent_dialogue`, express that the player is ending this conversation now? Examples include 'bye', 'see you', 'I have to go', and 'that is all, thanks'. Judge meaning, not keywords. Quoting a farewell, asking how to say goodbye, saying 'do not leave', or 'before I go, where is the inn?' does not end the conversation yet. A farewell combined with a promise or threat can still end it. An NPC's refusal, mood, or previous farewell alone is not the player's intent to leave now.",
   },
   should_retrieve_memories: {
     type: "noul",
@@ -191,6 +198,8 @@ export function decisionPolicy(raw) {
     remember: answers.should_remember.noul >= THRESHOLDS.remember,
     retrieve: answers.should_retrieve_memories.noul >= THRESHOLDS.retrieve,
     update_belief: answers.should_update_belief.noul >= THRESHOLDS.belief,
+    end_conversation:
+      answers.should_end_conversation.noul >= THRESHOLDS.end_conversation,
     importance,
     emotional_intensity: answers.emotional_intensity.score / 4,
     interaction_intent: choice("interaction_intent", "OTHER"),

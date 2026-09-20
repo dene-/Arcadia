@@ -229,6 +229,8 @@ static func is_valid_policy(policy: Variant) -> bool:
 		return false
 	if policy.has("speak") and not policy.speak is bool:
 		return false
+	if policy.has("end_conversation") and not policy.end_conversation is bool:
+		return false
 	for key: String in ["remember", "retrieve", "update_belief"]:
 		if not policy.get(key) is bool:
 			return false

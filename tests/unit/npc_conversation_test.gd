@@ -91,12 +91,41 @@ func test_cancel_during_dialogue_drops_late_response() -> void:
 	conversation.persist = false
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
+	backend.policy["end_conversation"] = true
 	_start(conversation, backend)
 	conversation.cancel()
 	backend.dialogue_ready.emit()
 	assert_true(_result.is_empty())
 	assert_eq(conversation.store.turn, 0)
 	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue.size(), 0)
+	backend.free()
+
+func test_farewell_commits_response_before_returning_end_decision() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.policy["end_conversation"] = true
+	backend.result.response = "Until next time."
+	var result: Dictionary = await conversation.request(_profile(), {}, "See you.", backend)
+	assert_true(result.end_conversation)
+	var history: Array = conversation.store.snapshot("test_npc").recent_dialogue
+	assert_eq(history[0].text, "See you.")
+	assert_eq(history[1].text, "Until next time.")
+	backend.result = {}
+	result = await conversation.request(_profile(), {}, "Bye.", backend)
+	assert_true(result.is_empty(), "Failed dialogue must not trigger an exit")
+	backend.free()
+
+func test_generated_metadata_cannot_end_conversation() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.result["end_conversation"] = true
+	var result: Dictionary = await conversation.request(_profile(), {}, "Wait.", backend)
+	assert_false(result.end_conversation)
+	backend.policy["end_conversation"] = "yes"
+	result = await conversation.request(_profile(), {}, "Bye.", backend)
+	assert_true(result.is_empty(), "Malformed end decisions must be rejected")
 	backend.free()
 
 func test_retrieval_gate_and_failed_dialogue_do_not_change_memory() -> void:

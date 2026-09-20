@@ -20,6 +20,12 @@ func _run() -> void:
 	var succeeded: bool = not result.is_empty() and conversation.store.turn == 1 \
 		and state.recent_dialogue.size() == 2 and state.relationship.trust < 0.0 \
 		and state.memories.size() == profile.core_memories.size() + 1
+	var farewell: Dictionary = await conversation.request(profile, {}, "See you tomorrow.", backend)
+	state = conversation.store.snapshot(String(profile.npc_id))
+	succeeded = succeeded and farewell.get("end_conversation", false) \
+		and farewell.get("response") == "Until tomorrow." \
+		and state.recent_dialogue.size() == 4 \
+		and state.recent_dialogue.back().text == "Until tomorrow."
 	var event: Dictionary = {"text": "I saw the player hurt a villager.",
 		"sense": "sight", "player_involved": true, "speech_allowed": true}
 	var payload: Dictionary = {"protocol_version": 1,
