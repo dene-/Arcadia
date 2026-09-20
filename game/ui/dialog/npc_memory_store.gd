@@ -1,6 +1,8 @@
 class_name NpcMemoryStore
 extends RefCounted
 
+signal memories_admitted(npc_id: String, memories: Array)
+
 ## Save-owned cognition. Profiles are copied on first encounter, never mutated.
 const SAVE_VERSION: int = 1
 const MAX_HISTORY: int = 12
@@ -36,6 +38,27 @@ func ensure_npc(profile: NpcProfile) -> void:
 
 func snapshot(npc_id: String) -> Dictionary:
 	return _states.get(npc_id, {}).duplicate(true)
+
+## Called only after an actual social transfer. Repeated origin IDs cannot alter belief or trust.
+func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary) -> void:
+	ensure_npc(profile)
+	var state: Dictionary = _states[String(profile.npc_id)]
+	var id: String = "rumor:" + account.origin_id
+	for existing: Dictionary in state.memories:
+		if existing.id == id:
+			return
+	if account.player_involved:
+		state.relationship.trust = clampf(state.relationship.trust + policy.trust_player, -1, 1)
+	if not policy.remember:
+		return
+	var gist: String = "%s told me that %s reported: %s" % [account.source_name,
+		account.originator_name, account.text]
+	var memory: Dictionary = NpcMemory.create(id, "episodic", gist.substr(0, 500), "hearsay", turn)
+	memory.confidence = account.confidence
+	memory.importance = policy.importance
+	memory.topics = ["town", "news"]
+	memory.people = ["player"] if account.player_involved else []
+	state.memories.append(memory)
 
 func advance_time(turns: int = 1) -> void:
 	turn += maxi(turns, 0)
@@ -145,12 +168,15 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 			return view.id == memory.id):
 			memory.recall_count += 1
 			memory.last_recalled_turn = turn
+	var previous_count: int = state.memories.size()
 	if policy.remember:
 		for proposal: Variant in result.get("memory_writes", []):
 			_admit(state.memories, proposal, policy)
 	# Only consume the events included in this exchange, preserving any arriving in flight.
 	for event: Variant in consumed_events:
 		state.recent_events.erase(event)
+	if state.memories.size() > previous_count:
+		memories_admitted.emit(npc_id, state.memories.slice(previous_count).duplicate(true))
 	return true
 
 func to_save_data() -> Dictionary:

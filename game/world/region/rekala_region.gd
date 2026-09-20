@@ -9,6 +9,7 @@ const DRY_DETAILS: Array[Rect2i] = [Rect2i(72, 32, 16, 32), Rect2i(88, 32, 16, 3
 	Rect2i(104, 32, 16, 32), Rect2i(120, 32, 16, 32), Rect2i(72, 64, 24, 16)]
 @export var preview_seed: int = 274415
 @export var preview_in_editor: bool = true
+@export var town_life_enabled: bool = true
 @export_tool_button("Rebuild region preview") var rebuild_preview: Callable = rebuild
 var layout := RegionLayout.new()
 var generated: Node2D
@@ -51,6 +52,10 @@ func rebuild() -> void:
 	_build_forest(art)
 	_spawn_enemies()
 	if not Engine.is_editor_hint():
+		if town_life_enabled:
+			var life := TownLife.new()
+			life.name = "TownLife"
+			generated.add_child(life)
 		var player: Node2D = get_node("BasePlayer")
 		player.position = RegionLayout.PLAYER_SPAWN
 		var camera: Camera2D = player.get_node("Camera2D")

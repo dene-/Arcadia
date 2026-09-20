@@ -4,6 +4,7 @@ extends Node
 ## Independent event classification, with one worker per NPC and two requests at a time.
 signal progressed
 signal observation_assessed
+signal perception_classified(npc_id: String, event: Dictionary, policy: Dictionary)
 
 const MAX_WORKERS: int = 2
 const MAX_SPEECH_WORKERS: int = 2
@@ -88,6 +89,8 @@ func _process_npc(id: String, job: Dictionary) -> void:
 		if committed and policy.get("speak", false):
 			diagnostic.speech_result = "selected"
 		store.annotate_observation(id, int(event.id), diagnostic)
+		if committed:
+			perception_classified.emit(id, event, policy)
 		_save()
 		observation_assessed.emit()
 		if committed and policy.get("speak", false) and not _speaking.has(id):

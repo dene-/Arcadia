@@ -33,6 +33,8 @@ Combat perception also uses `/observe` for independent Jev assessments and `/rea
 
 ## Validation without API access
 
+Town life adds `POST /life/routine`, `/life/social`, `/life/listen` and `/life/say`. The first three use Jev; `/life/say` generates admitted NPC-to-NPC speech through the dialogue provider. Restart the server after updating these routes. See [Town life](../../docs/town_life.md) for ownership, persistence, provenance and debugging. NPC context includes the player identity (Den, male by default), neighbors, current routine, relationships and attributed rumors.
+
 ```bash
 npm test
 GODOT=/Applications/Godot.app/Contents/MacOS/Godot npm test

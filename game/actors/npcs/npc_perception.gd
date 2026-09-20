@@ -9,7 +9,7 @@ static func observe(observer: BaseNpc, victim: BaseActor, attacker: BaseActor,
 	var sees_victim: bool = can_see(observer, victim)
 	var sees_attacker: bool = is_instance_valid(attacker) and can_see(observer, attacker)
 	var event: Dictionary = {"sense": "sight", "player_involved": false, "text": ""}
-	var actor_name: String = attacker.get_perceived_name() if sees_attacker else "someone"
+	var actor_name: String = _recognized_name(observer, attacker) if sees_attacker else "someone"
 	if observer == victim:
 		event.sense = "touch"
 		event.text = "I was hurt by %s." % actor_name if sees_attacker \
@@ -18,12 +18,12 @@ static func observe(observer: BaseNpc, victim: BaseActor, attacker: BaseActor,
 	elif sees_victim:
 		var action: String = "kill" if fatal else "hurt"
 		if observer == attacker:
-			event.text = "I %s %s." % ["killed" if fatal else "hurt", victim.get_perceived_name()]
+			event.text = "I %s %s." % ["killed" if fatal else "hurt", _recognized_name(observer, victim)]
 		elif sees_attacker:
-			event.text = "I saw %s %s %s nearby." % [actor_name, action, victim.get_perceived_name()]
+			event.text = "I saw %s %s %s nearby." % [actor_name, action, _recognized_name(observer, victim)]
 		else:
 			event.text = "I saw %s %s nearby, but could not see who caused it." % [
-				victim.get_perceived_name(), "die" if fatal else "get hurt"]
+				_recognized_name(observer, victim), "die" if fatal else "get hurt"]
 		event.player_involved = victim.is_in_group("players") \
 			or (sees_attacker and attacker.is_in_group("players"))
 	elif observer.npc_data.hearing_radius > 0.0 and observer.global_position.distance_to(
@@ -33,6 +33,12 @@ static func observe(observer: BaseNpc, victim: BaseActor, attacker: BaseActor,
 	else:
 		return {}
 	return event
+
+static func _recognized_name(observer: BaseNpc, target: BaseActor) -> String:
+	if target is BaseNpc and observer.is_in_group(&"town_residents") \
+		and target.is_in_group(&"town_residents") and target.get_npc_profile() != null:
+		return target.get_npc_profile().profile_name
+	return target.get_perceived_name()
 
 static func can_see(observer: BaseNpc, target: BaseActor) -> bool:
 	if observer == target:

@@ -24,6 +24,7 @@ func _run_tests() -> void:
 	cognition.save_game.dead_npcs.clear()
 	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
 	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
+	cognition.backend.life_endpoint = "http://127.0.0.1:1/life"
 	var test_files := _discover_tests(TEST_ROOT)
 	test_files.sort()
 

@@ -1,4 +1,5 @@
 import express from "express";
+import { townLifeRoutes } from "./town-life.js";
 import {
   QUESTIONS,
   EVENT_QUESTIONS,
@@ -78,6 +79,7 @@ function validateObservation(body) {
 export function createApp({ decide, generate }) {
   const app = express();
   app.use(express.json({ limit: "96kb" }));
+  app.use("/life", townLifeRoutes({ decide, generate }));
   app.post("/decide", async (req, res) => {
     let request;
     try {

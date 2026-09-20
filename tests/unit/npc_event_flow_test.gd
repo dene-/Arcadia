@@ -35,7 +35,8 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	conversation.persist = false
 	await conversation.request(npc.get_npc_profile(), npc.get_cognitive_context(), "Hi.", dialogue)
 	assert_eq(dialogue.payload.context.current.current_concerns.size(), 1)
-	assert_true(dialogue.payload.context.current.current_concerns[0].text.contains("the player"))
+	assert_true(dialogue.payload.context.current.current_concerns[0].text.contains("Den"))
+	assert_eq(dialogue.payload.player.identity, {"id": "player", "name": "Den", "sex": "Male"})
 	assert_false(dialogue.payload.context.current.past_observations[0].has("decision"))
 	assert_true(dialogue.payload.context.relationship.trust < 0.0)
 	assert_true(dialogue.payload.context.memories.size() > 0)

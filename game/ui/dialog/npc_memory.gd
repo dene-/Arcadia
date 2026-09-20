@@ -3,7 +3,7 @@ extends RefCounted
 
 ## Explicit JSON-compatible memory contract shared by authored and runtime records.
 const TYPES: Array[String] = ["episodic", "semantic", "social", "prospective"]
-const SOURCES: Array[String] = ["authored", "player_claim", "npc_statement", "observed_event"]
+const SOURCES: Array[String] = ["authored", "player_claim", "npc_statement", "observed_event", "hearsay"]
 const TEXT_LISTS: Array[String] = ["topics", "people", "places", "sensory_cues",
 	"important_details", "weak_details", "known_gaps"]
 const UNIT_FIELDS: Array[String] = ["importance", "emotional_intensity", "vividness", "confidence"]

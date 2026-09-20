@@ -34,6 +34,12 @@ var _dialog_locked: bool = false
 
 @onready var pickup_area: Area2D = $PickupArea
 
+func get_perceived_name() -> String:
+	return player_data.display_name if player_data != null else "Den"
+
+func get_social_identity() -> Dictionary:
+	return player_data.social_identity() if player_data != null else {"id": "player", "name": "Den", "sex": "Male"}
+
 # -- Lifecycle ----------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:

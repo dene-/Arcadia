@@ -18,6 +18,7 @@ func _run() -> void:
 	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
 	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
+	world.town_life_enabled = false
 	root.add_child(world)
 	current_scene = world
 	for actor: Node in get_nodes_in_group("npc_observers") + get_nodes_in_group("enemies"):

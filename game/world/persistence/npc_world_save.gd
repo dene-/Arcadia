@@ -4,6 +4,7 @@ extends RefCounted
 ## One atomic save for named-NPC world facts and subjective memories.
 const SAVE_PATH: String = "user://npc_world.json"
 var memory := NpcMemoryStore.new()
+var life := TownLifeState.new()
 var dead_npcs: Array[String] = []
 ## Zero means an older save or a new world; the region assigns a seed once.
 var region_seed: int = 0
@@ -34,7 +35,8 @@ func load_file(legacy_path: String = NpcMemoryStore.SAVE_PATH) -> Error:
 	return OK
 
 func to_data() -> Dictionary:
-	return {"version": 1, "world": {"dead_npcs": dead_npcs.duplicate(), "region_seed": region_seed},
+	return {"version": 1, "world": {"dead_npcs": dead_npcs.duplicate(), "region_seed": region_seed,
+		"life": life.to_data()},
 		"memory": memory.to_save_data()}
 
 func from_data(data: Variant) -> bool:
@@ -56,10 +58,14 @@ func from_data(data: Variant) -> bool:
 	if float(saved_seed) != floorf(float(saved_seed)):
 		return false
 	# Memory loading is atomic too; neither half mutates if validation fails.
+	var validated_life := TownLifeState.new()
+	if not validated_life.from_data(data.world.get("life", validated_life.to_data())):
+		return false
 	if not memory.from_save_data(data.get("memory")):
 		return false
 	dead_npcs = validated
 	region_seed = int(saved_seed)
+	life.from_data(validated_life.to_data())
 	return true
 
 func save_file() -> Error:

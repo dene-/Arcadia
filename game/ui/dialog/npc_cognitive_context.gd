@@ -4,6 +4,8 @@ extends RefCounted
 ## A bounded view of working memory, separate from saved diagnostics and the archive.
 static func build(state: Dictionary, current: Dictionary) -> Dictionary:
 	var result: Dictionary = current.duplicate(true)
+	result.erase("routine_decision")
+	result.erase("social_status")
 	result.recent_events = state.recent_events.duplicate()
 	result.participants = ["player"]
 	result.past_observations = observations(state.observations)

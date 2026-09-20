@@ -22,6 +22,9 @@ var spawn_position: Vector2 = Vector2.ZERO
 var patrol_target: Vector2 = Vector2.ZERO
 var current_move_direction: Vector2 = Vector2.ZERO
 var state_time_remaining: float = 0.0
+var daily_routine: NpcDailyRoutine
+var life_context: Dictionary = {}
+var life_revision: int = 0
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _patrol_index: int = 0
@@ -124,10 +127,24 @@ func show_spoken_reaction(text: String) -> bool:
 
 func get_cognitive_context() -> Dictionary:
 	var profile: NpcProfile = get_npc_profile()
-	return {"location": profile.home if profile != null else "",
+	var current: Dictionary = {"location": profile.home if profile != null else "",
 		"activity": "conversation" if _dialog_locked else String(state_machine.get_current_state_name()),
 		"physical_state": "injured" if health < max_health else "well",
 		"sensory_cues": []}
+	current.merge(life_context.duplicate(true), true)
+	current.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
+	if is_inside_tree():
+		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
+		if not players.is_empty() and players[0] is BasePlayer:
+			current.player_identity = players[0].get_social_identity()
+	if daily_routine != null:
+		current.merge(daily_routine.context(global_position), true)
+		if _dialog_locked:
+			current.activity = "conversation (interrupted " + daily_routine.activity + ")"
+	return current
+
+func can_follow_routine() -> bool:
+	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run"]
 
 func is_able_to_chat() -> bool:
 	return npc_data != null and npc_data.able_to_chat
@@ -137,6 +154,7 @@ func enter_dialog() -> void:
 		return
 
 	_dialog_locked = true
+	life_revision += 1
 	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
 	if bubble != null:
 		bubble.hide()
@@ -174,6 +192,7 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 
 	set_health(health - maxi(amount, 0))
 	if amount > 0:
+		life_revision += 1
 		report_damage_event(source)
 	apply_hit_reaction(source)
 	set_hitbox_enabled(false)
@@ -336,11 +355,15 @@ func can_see_target(target: Node2D) -> bool:
 # -- Movement & patrol --------------------------------------------------------
 
 func choose_idle_duration() -> float:
+	if daily_routine != null:
+		return 0.2
 	var minimum := minf(npc_data.idle_duration_range.x, npc_data.idle_duration_range.y)
 	var maximum := maxf(npc_data.idle_duration_range.x, npc_data.idle_duration_range.y)
 	return _rng.randf_range(minimum, maximum)
 
 func choose_roam_state() -> StringName:
+	if daily_routine != null:
+		return &"walk"
 	if npc_data.roam_radius <= 0.0 and npc_data.patrol_points.is_empty():
 		return &"idle"
 
@@ -350,6 +373,8 @@ func choose_roam_state() -> StringName:
 	return &"walk"
 
 func choose_next_patrol_target() -> bool:
+	if daily_routine != null:
+		return daily_routine.has_route(global_position)
 	if not npc_data.patrol_points.is_empty():
 		patrol_target = to_global(npc_data.patrol_points[_patrol_index % npc_data.patrol_points.size()])
 		_patrol_index += 1
@@ -366,6 +391,11 @@ func choose_next_patrol_target() -> bool:
 	return true
 
 func get_move_direction_to_target() -> Vector2:
+	if daily_routine != null:
+		current_move_direction = daily_routine.direction(global_position)
+		if current_move_direction != Vector2.ZERO:
+			set_facing_from_direction(current_move_direction)
+		return current_move_direction
 	var offset := patrol_target - global_position
 	if offset.length() <= npc_data.arrival_distance:
 		current_move_direction = Vector2.ZERO
@@ -376,6 +406,8 @@ func get_move_direction_to_target() -> Vector2:
 	return current_move_direction
 
 func has_reached_patrol_target() -> bool:
+	if daily_routine != null:
+		return not daily_routine.has_route(global_position)
 	return global_position.distance_to(patrol_target) <= npc_data.arrival_distance
 
 func current_walk_speed() -> float:
@@ -424,9 +456,20 @@ func _get_property_list() -> Array[Dictionary]:
 		properties.append({"name": "runtime_memory_" + field,
 			"type": MEMORY_DEBUG_PROPERTIES[field],
 			"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
+	properties.append({"name": "Town Life", "type": TYPE_NIL,
+		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_life"})
+	properties.append({"name": "runtime_life", "type": TYPE_DICTIONARY,
+		"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
 	return properties
 
 func _get(property: StringName) -> Variant:
+	if property == &"runtime_life":
+		var snapshot: Dictionary = life_context.duplicate(true)
+		if daily_routine != null:
+			snapshot.merge(daily_routine.context(global_position), true)
+			snapshot.position = global_position
+			snapshot.destination_position = daily_routine.destination
+		return snapshot
 	if not String(property).begins_with("runtime_memory_"):
 		return null
 	var field: String = String(property).trim_prefix("runtime_memory_")

@@ -28,7 +28,8 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	var perception: Dictionary = NpcCognitiveContext.build(state, current)
 	var payload: Dictionary = {
 		"protocol_version": 1, "npc": {"id": id, "profile": profile.to_backend_profile()},
-		"player": {"message": message},
+		"player": {"message": message, "identity": current.get("player_identity",
+			preload("res://game/resources/actors/player_data.tres").social_identity())},
 		"context": {"current": perception, "relationship": state.relationship,
 			"recent_dialogue": state.recent_dialogue, "memories": []},
 	}

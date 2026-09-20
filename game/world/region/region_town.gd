@@ -20,8 +20,13 @@ func build(parent: Node2D, spawn_actors: bool) -> void:
 			var npc: BaseNpc = NPC.instantiate()
 			npc.name = String(home.job).capitalize()
 			npc.npc_data = data.duplicate()
+			npc.npc_data.profile = data.profile.duplicate(true)
+			var save: NpcWorldSave = parent.get_node("/root/NpcCognition").save_game
+			NpcTemperament.apply(npc.npc_data.profile, save.life.personality_for(
+				String(data.profile.npc_id), save.region_seed))
 			npc.npc_data.roam_radius = 12.0
 			npc.position = foot + Vector2(0, 24)
+			npc.add_to_group(&"town_residents")
 			parent.add_child(npc)
 		else:
 			RegionArt.actor_preview(parent, data, foot + Vector2(0, 24), home.job)

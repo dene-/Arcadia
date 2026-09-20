@@ -7,6 +7,12 @@ const CHAT_ENDPOINT: String = "http://127.0.0.1:3536/chat"
 @export var decision_endpoint: String = "http://127.0.0.1:3536/decide"
 @export var observation_endpoint: String = "http://127.0.0.1:3536/observe"
 @export var reaction_endpoint: String = "http://127.0.0.1:3536/react"
+@export var life_endpoint: String = "http://127.0.0.1:3536/life"
+
+func request_life(kind: String, payload: Dictionary) -> Dictionary:
+	if not kind in ["routine", "social", "listen", "say"]:
+		return {}
+	return await _request(life_endpoint + "/" + kind, payload)
 
 func request_observation(payload: Dictionary) -> Dictionary:
 	return await _request(observation_endpoint, payload)
