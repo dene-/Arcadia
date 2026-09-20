@@ -1,9 +1,18 @@
 import express from "express";
-import { QUESTIONS, decisionPolicy } from "./npc-decisions.js";
+import {
+  QUESTIONS,
+  EVENT_QUESTIONS,
+  RELATIONSHIP_SCALES,
+  decisionPolicy,
+  observationPolicy,
+} from "./npc-decisions.js";
 import {
   COGNITIVE_PROMPT,
   DIALOGUE_FORMAT,
   parseDialogue,
+  REACTION_PROMPT,
+  REACTION_FORMAT,
+  parseReaction,
 } from "./dialogue.js";
 function validateRequest(body) {
   if (
@@ -51,6 +60,21 @@ function validateRequest(body) {
     throw new Error("Invalid events");
   return body;
 }
+function validateObservation(body) {
+  const request = validateRequest(body);
+  const event = request.event;
+  if (
+    !event ||
+    typeof event.text !== "string" ||
+    !event.text.trim() ||
+    event.text.length > 500 ||
+    !["sight", "hearing", "touch"].includes(event.sense) ||
+    typeof event.player_involved !== "boolean" ||
+    typeof event.speech_allowed !== "boolean"
+  )
+    throw new Error("Invalid observation");
+  return request;
+}
 export function createApp({ decide, generate }) {
   const app = express();
   app.use(express.json({ limit: "96kb" }));
@@ -64,6 +88,7 @@ export function createApp({ decide, generate }) {
     try {
       const state = {
         ...request,
+        relationship_scales: RELATIONSHIP_SCALES,
         context: { ...request.context, memories: [] },
       };
       const result = await decide({ state, questions: QUESTIONS });
@@ -73,6 +98,70 @@ export function createApp({ decide, generate }) {
       });
     } catch {
       res.status(503).json({ error: "NPC decision service unavailable." });
+    }
+  });
+  app.post("/observe", async (req, res) => {
+    let request;
+    try {
+      request = validateObservation(req.body);
+    } catch {
+      return res.status(400).json({ error: "Invalid observation request." });
+    }
+    try {
+      const state = {
+        ...request,
+        relationship_scales: RELATIONSHIP_SCALES,
+        context: { ...request.context, memories: [] },
+      };
+      const result = await decide({ state, questions: EVENT_QUESTIONS });
+      res.json({
+        answers: result.answers,
+        policy: observationPolicy(
+          result.answers,
+          request.event,
+          request.npc.profile.cognition,
+        ),
+      });
+    } catch {
+      res.status(503).json({ error: "NPC observation service unavailable." });
+    }
+  });
+  app.post("/react", async (req, res) => {
+    let request, policy;
+    try {
+      request = validateObservation(req.body);
+      policy = observationPolicy(
+        request.answers,
+        request.event,
+        request.npc.profile.cognition,
+      );
+    } catch {
+      return res.status(400).json({ error: "Invalid reaction request." });
+    }
+    if (!policy.speak) return res.json({ response: "" });
+    try {
+      const response = await generate({
+        instructions: REACTION_PROMPT,
+        input: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              npc: request.npc,
+              event: request.event,
+              context: request.context,
+              policy,
+              relationship_scales: RELATIONSHIP_SCALES,
+            }),
+          },
+        ],
+        text: { format: REACTION_FORMAT },
+        store: false,
+      });
+      if (response.status && response.status !== "completed")
+        throw new Error("Incomplete reaction");
+      res.json(parseReaction(response.output_text));
+    } catch {
+      res.status(503).json({ error: "NPC reaction service unavailable." });
     }
   });
   app.post("/chat", async (req, res) => {
@@ -94,6 +183,7 @@ export function createApp({ decide, generate }) {
               player: request.player,
               context: request.context,
               policy,
+              relationship_scales: RELATIONSHIP_SCALES,
             }),
           },
         ],

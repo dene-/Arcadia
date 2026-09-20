@@ -8,10 +8,13 @@ extends Resource
 @export_range(0.0, 1.0) var emotional_retention: float = 0.7
 @export_range(0.0, 1.0) var name_recall: float = 0.5
 @export_range(0.0, 1.0) var sensory_association: float = 0.5
+## Tendency to voice a spontaneous reaction, interpreted with personality and current danger.
+@export_range(0.0, 1.0) var verbal_reactivity: float = 0.5
 
 func to_data() -> Dictionary:
 	return {
 		"attention": attention, "factual_recall": factual_recall,
 		"social_recall": social_recall, "emotional_retention": emotional_retention,
 		"name_recall": name_recall, "sensory_association": sensory_association,
+		"verbal_reactivity": verbal_reactivity,
 	}

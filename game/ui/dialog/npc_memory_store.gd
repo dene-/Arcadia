@@ -31,7 +31,8 @@ func ensure_npc(profile: NpcProfile) -> void:
 		if NpcMemory.is_valid(legacy):
 			memories.append(legacy)
 	_states[id] = {"recent_dialogue": [], "memories": memories,
-		"relationship": NpcRelationshipState.initial(), "recent_events": []}
+		"relationship": NpcRelationshipState.initial(), "recent_events": [],
+		"observations": [], "next_observation_id": 1}
 
 func snapshot(npc_id: String) -> Dictionary:
 	return _states.get(npc_id, {}).duplicate(true)
@@ -49,6 +50,62 @@ func record_event(profile: NpcProfile, event: String) -> void:
 	events.append(event.substr(0, 500))
 	if events.size() > 8:
 		events.pop_front()
+
+## Every perceived event enters short-term memory, independently of dialogue.
+func record_observation(profile: NpcProfile, event: Dictionary) -> void:
+	if profile == null or profile.npc_id.is_empty():
+		return
+	if not event.get("text") is String or event.text.is_empty() or event.text.length() > 500 \
+		or not event.get("sense") in ["sight", "hearing", "touch"] \
+		or not event.get("player_involved") is bool:
+		return
+	ensure_npc(profile)
+	var state: Dictionary = _states[String(profile.npc_id)]
+	var observation: Dictionary = event.duplicate(true)
+	observation.id = state.next_observation_id
+	observation.created_at = int(Time.get_unix_time_from_system())
+	observation.status = "pending"
+	observation.decision = {}
+	state.next_observation_id += 1
+	state.observations.append(observation)
+	while state.observations.size() > 8:
+		state.observations.pop_front()
+
+func pending_observations(npc_id: String) -> Array[Dictionary]:
+	var pending: Array[Dictionary] = []
+	for observation: Dictionary in _states.get(npc_id, {}).get("observations", []):
+		if observation.status == "pending":
+			pending.append(observation.duplicate(true))
+	return pending
+
+func commit_observation(npc_id: String, observation_id: int, policy: Dictionary) -> bool:
+	var state: Dictionary = _states.get(npc_id, {})
+	for observation: Dictionary in state.get("observations", []):
+		if observation.id != observation_id or observation.status != "pending":
+			continue
+		if not is_valid_policy(policy):
+			observation.status = "unavailable"
+			return false
+		observation.status = "classified"
+		observation.decision = policy.duplicate(true)
+		advance_time()
+		# Hearing noise alone cannot identify or change feelings toward the player.
+		if observation.player_involved and observation.sense != "hearing":
+			state.relationship = NpcRelationshipState.changed(state.relationship, policy.relationship_delta)
+		if policy.remember:
+			_admit(state.memories, {"type": "episodic", "source": "observed_event",
+				"gist": observation.text, "topics": ["combat"],
+				"sensory_cues": ["sounds of fighting"] if observation.sense == "hearing" else []}, policy)
+		return true
+	return false
+
+func record_spoken_reaction(npc_id: String, text: String) -> void:
+	if not _states.has(npc_id):
+		return
+	var history: Array = _states[npc_id].recent_dialogue
+	history.append({"speaker": "npc", "text": text})
+	while history.size() > MAX_HISTORY:
+		history.pop_front()
 
 ## Game code resolves intentions; model prose never completes world objectives.
 func complete_intention(npc_id: String, memory_id: String) -> bool:
@@ -109,6 +166,8 @@ func from_save_data(data: Variant) -> bool:
 		if not _valid_history(state.get("recent_dialogue")) \
 			or not state.get("memories") is Array or not _valid_events(state.get("recent_events")):
 			return false
+		if not _valid_observations(state.get("observations", []), state.get("next_observation_id", 1)):
+			return false
 		var ids: Dictionary = {}
 		for memory: Variant in state.memories:
 			if not NpcMemory.is_valid(memory) or ids.has(memory.id):
@@ -117,6 +176,12 @@ func from_save_data(data: Variant) -> bool:
 			if memory.id.begins_with("mem:") and int(memory.id.trim_prefix("mem:")) >= int(data.next_memory_id):
 				return false
 	_states = data.npcs.duplicate(true)
+	# Existing version-1 saves gain the optional observation fields without losing memories.
+	for state: Dictionary in _states.values():
+		if not state.has("observations"):
+			state.observations = []
+		if not state.has("next_observation_id"):
+			state.next_observation_id = 1
 	turn = int(data.turn)
 	_next_memory_id = int(data.next_memory_id)
 	return true
@@ -153,6 +218,8 @@ func save_file(path: String = SAVE_PATH) -> Error:
 
 static func is_valid_policy(policy: Variant) -> bool:
 	if not policy is Dictionary:
+		return false
+	if policy.has("speak") and not policy.speak is bool:
 		return false
 	for key: String in ["remember", "retrieve", "update_belief"]:
 		if not policy.get(key) is bool:
@@ -223,5 +290,28 @@ func _valid_events(value: Variant) -> bool:
 		return false
 	for event: Variant in value:
 		if not event is String or event.length() > 500:
+			return false
+	return true
+
+func _valid_observations(value: Variant, next_id: Variant) -> bool:
+	if not value is Array or value.size() > 8 or not NpcMemory.is_integer(next_id) or next_id < 1:
+		return false
+	var ids: Array[int] = []
+	for observation: Variant in value:
+		if not observation is Dictionary or not NpcMemory.is_integer(observation.get("id")):
+			return false
+		if observation.id < 1 or observation.id >= next_id or int(observation.id) in ids:
+			return false
+		ids.append(int(observation.id))
+		if not observation.get("text") is String or observation.text.is_empty() \
+			or observation.text.length() > 500 or not observation.get("player_involved") is bool \
+			or not observation.get("sense") in ["sight", "hearing", "touch"] \
+			or not observation.get("status") in ["pending", "classified", "unavailable"]:
+			return false
+		var timestamp: Variant = observation.get("created_at")
+		if not (timestamp is float or timestamp is int) or not is_finite(float(timestamp)):
+			return false
+		if not observation.get("decision") is Dictionary or \
+			(observation.status == "classified" and not is_valid_policy(observation.decision)):
 			return false
 	return true

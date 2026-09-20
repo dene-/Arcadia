@@ -4,7 +4,17 @@ export const THRESHOLDS = Object.freeze({
   retrieve: 0.5,
   belief: 0.8,
   choice: 0.65,
+  speak: 0.75,
 });
+export const RELATIONSHIP_SCALES = {
+  familiarity:
+    "0 = stranger, 1 = very familiar; familiarity does not imply trust or liking.",
+  trust: "-1 = distrust, 0 = neutral, 1 = trust.",
+  respect: "-1 = contempt, 0 = neutral, 1 = respect.",
+  affection: "-1 = dislike, 0 = neutral, 1 = affection.",
+  fear: "0 = no fear of the player, 1 = intense fear of the player.",
+  suspicion: "0 = no suspicion of the player, 1 = intense suspicion.",
+};
 const direction = {
   NEGATIVE: "Reduce this disposition toward the player.",
   UNCHANGED: "No meaningful evidence for changing this disposition.",
@@ -84,18 +94,52 @@ export const QUESTIONS = {
 for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
   QUESTIONS[`${name}_change`] = {
     type: "choice",
-    instructions: `How should this interaction change the NPC's ${name} toward the player? Evaluate only new evidence in the current message and fresh events; history is context, not another reason to apply an old change. A claim of a gift or deed is not proof it occurred.`,
+    instructions: `How should this interaction change the NPC's ${name} toward the player? Evaluate only new evidence in the current message and fresh events; history and context.current.past_observations have already been assessed and must not apply an old change again. Interpret values using relationship_scales. A claim of a gift or deed is not proof it occurred.`,
     criteria: direction,
+  };
+}
+export const EVENT_QUESTIONS = {
+  response_mode: {
+    ...QUESTIONS.response_mode,
+    instructions:
+      "Which response style fits this NPC's reaction to the NEW perception in event.text? Use identity, cognition, current danger and existing relationship, interpreted using relationship_scales.",
+  },
+  should_remember: {
+    type: "noul",
+    instructions:
+      "Does this NPC's NEW perception in `event.text` deserve lasting memory, given npc.profile, cognition, goals and relationship? Judge what they perceived, not hidden world facts. Past observations have already been assessed. Mere distant noise often remains short-term; personally consequential violence may matter greatly.",
+  },
+  memory_importance: {
+    ...QUESTIONS.memory_importance,
+    instructions:
+      "How important is the NEW perception in event.text to this NPC over time, given their identity, cognition and relationship?",
+  },
+  emotional_intensity: {
+    ...QUESTIONS.emotional_intensity,
+    instructions:
+      "How emotionally affecting is event.text to this NPC, given npc.profile, cognition and context.relationship?",
+  },
+  should_speak: {
+    type: "noul",
+    instructions:
+      "Would this NPC spontaneously say a short audible reaction to event.text right now? Consider npc.profile.personality, cognition.attention, cognition.verbal_reactivity, current danger and relationship. Silence is normal for minor, repetitive or distant events. Hurt, shock, relief or a personally meaningful event can provoke speech. Do not speak merely because an event was noticed. event.speech_allowed must be true; 0 verbal_reactivity means remain silent.",
+  },
+};
+for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
+  EVENT_QUESTIONS[`${name}_change`] = {
+    type: "choice",
+    criteria: direction,
+    instructions: `How should the NEW perception in event.text change this NPC's ${name} toward the player? Use identity, cognition, existing feelings and relationship_scales. Distinguish attacking a civilian from fighting a hostile creature; neither automatically proves motives or earns gratitude. If event.player_involved is false or the NPC only heard unidentifiable fighting, choose UNCHANGED. Past observations are context, not another reason to apply an old change.`,
   };
 }
 function unit(value) {
   if (!Number.isFinite(value) || value < 0 || value > 1)
     throw new Error("Invalid probability");
 }
-export function validateAnswers(answers) {
+export function validateAnswers(answers, questions = QUESTIONS) {
   if (!answers || typeof answers !== "object" || Array.isArray(answers))
     throw new Error("Missing decisions");
-  for (const [id, question] of Object.entries(QUESTIONS)) {
+  for (const [id, question] of Object.entries(questions)) {
     const answer = answers[id];
     if (!answer || answer.type !== question.type)
       throw new Error(`Invalid decision: ${id}`);
@@ -152,5 +196,36 @@ export function decisionPolicy(raw) {
     interaction_intent: choice("interaction_intent", "OTHER"),
     response_mode: choice("response_mode", "UNCERTAIN"),
     relationship_delta: relationshipDelta,
+  };
+}
+
+export function observationPolicy(raw, event, cognition = {}) {
+  const answers = validateAnswers(raw, EVENT_QUESTIONS);
+  const importance = answers.memory_importance.score / 4;
+  const identifiedPlayer = event.player_involved && event.sense !== "hearing";
+  const relationship_delta = { familiarity: identifiedPlayer ? 0.01 : 0 };
+  for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
+    const answer = answers[`${name}_change`];
+    const sign =
+      identifiedPlayer && answer.confidence >= THRESHOLDS.choice
+        ? { POSITIVE: 1, NEGATIVE: -1, UNCHANGED: 0 }[answer.choice]
+        : 0;
+    relationship_delta[name] = sign * (0.02 + importance * 0.08);
+  }
+  return {
+    remember: answers.should_remember.noul >= THRESHOLDS.remember,
+    retrieve: false,
+    update_belief: false,
+    importance,
+    emotional_intensity: answers.emotional_intensity.score / 4,
+    response_mode:
+      answers.response_mode.confidence >= THRESHOLDS.choice
+        ? answers.response_mode.choice
+        : "NEUTRAL",
+    relationship_delta,
+    speak:
+      event.speech_allowed === true &&
+      cognition.verbal_reactivity !== 0 &&
+      answers.should_speak.noul >= THRESHOLDS.speak,
   };
 }

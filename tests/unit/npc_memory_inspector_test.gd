@@ -44,7 +44,7 @@ func test_inspection_does_not_initialize_or_serialize_runtime_state() -> void:
 			assert_true(property.usage & PROPERTY_USAGE_EDITOR != 0)
 			assert_true(property.usage & PROPERTY_USAGE_READ_ONLY != 0)
 			assert_eq(property.usage & PROPERTY_USAGE_STORAGE, 0)
-	assert_eq(count, 7)
+	assert_eq(count, 8)
 	var packed := PackedScene.new()
 	assert_eq(packed.pack(_npc), OK)
 	var state: SceneState = packed.get_state()

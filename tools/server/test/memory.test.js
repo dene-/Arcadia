@@ -2,12 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { QUESTIONS, decisionPolicy } from "../src/npc-decisions.js";
+import {
+  QUESTIONS,
+  EVENT_QUESTIONS,
+  decisionPolicy,
+} from "../src/npc-decisions.js";
 import { createApp } from "../src/app.js";
 
-function answers(overrides = {}) {
+function answers(overrides = {}, questions = QUESTIONS) {
   return Object.fromEntries(
-    Object.entries(QUESTIONS).map(([id, q]) => {
+    Object.entries(questions).map(([id, q]) => {
       const value =
         overrides[id] ??
         (q.type === "noul"
@@ -186,6 +190,14 @@ test("decision stage excludes archive; dialogue receives updated state and recal
   });
   const body = request();
   body.context.memories = [{ id: "core:one", gist: "visible gist" }];
+  body.context.relationship = {
+    familiarity: 0.7,
+    trust: 0.2,
+    respect: 0.4,
+    affection: -0.5,
+    fear: 0.8,
+    suspicion: 0.6,
+  };
   const decision = await post("/decide", body);
   assert.equal(decision.status, 200);
   assert.deepEqual(seenDecision.state.context.memories, []);
@@ -201,6 +213,106 @@ test("decision stage excludes archive; dialogue receives updated state and recal
   assert.equal(prompt.policy.response_mode, "DEFENSIVE");
   assert.ok(prompt.context.relationship.trust < 0);
   assert.deepEqual(prompt.context.memories, body.context.memories);
+  assert.deepEqual(prompt.context.relationship, body.context.relationship);
+  assert.equal(seenDecision.state.context.relationship.affection, -0.5);
+  assert.equal(seenDecision.state.context.relationship.fear, 0.8);
+  for (const field of [
+    "familiarity",
+    "trust",
+    "respect",
+    "affection",
+    "fear",
+    "suspicion",
+  ])
+    assert.equal(typeof prompt.relationship_scales[field], "string");
+});
+
+test("observations classify independently of dialogue and cannot blame an unseen player", async (t) => {
+  let seen,
+    generations = 0;
+  const post = await server(t, {
+    decide: async (input) => {
+      seen = input;
+      return {
+        answers: answers(
+          {
+            should_remember: 0.93,
+            memory_importance: 3,
+            emotional_intensity: 3,
+            trust_change: "NEGATIVE",
+            should_speak: 0.9,
+          },
+          EVENT_QUESTIONS,
+        ),
+      };
+    },
+    generate: async () => {
+      generations++;
+      return { output_text: '{"response":"Keep away!”"}' };
+    },
+  });
+  const body = request();
+  body.event = {
+    text: "I heard fighting nearby.",
+    sense: "hearing",
+    player_involved: true,
+    speech_allowed: false,
+  };
+  const heard = await post("/observe", body);
+  assert.equal(heard.status, 200);
+  assert.equal(heard.body.policy.remember, true);
+  assert.ok(
+    Object.values(heard.body.policy.relationship_delta).every(
+      (value) => value === 0,
+    ),
+  );
+  assert.equal(heard.body.policy.speak, false);
+  assert.equal(generations, 0);
+  assert.deepEqual(seen.context, undefined);
+  assert.equal(seen.state.event.text, body.event.text);
+  body.answers = heard.body.answers;
+  assert.equal((await post("/react", body)).body.response, "");
+  assert.equal(generations, 0);
+  body.event.sense = "sight";
+  body.event.speech_allowed = true;
+  body.event.text = "I saw the player attack someone.";
+  const seenEvent = await post("/observe", body);
+  assert.ok(seenEvent.body.policy.relationship_delta.trust < 0);
+  body.answers = seenEvent.body.answers;
+  const spoken = await post("/react", body);
+  assert.equal(spoken.status, 200);
+  assert.equal(spoken.body.response, 'Keep away!"');
+  assert.equal(generations, 1);
+  body.npc.profile.cognition = { verbal_reactivity: 0 };
+  assert.equal((await post("/react", body)).body.response, "");
+  assert.equal(generations, 1);
+});
+
+test("invalid event data, failed classifiers and oversized reactions fail cleanly", async (t) => {
+  let calls = 0;
+  const post = await server(t, {
+    decide: async () => {
+      calls++;
+      throw new Error("secret provider error");
+    },
+    generate: async () => ({
+      output_text: JSON.stringify({ response: "x".repeat(161) }),
+    }),
+  });
+  const body = request();
+  assert.equal((await post("/observe", body)).status, 400);
+  assert.equal(calls, 0);
+  body.event = {
+    text: "I was hurt.",
+    sense: "touch",
+    player_involved: true,
+    speech_allowed: true,
+  };
+  const result = await post("/observe", body);
+  assert.equal(result.status, 503);
+  assert.ok(!JSON.stringify(result).includes("secret"));
+  body.answers = answers({ should_speak: 0.9 }, EVENT_QUESTIONS);
+  assert.equal((await post("/react", body)).status, 503);
 });
 test("unsupported observations, ungated beliefs and hidden recall IDs are dropped", async (t) => {
   const post = await server(t, {
@@ -348,8 +460,26 @@ test(
     const path = await mkdtemp(`${tmpdir()}/arcadia-http-test-`);
     t.after(() => rm(path, { recursive: true, force: true }));
     const listener = createApp({
-      decide: async () => ({ answers: threat() }),
-      generate: async () => ({ output_text: JSON.stringify(dialogue()) }),
+      decide: async ({ questions }) => ({
+        answers: questions.should_speak
+          ? answers(
+              {
+                should_remember: 0.93,
+                memory_importance: 3,
+                trust_change: "NEGATIVE",
+                should_speak: 0.9,
+              },
+              EVENT_QUESTIONS,
+            )
+          : threat(),
+      }),
+      generate: async (input) => ({
+        output_text: JSON.stringify(
+          input.text.format.name === "npc_reaction"
+            ? { response: "Keep away!" }
+            : dialogue(),
+        ),
+      }),
     }).listen(0, "127.0.0.1");
     await once(listener, "listening");
     t.after(() => {

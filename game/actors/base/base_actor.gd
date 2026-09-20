@@ -82,6 +82,18 @@ func set_health(next_health: int) -> void:
 	health = clamped_health
 	_emit_health_changed()
 
+func get_perceived_name() -> String:
+	return "the player" if is_in_group("players") else "someone"
+
+## Deliver successful damage once, while the participants still exist in the world.
+func report_damage_event(source: Area2D) -> void:
+	var attacker: BaseActor
+	if is_instance_valid(source):
+		var source_owner: Variant = source.get_meta("owner", null)
+		if is_instance_valid(source_owner):
+			attacker = source_owner as BaseActor
+	get_tree().call_group(&"npc_observers", "perceive_combat_event", self, attacker, health <= 0)
+
 func play_animation(animation_name: StringName, restart: bool = false, speed_scale: float = 1.0) -> void:
 	var resolved_animation := resolve_animation_name(animation_name)
 	if resolved_animation.is_empty():

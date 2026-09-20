@@ -12,7 +12,7 @@ const WALK_ANIMATION_NAME: StringName = &"walk"
 const MEMORY_DEBUG_PROPERTIES: Dictionary[String, int] = {
 	"npc_id": TYPE_STRING, "status": TYPE_STRING, "turn": TYPE_INT,
 	"memories": TYPE_ARRAY, "recent_dialogue": TYPE_ARRAY,
-	"relationship": TYPE_DICTIONARY, "recent_events": TYPE_ARRAY,
+	"relationship": TYPE_DICTIONARY, "recent_events": TYPE_ARRAY, "observations": TYPE_ARRAY,
 }
 
 ## Data resource containing movement, combat, AI, interaction, and animation tuning.
@@ -32,6 +32,7 @@ var _target: Node2D
 var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
+var _reaction_cooldown_until: int = 0
 
 @onready var blood_particles: CPUParticles2D = $BloodParticles
 @onready var interaction_area: Area2D = $InteractionArea
@@ -62,6 +63,11 @@ func _ready() -> void:
 	interaction_area.monitorable = npc_data.interaction_enabled
 
 	state_machine.initialize(self)
+	if get_npc_profile() != null and not get_npc_profile().npc_id.is_empty():
+		add_to_group(&"npc_observers")
+		var manager: Node = get_node_or_null("/root/DialogManager")
+		if manager != null:
+			manager.call("resume_npc_observations", self)
 
 # -- Dialog & interaction -----------------------------------------------------
 
@@ -85,6 +91,38 @@ func get_backend_profile() -> Dictionary:
 func get_npc_profile() -> NpcProfile:
 	return npc_data.profile if npc_data != null else null
 
+func get_perceived_name() -> String:
+	var profile: NpcProfile = get_npc_profile()
+	if profile != null:
+		return "a person"
+	return "a hostile creature" if npc_data != null and npc_data.ai_enabled else "a creature"
+
+func perceive_combat_event(victim: BaseActor, attacker: BaseActor, fatal: bool) -> void:
+	var observation: Dictionary = NpcPerception.observe(self, victim, attacker, fatal)
+	if observation.is_empty():
+		return
+	var manager: Node = get_node_or_null("/root/DialogManager")
+	if manager != null:
+		manager.call("observe_npc_event", self, observation)
+
+func can_speak_reaction() -> bool:
+	return health > 0 and not _dialog_locked and Time.get_ticks_msec() >= _reaction_cooldown_until
+
+func reserve_spoken_reaction() -> bool:
+	if not can_speak_reaction():
+		return false
+	_reaction_cooldown_until = Time.get_ticks_msec() + int(npc_data.reaction_cooldown * 1000.0)
+	return true
+
+func show_spoken_reaction(text: String) -> bool:
+	if health <= 0 or _dialog_locked:
+		return false
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble == null:
+		return false
+	bubble.call("say", text)
+	return true
+
 func get_cognitive_context() -> Dictionary:
 	var profile: NpcProfile = get_npc_profile()
 	return {"location": profile.home if profile != null else "",
@@ -99,6 +137,9 @@ func enter_dialog() -> void:
 		return
 
 	_dialog_locked = true
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble != null:
+		bubble.hide()
 	set_hitbox_enabled(false)
 	clear_hit_reaction()
 	state_machine.transition_to(&"interaction", {}, true)
@@ -128,14 +169,12 @@ func request_attack() -> void:
 	state_machine.transition_to(&"attack", {}, true)
 
 func take_damage(amount: int = 1, source: Area2D = null) -> void:
-	if state_machine.is_in_state(&"dead"):
+	if health <= 0 or state_machine.is_in_state(&"dead"):
 		return
 
-	if amount > 0:
-		var manager: Node = get_node_or_null("/root/DialogManager")
-		if manager != null:
-			manager.call("record_npc_event", get_npc_profile(), "I was physically injured.")
 	set_health(health - maxi(amount, 0))
+	if amount > 0:
+		report_damage_event(source)
 	apply_hit_reaction(source)
 	set_hitbox_enabled(false)
 	if health <= 0:
@@ -153,6 +192,9 @@ func die() -> void:
 		return
 
 	_pending_death = false
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble != null:
+		bubble.hide()
 	_spawn_drops()
 	set_hitbox_enabled(false)
 	clear_hit_reaction()

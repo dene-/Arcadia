@@ -27,6 +27,8 @@ The previous account-specific stored prompt is replaced by the versioned, univer
 
 Both endpoints use `protocol_version: 1` and structured objects, replacing `npcData` JSON-inside-JSON. Provider failures return generic 503 errors; malformed requests return 400. They never silently substitute a different decision model. The game shows its fallback dialogue and makes no memory/relationship changes on failure.
 
+Combat perception also uses `/observe` for independent Jev assessments and `/react` for optional short spoken reactions. `/react` generates text only when the validated speech decision admits it. Observation failures retain short-term perceptions without applying relationship changes. All dialogue and event requests include explicit relationship scales. See [NPC perception](../../docs/npc_perception.md) for tuning and runtime debugging.
+
 ## Validation without API access
 
 ```bash

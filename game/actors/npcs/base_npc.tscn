@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://game/actors/npcs/states/dead.gd" id="9_dead"]
 [ext_resource type="Script" path="res://game/actors/npcs/states/interaction.gd" id="10_interaction"]
 [ext_resource type="Script" path="res://game/ui/hud/enemy_health_bar.gd" id="11_health_bar"]
+[ext_resource type="PackedScene" path="res://game/ui/dialog/npc_reaction_bubble.tscn" id="reaction_bubble"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_empty"]
 
@@ -42,6 +43,8 @@ npc_data = ExtResource("2_npc_data")
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=591563088]
 texture_filter = 1
 sprite_frames = SubResource("SpriteFrames_empty")
+
+[node name="ReactionBubble" parent="." instance=ExtResource("reaction_bubble")]
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=442629538]
 position = Vector2(0, -1)

@@ -100,11 +100,13 @@ func _spawn_inventory_drop(stack: InventoryStackDataResource) -> bool:
 
 # -- Combat -------------------------------------------------------------------
 
-func take_damage(amount: int = 1) -> void:
-	if state_machine.is_in_state(&"dead"):
+func take_damage(amount: int = 1, source: Area2D = null) -> void:
+	if health <= 0 or state_machine.is_in_state(&"dead"):
 		return
 
 	set_health(health - maxi(amount, 0))
+	if amount > 0:
+		report_damage_event(source)
 	reset_attack_hold()
 	set_hitbox_enabled(false)
 	if health <= 0:
@@ -266,8 +268,8 @@ func _try_collect_drop(area: Area2D) -> void:
 
 	area.call("collect_into", inventory_data)
 
-func _receive_hit(_area: Area2D, damage: int) -> void:
-	take_damage(damage)
+func _receive_hit(area: Area2D, damage: int) -> void:
+	take_damage(damage, area)
 
 # -- Signal callbacks ---------------------------------------------------------
 

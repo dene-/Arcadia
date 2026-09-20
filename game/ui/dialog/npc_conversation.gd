@@ -26,6 +26,8 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	var state: Dictionary = store.snapshot(id)
 	var perception: Dictionary = current.duplicate(true)
 	perception["recent_events"] = state.recent_events.duplicate()
+	# These events were already assessed; they are context, not fresh relationship evidence.
+	perception["past_observations"] = state.observations.duplicate(true)
 	var payload: Dictionary = {
 		"protocol_version": 1, "npc": {"id": id, "profile": profile.to_backend_profile()},
 		"player": {"message": message},

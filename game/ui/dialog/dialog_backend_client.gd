@@ -5,6 +5,14 @@ const CHAT_ENDPOINT: String = "http://127.0.0.1:3536/chat"
 
 @export var chat_endpoint: String = CHAT_ENDPOINT
 @export var decision_endpoint: String = "http://127.0.0.1:3536/decide"
+@export var observation_endpoint: String = "http://127.0.0.1:3536/observe"
+@export var reaction_endpoint: String = "http://127.0.0.1:3536/react"
+
+func request_observation(payload: Dictionary) -> Dictionary:
+	return await _request(observation_endpoint, payload)
+
+func request_reaction(payload: Dictionary) -> Dictionary:
+	return await _request(reaction_endpoint, payload)
 
 func request_decision(payload: Dictionary) -> Dictionary:
 	return await _request(decision_endpoint, payload)

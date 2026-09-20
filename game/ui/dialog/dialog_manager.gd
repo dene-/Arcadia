@@ -28,6 +28,7 @@ var _chat_line_edit: LineEdit
 var _chat_send_button: Button
 var _chat_cancel_button: Button
 var _conversation: NpcConversation = NpcConversation.new()
+var _events: NpcEventProcessor
 var _dialog_generation: int = 0
 var _backend_client: DialogBackendClient
 var _speech_player: DialogVoicePlayer
@@ -57,6 +58,10 @@ func _ready() -> void:
 
 	_backend_client = DialogBackendClient.new()
 	add_child(_backend_client)
+	_events = NpcEventProcessor.new()
+	_events.store = _conversation.store
+	_events.backend = _backend_client
+	add_child(_events)
 
 
 func _process(delta: float) -> void:
@@ -267,6 +272,15 @@ func record_npc_event(profile: NpcProfile, event: String) -> void:
 	if error != OK:
 		push_warning("NPC event could not be saved: %s" % error)
 
+func observe_npc_event(source: BaseNpc, event: Dictionary) -> void:
+	var profile: NpcProfile = source.get_npc_profile()
+	if profile == null or profile.npc_id.is_empty():
+		return
+	_events.observe(profile, source.get_cognitive_context(), event, source)
+
+func resume_npc_observations(source: BaseNpc) -> void:
+	_events.resume(source.get_npc_profile(), source.get_cognitive_context(), source)
+
 func get_memory_store() -> NpcMemoryStore:
 	return _conversation.store
 
@@ -280,6 +294,11 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 			var still_current: Callable = func() -> bool:
 				return source_ref.get_ref() != null and _is_open and _active_source == source_ref.get_ref() \
 					and generation == _dialog_generation and get_tree().current_scene == _bound_scene
+			_events.resume(profile, current, source as BaseNpc)
+			await _events.wait_for_assessment(String(profile.npc_id))
+			if not still_current.call():
+				return {}
+			current = source.call("get_cognitive_context")
 			var result: Dictionary = await _conversation.request(
 				profile, current, player_message, _backend_client, still_current)
 			if not result.is_empty():
