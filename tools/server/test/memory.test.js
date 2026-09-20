@@ -224,19 +224,23 @@ test("unsupported observations, ungated beliefs and hidden recall IDs are droppe
   assert.deepEqual(result.body.memory_writes, []);
   assert.deepEqual(result.body.recalled_memory_ids, ["visible"]);
 });
-test("spoken text omits em dashes without losing grounded NPC promises", async (t) => {
+test("spoken punctuation is normalized without losing grounded NPC promises", async (t) => {
   const post = await server(t, {
     generate: async () => ({
       output_text: JSON.stringify(
         dialogue({
-          response: "I promise—I'll mend it.",
-          replies: ["Thanks—tomorrow?", "Take your time.", "Goodbye."],
+          response: "I promise—I’ll mend it.",
+          replies: [
+            "Thanks—tomorrow?",
+            "You said “soon”, not ‘tomorrow’.",
+            "Goodbye.",
+          ],
           memory_writes: [
             proposal({
               type: "prospective",
               source: "npc_statement",
               gist: "I promised to mend it.",
-              evidence: "I promise—I'll mend it.",
+              evidence: "I promise—I’ll mend it.",
             }),
           ],
         }),
@@ -249,6 +253,7 @@ test("spoken text omits em dashes without losing grounded NPC promises", async (
   assert.equal(result.status, 200);
   assert.equal(result.body.response, "I promise, I'll mend it.");
   assert.equal(result.body.replies[0], "Thanks, tomorrow?");
+  assert.equal(result.body.replies[1], "You said \"soon\", not 'tomorrow'.");
   assert.equal(result.body.memory_writes[0].type, "prospective");
 });
 test("punctuation cleanup cannot make a continuing reply equal the exit reply", async (t) => {

@@ -158,5 +158,9 @@ export function parseDialogue(output, request, policy) {
 }
 
 function spokenText(text) {
-  return text.replace(/\s*\u2014\s*/gu, ", ").trim();
+  return text
+    .replace(/[\u2018-\u201b\u02bc\uff07]/gu, "'")
+    .replace(/[\u201c-\u201f\uff02]/gu, '"')
+    .replace(/\s*\u2014\s*/gu, ", ")
+    .trim();
 }
