@@ -26,6 +26,8 @@ sequenceDiagram
 
 The preview affects the current response, but persistent state changes only after valid dialogue returns. Closing, switching, reopening, or losing the source invalidates pending results. Failed requests do not advance memory time, reinforce recall, consume events or change relationships. A response cannot apply to a later conversation with the same NPC.
 
+Opening an interaction automatically chooses a short player greeting, such as "Hi." or "Hey." The same greeting reaches Jev, the dialogue model and recent history; typed player messages remain unchanged. NPC responses contain spoken words only. The prompt asks for natural conversational language, and the server replaces any remaining em dashes in displayed responses and suggested replies.
+
 ## Authoring NPCs
 
 Give each individual an explicit, unique `NpcProfile.npc_id`. Renaming the display name must not change it. Multiple scene instances with the same ID represent the same person; distinct people need separate profiles/IDs. All nine existing human profiles have IDs.

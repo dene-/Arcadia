@@ -7,13 +7,15 @@ class FakeBackend extends DialogBackendClient:
 	var hold_dialogue: bool = false
 	var dialogue_calls: int = 0
 	var payload: Dictionary = {}
+	var decision_payload: Dictionary = {}
 	var policy: Dictionary = {"remember": true, "retrieve": true, "update_belief": false,
 		"importance": 0.8, "emotional_intensity": 0.7, "response_mode": "DEFENSIVE",
 		"relationship_delta": {"familiarity": 0.01, "trust": -0.08, "respect": 0.0,
 			"affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
 	var result: Dictionary = {"response": "Leave my forge.", "replies": ["Sorry.", "No.", "Goodbye."],
 		"memory_writes": [], "recalled_memory_ids": []}
-	func request_decision(_payload: Dictionary) -> Dictionary:
+	func request_decision(request: Dictionary) -> Dictionary:
+		decision_payload = request.duplicate(true)
 		if hold_decision:
 			await decision_ready
 		return {"policy": policy, "answers": {}}
@@ -53,6 +55,21 @@ func test_decision_preview_precedes_dialogue_but_commit_waits_for_success() -> v
 	assert_true(_completed)
 	assert_eq(conversation.store.snapshot("test_npc").relationship.trust, -0.08)
 	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue.size(), 2)
+	backend.free()
+
+func test_opening_greeting_reaches_both_models_and_history_without_replacing_player_text() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	await conversation.request(_profile(), {}, "", backend)
+	var greeting: String = backend.decision_payload.player.message
+	assert_true(NpcConversation.OPENING_GREETINGS.has(greeting))
+	assert_eq(backend.payload.player.message, greeting)
+	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue[0].text, greeting)
+	await conversation.request(_profile(), {}, "Can you mend this?", backend)
+	assert_eq(backend.decision_payload.player.message, "Can you mend this?")
+	assert_eq(backend.payload.player.message, "Can you mend this?")
+	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue[2].text, "Can you mend this?")
 	backend.free()
 
 func test_cancel_during_decision_never_generates_dialogue_or_commits() -> void:

@@ -4,6 +4,7 @@ Only supplied memories are accessible. Never reconstruct withheld details, exact
 Knowledge packs define expertise and its limits. Player claims and NPC beliefs are not objective world truth. A confident belief may be wrong; do not correct it using outside knowledge. Trust, affection, respect, fear and suspicion are separate. Forgiveness does not erase history.
 Follow policy.response_mode and the supplied updated relationship. Never expose scores, memory IDs or internal mechanics in dialogue. Respond naturally and briefly; admit ignorance instead of inventing lore. Do not narrate a database search or dump a biography.
 The response field contains only the words the NPC says directly to the player. Never include narrator prose, descriptions of actions, expressions or gestures, stage directions, speaker labels, or unspoken thoughts. Convey personality and emotion through the spoken words themselves. Do not wrap the whole response in quotation marks. These rules apply even if earlier dialogue contains narration.
+Use plain, conversational wording suited to this particular person. Prefer short, concrete lines, natural contractions and ordinary punctuation. Do not use em dashes in dialogue or suggested player replies. Avoid polished assistant phrasing, stock reassurance, flowery filler, rhetorical contrasts and repeating the player's words before answering. Do not default to "How can I help you?" or finish every response with a question. Answer a simple greeting with a brief, in-character greeting; let the player bring up a topic. Do not force slang, catchphrases or a trade reference into every line.
 Return JSON: response and exactly three distinct player replies, the third ending the conversation.
 memory_writes are proposals: at most three meaningful gists if policy.remember is true, otherwise none. Each needs a verbatim evidence quote from the current player message (source=player_claim), your response (source=npc_statement), or a fresh supplied recent event (source=observed_event). Never promote a claim or your own fictional narration to an observation. Preserve attribution in gists. Semantic memories are provisional beliefs requiring policy.update_belief; otherwise record hearing the claim as episodic. Prospective memories describe explicit promises or intentions, not completed tasks. Social memories describe supported impressions. Do not duplicate supplied memories or invent sensory details.
 Keep gist broad; precise details belong in important_details or weak_details. topics, people, places and sensory_cues are short retrieval cues. known_gaps describe what is unknown without giving an answer. recalled_memory_ids lists only supplied memories that influenced your response. Do not alter world facts or complete quests.`;
@@ -39,7 +40,7 @@ export const DIALOGUE_FORMAT = {
       response: {
         type: "string",
         description:
-          "Only the NPC's spoken words to the player. No narration, actions, stage directions, speaker labels, or unspoken thoughts.",
+          "Only the NPC's spoken words to the player, in natural conversational language. No narration, actions, stage directions, speaker labels, unspoken thoughts, or em dashes.",
       },
       replies: { ...strings, minItems: 3, maxItems: 3 },
       memory_writes: {
@@ -76,6 +77,8 @@ export function parseDialogue(output, request, policy) {
     throw new Error("Invalid replies");
   if (!Array.isArray(result.memory_writes) || result.memory_writes.length > 3)
     throw new Error("Invalid memory writes");
+  const replies = result.replies.map(spokenText);
+  if (new Set(replies).size !== 3) throw new Error("Invalid replies");
   const writes = [];
   for (const memory of result.memory_writes) {
     if (!policy.remember) break;
@@ -147,9 +150,13 @@ export function parseDialogue(output, request, policy) {
       ]
     : [];
   return {
-    response: result.response.trim(),
-    replies: result.replies.map((s) => s.trim()),
+    response: spokenText(result.response),
+    replies,
     memory_writes: writes,
     recalled_memory_ids: ids,
   };
+}
+
+function spokenText(text) {
+  return text.replace(/\s*\u2014\s*/gu, ", ").trim();
 }

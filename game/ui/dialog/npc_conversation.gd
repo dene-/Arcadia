@@ -2,6 +2,8 @@ class_name NpcConversation
 extends RefCounted
 
 ## Coordinates two inference stages; commits only a current, valid, completed exchange.
+const OPENING_GREETINGS: Array[String] = ["Hi.", "Hey.", "Hello.", "Hi there.", "Hey there."]
+
 var store: NpcMemoryStore = NpcMemoryStore.new()
 var retriever: NpcMemoryRetriever = NpcMemoryRetriever.new()
 var persist: bool = true
@@ -16,6 +18,9 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	var generation: int = _generation
 	if profile == null or profile.npc_id.is_empty() or message.length() > 2000:
 		return {}
+	# An empty message is the interaction action opening a conversation.
+	if message.is_empty():
+		message = OPENING_GREETINGS.pick_random()
 	store.ensure_npc(profile)
 	var id: String = String(profile.npc_id)
 	var state: Dictionary = store.snapshot(id)
