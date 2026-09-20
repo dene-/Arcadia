@@ -41,3 +41,10 @@ static func current(plan: Array, minute: float) -> Dictionary:
 			break
 		result = slot
 	return result.duplicate(true)
+
+static func next_change(plan: Array, minute: float) -> float:
+	var day_start: float = floorf(minute / MINUTES_PER_DAY) * MINUTES_PER_DAY
+	for slot: Dictionary in plan:
+		if day_start + float(slot.minute) > minute:
+			return day_start + float(slot.minute)
+	return day_start + MINUTES_PER_DAY

@@ -74,13 +74,15 @@ func save_file() -> Error:
 	return _write(to_data())
 
 ## Call only for an explicit new-world/reset action, with the running game stopped.
-func reset() -> Error:
+func reset(keep_region: bool = false) -> Error:
 	if FileAccess.file_exists(path):
 		var backup: String = path + ".reset-%s.bak" % Time.get_unix_time_from_system()
 		var backup_error: Error = DirAccess.copy_absolute(path, backup)
 		if backup_error != OK:
 			return backup_error
 	var empty := NpcWorldSave.new()
+	if keep_region:
+		empty.region_seed = region_seed
 	var error: Error = _write(empty.to_data())
 	if error == OK:
 		from_data(empty.to_data())

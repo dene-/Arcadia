@@ -27,7 +27,13 @@ Moving bodies are excluded from the static navigation bake. Live routes detour a
 
 Each resident has an enterable home and shop, furnished with a bed, meal table and work area. Press the existing interact key (E) near the exterior door to enter, and near the interior door to leave. Rooms use the owned Towns/Towns II artwork; run the world-pack importer when installing those assets on another checkout. Doors are currently unlocked.
 
+Room dimensions and working/sleeping zones vary by trade; stable seeded details personalize them. `TownInteriorLayout` owns complete furniture atlas crops and matching footprints. Door interaction and arrival use the visible threshold, with a short approach range. Interaction prompts use the native theme font at the bottom of the viewport.
+
 Residents walk through their own doors to work, eat and rest. Rest places them in bed with a sleeping pose. Interaction or nearby combat wakes them, and dialogue receives the room, activity and recent awakening. Sleeping residents cannot see events or initiate speech. Separate rooms have independent navigation and perception boundaries; actors keep their identity and cognition through transitions. Saved room membership restores residents indoors after restarting. Crafting and food consumption are not simulated.
+
+Activity durations stop at the next daily schedule boundary. Morning wakeups run locally even while a provider is unavailable or slow; stale nighttime decisions cannot put residents back to bed. Daytime rests are bounded breaks, with no consecutive REST selection when the schedule calls for another activity.
+
+Wake context includes its cause and expires after five game minutes, 30 real seconds, or leaving the room. Waking does not imply morning. Door transitions update indoor/outdoor lighting immediately, using the current clock.
 
 ## Social decisions and knowledge
 
@@ -53,6 +59,8 @@ Hearsay enters memory as `hearsay`, not an eyewitness event. Believed reports ca
 ## Persistence and debugging
 
 Town state is an optional `world.life` block in `user://npc_world.json`, saved atomically with memories and named deaths. Older saves load without a reset. Daily-plan revisions regenerate plans while keeping personalities, relationships and memories. No wall-clock catch-up is performed on restart. The existing explicit world reset clears life state together with the other world data.
+
+With the game stopped, `tools/reset_npc_world.gd -- --confirm --keep-region` resets NPC memories, deaths and social/routine state while retaining the forest seed. The old save is backed up before replacement; omitting `--keep-region` also resets the region seed.
 
 In Godot's Remote Inspector, select a resident and inspect **Runtime Life**: current activity/destination, personality, known townspeople and relationships, recent social exchanges, rumors and routine decision. `social_status` distinguishes assessment, declined encounters, unavailable services, displayed bubbles and offscreen exchanges. **Runtime Memory** shows admitted hearsay and feelings toward Den. Runtime diagnostics are removed from model context.
 

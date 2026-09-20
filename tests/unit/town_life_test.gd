@@ -15,6 +15,17 @@ func test_seeded_personality_is_saved_and_not_rerolled_each_day() -> void:
 	for tendency: String in first.traits:
 		assert_true(is_equal_approx(first.traits[tendency], restored.traits[tendency]))
 
+func test_sleep_duration_cannot_extend_past_breakfast_or_next_day() -> void:
+	var state := TownLifeState.new()
+	state.ensure_person("a", 42, ["a"], ["square"])
+	var breakfast: float = state.get_person("a").plan[1].minute
+	state.minute = breakfast - 1
+	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90, {})
+	assert_eq(state.get_person("a").until, breakfast)
+	state.minute = 1439
+	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90, {})
+	assert_eq(state.get_person("a").until, 1440.0)
+
 func test_daily_plans_change_by_person_and_day_and_local_knowledge_is_asymmetric() -> void:
 	var state := TownLifeState.new()
 	state.ensure_person("a", 123, ["a", "b", "c"], ["square", "garden"])

@@ -85,6 +85,8 @@ func _ready() -> void:
 	_clock.offset_top = 5
 	_clock.offset_bottom = 15
 	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	buildings.player_space_changed.connect(_update_environment)
+	_update_environment()
 	_initialized = true
 	_save()
 	set_process(true)
@@ -116,6 +118,7 @@ func _process(delta: float) -> void:
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
 		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"])
+		_wake_for_schedule(npc, id)
 		_update_context(npc, id)
 		if npc.can_follow_routine() and not encounters.is_busy(id) and not _pending.has(id) \
 			and _pending.size() < max_decision_workers:
@@ -131,6 +134,12 @@ func _process(delta: float) -> void:
 				var second: BaseNpc = _actors[second_id]
 				if first != second and first.can_speak_reaction() and second.can_speak_reaction():
 					encounters.consider(first, second)
+	_update_environment()
+	if _save_elapsed >= 15.0:
+		_save_elapsed = 0.0
+		_save()
+
+func _update_environment() -> void:
 	_clock.text = save_game.life.clock_text()
 	var hour: float = fmod(save_game.life.minute / 60.0, 24.0)
 	var daylight: float = smoothstep(5.0, 8.0, hour) * (1.0 - smoothstep(18.0, 21.0, hour))
@@ -138,9 +147,6 @@ func _process(delta: float) -> void:
 	for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
 		if player.world_space != &"outdoors":
 			_light.color = Color(1, 0.96, 0.88)
-	if _save_elapsed >= 15.0:
-		_save_elapsed = 0.0
-		_save()
 
 func _exit_tree() -> void:
 	if _initialized:
@@ -184,6 +190,9 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	if not is_inside_tree() or not is_instance_valid(npc) or not npc.can_follow_routine() \
 		or npc.life_revision != revision or encounters.is_busy(id):
 		return
+	if NpcRoutinePlan.current(save_game.life.get_person(id).plan, save_game.life.minute) != preferred:
+		save_game.life.interrupt(id)
+		return # A delayed nighttime decision cannot overwrite the morning routine.
 	var policy: Dictionary = result.get("policy", {})
 	var selected: Dictionary = options[0]
 	var duration: float = 20.0
@@ -207,7 +216,8 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	_add_option(options, "PLAN", preferred.kind, preferred.place, "Follow today's planned activity.")
-	_add_option(options, "REST", "rest", "home:" + id, "Go home to rest, recover or avoid danger.")
+	if preferred.kind == "rest" or save_game.life.get_person(id).activity != "rest":
+		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
 	var hour: int = int(save_game.life.minute / 60.0) % 24
 	if hour >= 6 and hour < 21:
 		var venues: Array[String] = ["square", "market", "garden"]
@@ -251,7 +261,21 @@ func _travel(npc: BaseNpc, id: String, selected: Dictionary) -> void:
 	if selected.kind == "meal" and buildings.rooms.has(space):
 		destination = buildings.rooms[space].meal_spot
 	buildings.travel(npc, id, space, destination, selected.kind, place.label)
+	_revisions[id] = npc.life_revision # A scheduled wakeup is part of this plan, not an interruption.
 	npc.state_time_remaining = 0.0
+
+func _wake_for_schedule(npc: BaseNpc, id: String) -> void:
+	var person: Dictionary = save_game.life.get_person(id)
+	if person.activity != "rest" or person.until > save_game.life.minute or not npc.can_follow_routine():
+		return
+	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, save_game.life.minute)
+	if preferred.kind == "rest":
+		return
+	# Waking is a schedule obligation, independent of model latency or repeated REST choices.
+	npc.life_revision += 1
+	save_game.life.select_activity(id, preferred, 20, {"service": "scheduled_wakeup"})
+	_travel(npc, id, preferred)
+	_revisions[id] = npc.life_revision
 
 func _update_context(npc: BaseNpc, id: String) -> void:
 	var person: Dictionary = save_game.life.get_person(id)

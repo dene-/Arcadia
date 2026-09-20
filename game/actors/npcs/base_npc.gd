@@ -28,8 +28,13 @@ var life_revision: int = 0
 var _awake_sprite_position: Vector2
 var _awake_interaction_position: Vector2
 var _awake_hurt_position: Vector2
+var _awake_sprite_z: int
+var _sleep_center := Vector2(0, -20)
 var _sleeping: bool = false
 var _woke_at: int = -90001
+var _woke_world_minute: float = -100.0
+var _woke_space: StringName
+var _wake_reason: String = ""
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _patrol_index: int = 0
@@ -154,11 +159,18 @@ func get_cognitive_context() -> Dictionary:
 	current.world_space = String(world_space)
 	current.location = world_space_label
 	current.sleeping = _sleeping
-	current.recently_awakened = not _sleeping and Time.get_ticks_msec() - _woke_at < 90000
+	var awake_minutes: float = float(current.get("world_minute", 0)) - _woke_world_minute
+	current.recently_awakened = not _sleeping and world_space == _woke_space \
+		and awake_minutes >= 0 and awake_minutes < 5 and Time.get_ticks_msec() - _woke_at < 30000
+	current.wake_reason = _wake_reason if current.recently_awakened else ""
 	return current
 
 func can_follow_routine() -> bool:
 	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
+
+func sleep_at(center: Vector2) -> void:
+	_sleep_center = center - global_position
+	state_machine.transition_to(&"sleep", {}, true)
 
 func show_sleep_pose(sleeping: bool) -> void:
 	_sleeping = sleeping
@@ -166,30 +178,44 @@ func show_sleep_pose(sleeping: bool) -> void:
 	if indicator != null:
 		indicator.visible = sleeping
 	if sleeping:
+		_wake_reason = ""
 		_awake_sprite_position = animated_sprite.position
+		_awake_sprite_z = animated_sprite.z_index
 		_awake_interaction_position = interaction_area.position
 		_awake_hurt_position = hurt_box.position
 		# The bed supplies solid collision; interaction and damage follow the visible sleeper.
 		body_collision_shape.set_deferred("disabled", true)
-		interaction_area.position += Vector2(0, -16)
-		hurt_box.position += Vector2(0, -16)
+		interaction_area.position = _sleep_center + Vector2(0, 4)
+		hurt_box.position = _sleep_center
 		play_animation(&"idle", true, 1.0)
 		animated_sprite.pause()
 		animated_sprite.rotation = -PI / 2
-		animated_sprite.position += Vector2(0, -20)
+		var frame: Texture2D = animated_sprite.sprite_frames.get_frame_texture(animated_sprite.animation, 0)
+		var visible_pixels: Rect2i = frame.get_image().get_used_rect()
+		var center: Vector2 = Vector2(visible_pixels.position) + Vector2(visible_pixels.size) * 0.5 - frame.get_size() * 0.5
+		if animated_sprite.flip_h:
+			center.x = -center.x
+		animated_sprite.position = (_sleep_center - center.rotated(animated_sprite.rotation)).round()
+		animated_sprite.z_index = 1
+		if indicator != null:
+			indicator.position = (_sleep_center + Vector2(5, -14)).round()
 	else:
 		_woke_at = Time.get_ticks_msec()
+		_woke_world_minute = float(life_context.get("world_minute", 0))
+		_woke_space = world_space
 		body_collision_shape.set_deferred("disabled", health <= 0)
 		interaction_area.position = _awake_interaction_position
 		hurt_box.position = _awake_hurt_position
 		animated_sprite.rotation = 0
 		animated_sprite.position = _awake_sprite_position
+		animated_sprite.z_index = _awake_sprite_z
 
 func is_sleeping() -> bool:
 	return _sleeping
 
-func wake_from_noise() -> void:
+func wake_from_noise(reason: String = "noise") -> void:
 	if _sleeping:
+		_wake_reason = reason
 		life_revision += 1
 		state_machine.transition_to(&"idle", {}, true)
 
@@ -201,6 +227,8 @@ func enter_dialog() -> void:
 		return
 
 	_dialog_locked = true
+	if _sleeping:
+		_wake_reason = "conversation"
 	life_revision += 1
 	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
 	if bubble != null:
@@ -238,7 +266,7 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 		return
 
 	if amount > 0:
-		wake_from_noise()
+		wake_from_noise("injury")
 	set_health(health - maxi(amount, 0))
 	if amount > 0:
 		life_revision += 1

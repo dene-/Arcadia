@@ -57,6 +57,8 @@ func _find_closest_interactable() -> Node:
 			continue
 		if not interaction_area.overlaps_body(_player):
 			continue
+		if candidate.has_method("can_interact") and not candidate.call("can_interact", _player):
+			continue
 
 		var distance_sq := candidate_node.global_position.distance_squared_to(_player.global_position)
 		if best_target == null or distance_sq < best_distance_sq:

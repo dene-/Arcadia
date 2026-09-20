@@ -7,10 +7,17 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var save := NpcWorldSave.new()
-	var error: Error = save.reset()
+	var keep_region: bool = "--keep-region" in OS.get_cmdline_user_args()
+	if keep_region and save.load_file() != OK:
+		push_error("Cannot preserve the region seed: existing save could not be read.")
+		quit(1)
+		return
+	var error: Error = save.reset(keep_region)
 	if error != OK:
 		push_error("NPC world reset failed: %s" % error)
 		quit(1)
 		return
 	print("NPC deaths and memories reset. Existing combined save backed up beside npc_world.json.")
+	if keep_region:
+		print("Saved region seed preserved.")
 	quit()

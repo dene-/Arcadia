@@ -58,6 +58,7 @@ func select_activity(id: String, activity: Dictionary, duration: float, diagnost
 	person.activity = activity.kind
 	person.place = activity.place
 	person.until = minute + clampf(duration, 5, 120)
+	person.until = minf(person.until, NpcRoutinePlan.next_change(person.plan, minute))
 	person.decision = diagnostic.duplicate(true)
 
 func remember_position(id: String, position: Vector2, space: String = "outdoors") -> void:

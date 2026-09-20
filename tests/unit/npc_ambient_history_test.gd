@@ -57,6 +57,12 @@ func test_sleep_blocks_vision_and_noise_wakes_the_resident() -> void:
 	_first.wake_from_noise()
 	assert_false(_first.is_sleeping())
 	assert_true(_first.get_cognitive_context().recently_awakened)
+	assert_eq(_first.get_cognitive_context().wake_reason, "noise")
+	_first.life_context.world_minute = 5.0
+	assert_false(_first.get_cognitive_context().recently_awakened)
+	_first.life_context.world_minute = 0.0
+	_first.world_space = &"outdoors_after_leaving_home"
+	assert_false(_first.get_cognitive_context().recently_awakened)
 
 func test_visible_neighbors_supply_the_observers_own_relationship_to_reactions() -> void:
 	_first.add_to_group(&"town_residents")

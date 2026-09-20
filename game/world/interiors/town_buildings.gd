@@ -2,6 +2,8 @@ class_name TownBuildings
 extends Node2D
 
 ## Owns door transitions and multi-space journeys; actors and cognition remain alive across doors.
+signal player_space_changed
+
 var seed_value: int
 var rooms: Dictionary[StringName, NpcInterior] = {}
 var outdoors: TownNavigation
@@ -20,13 +22,13 @@ func _ready() -> void:
 		room.job = home.job
 		room.seed_value = seed_value
 		room.position = Vector2(4096 + index * 512, 4096)
-		room.outside = Vector2(home.cell * 8) + Vector2(0, 16)
+		room.outside = Vector2(home.cell * 8) + Vector2(0, 6)
 		add_child(room)
 		var space := StringName("home:" + room.resident_id)
 		rooms[space] = room
 		var door := BuildingDoor.new()
 		door.name = String(home.job).capitalize() + "Door"
-		door.position = Vector2(home.cell * 8) + Vector2(0, 8)
+		door.position = Vector2(home.cell * 8) + Vector2(0, 4)
 		door.label = "Enter " + room.resident_name + "'s shop"
 		add_child(door)
 		door.used.connect(func(player: BasePlayer) -> void: move_player(player, space))
@@ -52,7 +54,9 @@ func restore(npc: BaseNpc, id: String, saved: Dictionary) -> void:
 func travel(npc: BaseNpc, id: String, space: StringName, point: Vector2,
 		activity: String, label: String) -> void:
 	if npc.state_machine.is_in_state(&"sleep"):
-		npc.state_machine.transition_to(&"idle", {}, true)
+		if activity == "rest" and npc.world_space == space:
+			return
+		npc.wake_from_noise("schedule")
 	_journeys[id] = {"space": space, "point": point, "activity": activity, "label": label}
 	_next_leg(npc, id)
 
@@ -64,7 +68,7 @@ func advance(npc: BaseNpc, id: String) -> void:
 	if npc.world_space == journey.space:
 		_journeys.erase(id)
 		if journey.activity == "rest" and npc.world_space == StringName("home:" + id):
-			npc.state_machine.transition_to(&"sleep", {}, true)
+			npc.sleep_at(rooms[npc.world_space].bed_center)
 		return
 	if npc.world_space != &"outdoors":
 		_transfer(npc, id, &"outdoors", rooms[npc.world_space].outside)
@@ -84,7 +88,7 @@ func move_player(player: BasePlayer, destination: StringName) -> void:
 	if destination == &"outdoors":
 		if not rooms.has(player.world_space):
 			return
-		point = rooms[player.world_space].outside + Vector2(0, 8)
+		point = rooms[player.world_space].outside
 		camera.limit_left = _player_camera_limits.position.x
 		camera.limit_top = _player_camera_limits.position.y
 		camera.limit_right = _player_camera_limits.end.x
@@ -95,7 +99,7 @@ func move_player(player: BasePlayer, destination: StringName) -> void:
 		_player_camera_limits = Rect2i(camera.limit_left, camera.limit_top,
 			camera.limit_right - camera.limit_left, camera.limit_bottom - camera.limit_top)
 		var room: NpcInterior = rooms[destination]
-		point = room.entrance
+		point = room.player_entrance
 		camera.limit_left = int(room.global_position.x) - 120
 		camera.limit_right = int(room.global_position.x) + 120
 		camera.limit_top = int(room.global_position.y) - 80
@@ -129,3 +133,5 @@ func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) 
 	navigation_for(space).register(id, actor)
 	if actor is BaseNpc:
 		actor.life_revision += 1
+	elif actor is BasePlayer:
+		player_space_changed.emit()

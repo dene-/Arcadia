@@ -20,6 +20,10 @@ func test_deaths_and_memories_round_trip_atomically_and_reset_together() -> void
 	invalid.world.dead_npcs.clear()
 	assert_false(loaded.from_data(invalid))
 	assert_true(loaded.is_dead(profile.npc_id))
+	assert_eq(loaded.reset(true), OK)
+	assert_eq(loaded.region_seed, 274415)
+	assert_false(loaded.is_dead(profile.npc_id))
+	assert_true(loaded.memory.snapshot(String(profile.npc_id)).is_empty())
 	assert_eq(loaded.reset(), OK)
 	var restarted := NpcWorldSave.new()
 	restarted.path = save.path
