@@ -19,12 +19,12 @@ func test_forest_placement_keeps_routes_town_water_and_encounters_clear() -> voi
 		var layout := RegionLayout.new()
 		layout.generate(world_seed)
 		assert_true(layout.trees.size() > 2000)
-		assert_eq(layout.enemies.size(), 27)
+		assert_eq(layout.enemies.size(), 35)
 		for tree: Dictionary in layout.trees:
 			assert_true(RegionLayout.BOUNDS.has_point(tree.cell))
 			assert_false(layout.is_reserved(tree.cell, 3))
 		for spawn: Dictionary in layout.enemies:
-			assert_false(RegionLayout.TOWN.grow(20).has_point(spawn.cell))
+			assert_false(RegionLayout.TOWN.grow(8).has_point(spawn.cell))
 			assert_false(layout.is_water(spawn.cell))
 			assert_true(layout.roads.has(spawn.cell))
 
@@ -45,6 +45,8 @@ func test_roads_reach_every_home_camp_and_crossing_without_entering_water() -> v
 			queue.append(next)
 	for camp: Vector2i in RegionLayout.CAMPS:
 		assert_true(visited.has(camp), "Unreachable encounter: %s" % camp)
+	for camp: Vector2i in RegionLayout.APPROACH_CAMPS:
+		assert_true(visited.has(camp), "Unreachable approach: %s" % camp)
 	for home: Dictionary in RegionLayout.HOMES:
 		assert_true(visited.has(home.cell + Vector2i(0, 3)), "Unreachable home: %s" % home.job)
 	for row: int in RegionLayout.BRIDGES:

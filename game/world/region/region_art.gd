@@ -24,7 +24,7 @@ func available() -> bool:
 	return true
 
 func sprite(parent: Node2D, sheet: String, region: Rect2i, foot: Vector2,
-		solid_size: Vector2 = Vector2.ZERO) -> Sprite2D:
+		footprint: Rect2 = Rect2()) -> Sprite2D:
 	if not _textures.has(sheet):
 		_textures[sheet] = load(ROOT + sheet)
 	var prop := Sprite2D.new()
@@ -37,10 +37,31 @@ func sprite(parent: Node2D, sheet: String, region: Rect2i, foot: Vector2,
 		var used: Rect2i = prop.texture.get_image().get_region(region).get_used_rect()
 		_offsets[key] = Vector2(0, region.size.y * 0.5 - used.end.y)
 	prop.offset = _offsets[key]
+	if footprint.has_area():
+		# Art and collision share an authored anchor at the bottom of the footprint.
+		var anchor := Vector2(footprint.get_center().x, footprint.end.y)
+		prop.offset = Vector2(region.size) * 0.5 - anchor
 	parent.add_child(prop)
-	if solid_size != Vector2.ZERO:
-		barrier(prop, Vector2(0, -solid_size.y * 0.5), solid_size)
+	if footprint.has_area():
+		barrier(prop, Vector2(0, -footprint.size.y * 0.5), footprint.size)
 	return prop
+
+func decoration(parent: Node2D, sheet: String, region: Rect2i, foot: Vector2) -> Sprite2D:
+	var prop: Sprite2D = sprite(parent, sheet, region, foot)
+	prop.z_index = -3
+	return prop
+
+## Editor-only art preview. No AI, physics, persistence, or provider calls.
+static func actor_preview(parent: Node2D, data: NpcData, foot: Vector2, label: String) -> void:
+	var frames: SpriteFrames = data.sprite_frames
+	if frames is ActorSpriteFrames:
+		frames.ensure_built()
+	var preview := AnimatedSprite2D.new()
+	preview.name = label + "Preview"
+	preview.position = foot
+	preview.sprite_frames = frames
+	preview.animation = &"idle"
+	parent.add_child(preview)
 
 static func barrier(parent: Node2D, center: Vector2, size: Vector2) -> StaticBody2D:
 	var body := StaticBody2D.new()

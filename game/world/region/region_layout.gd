@@ -24,6 +24,8 @@ const HOMES: Array[Dictionary] = [
 const CAMPS: Array[Vector2i] = [Vector2i(-110, -70), Vector2i(-70, -45),
 	Vector2i(-100, 56), Vector2i(-48, 83), Vector2i(19, -86),
 	Vector2i(108, -70), Vector2i(118, -22), Vector2i(105, 67), Vector2i(23, 84)]
+const APPROACH_CAMPS: Array[Vector2i] = [Vector2i(-48, 4), Vector2i(-2, -40),
+	Vector2i(83, 4), Vector2i(-2, 40)]
 
 var region_seed: int
 var roads: Dictionary[Vector2i, bool] = {}
@@ -67,8 +69,16 @@ func generate(value: int) -> void:
 		_road([closest, camp], 1)
 		_disc(camp, 6)
 		for index: int in range(3):
-			enemies.append({"cell": camp + Vector2i(index * 3 - 3, 0),
+				enemies.append({"cell": camp + Vector2i(index * 3 - 3, 0),
 				"kind": _rng.randi_range(0, 2)})
+	# Small encounters are visible soon after leaving each town approach.
+	# Their enemy types are fixed, independent of the forest seed.
+	for camp: Vector2i in APPROACH_CAMPS:
+		_disc(camp, 5)
+		var entrance := Vector2i(camp.x, 4) if camp.x in [-48, 83] else Vector2i(0, camp.y)
+		_road([camp, entrance], 1)
+		for index: int in range(2):
+			enemies.append({"cell": camp + Vector2i(index * 4 - 2, 0), "kind": index})
 	for y: int in range(-5, 13):
 		for x: int in range(-9, 10):
 			stone.append(Vector2i(x, y))
