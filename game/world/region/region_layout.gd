@@ -69,7 +69,7 @@ func generate(value: int) -> void:
 		_road([closest, camp], 1)
 		_disc(camp, 6)
 		for index: int in range(3):
-				enemies.append({"cell": camp + Vector2i(index * 3 - 3, 0),
+			enemies.append({"cell": camp + Vector2i(index * 3 - 3, 0),
 				"kind": _rng.randi_range(0, 2)})
 	# Small encounters are visible soon after leaving each town approach.
 	# Their enemy types are fixed, independent of the forest seed.
