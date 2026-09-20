@@ -9,6 +9,11 @@ signal interacted(interactor: Node)
 
 const RUN_ANIMATION_NAME: StringName = &"run"
 const WALK_ANIMATION_NAME: StringName = &"walk"
+const MEMORY_DEBUG_PROPERTIES: Dictionary[String, int] = {
+	"npc_id": TYPE_STRING, "status": TYPE_STRING, "turn": TYPE_INT,
+	"memories": TYPE_ARRAY, "recent_dialogue": TYPE_ARRAY,
+	"relationship": TYPE_DICTIONARY, "recent_events": TYPE_ARRAY,
+}
 
 ## Data resource containing movement, combat, AI, interaction, and animation tuning.
 @export var npc_data: NpcData
@@ -366,6 +371,45 @@ func resolve_animation_name(animation_name: StringName) -> StringName:
 	return &""
 
 # -- Private helpers ----------------------------------------------------------
+
+## Runtime-only properties, polled by the Remote Inspector without mutating the save.
+func _get_property_list() -> Array[Dictionary]:
+	if Engine.is_editor_hint() or not OS.is_debug_build():
+		return []
+	var properties: Array[Dictionary] = [{"name": "Runtime Memory", "type": TYPE_NIL,
+		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_memory_"}]
+	for field: String in MEMORY_DEBUG_PROPERTIES:
+		properties.append({"name": "runtime_memory_" + field,
+			"type": MEMORY_DEBUG_PROPERTIES[field],
+			"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
+	return properties
+
+func _get(property: StringName) -> Variant:
+	if not String(property).begins_with("runtime_memory_"):
+		return null
+	var field: String = String(property).trim_prefix("runtime_memory_")
+	if not MEMORY_DEBUG_PROPERTIES.has(field):
+		return null
+	var profile: NpcProfile = get_npc_profile()
+	var id: String = String(profile.npc_id) if profile != null else ""
+	var manager: Node = get_node_or_null("/root/DialogManager") if is_inside_tree() else null
+	var store: NpcMemoryStore = manager.call("get_memory_store") if manager != null else null
+	var state: Dictionary = store.snapshot(id) if store != null and not id.is_empty() else {}
+	match field:
+		"npc_id":
+			return id
+		"status":
+			if id.is_empty():
+				return "No NPC profile or stable ID."
+			if store == null:
+				return "Memory store unavailable."
+			return "Not initialized yet." if state.is_empty() else "Live memory state."
+		"turn":
+			return store.turn if store != null else 0
+		"relationship":
+			return state.get(field, {})
+		_:
+			return state.get(field, [])
 
 func _configure_blood_particles() -> void:
 	blood_particles.amount = npc_data.blood_particle_count

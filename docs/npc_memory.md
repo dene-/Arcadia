@@ -97,6 +97,14 @@ The default save is `user://npc_memory.json`, version 1. Successful exchanges an
 
 `to_save_data()` and `from_save_data()` expose an explicit contract for a future game save system. This temporary default is one local playthrough. A future new-game/save-slot UI should own separate store instances or embed this data in its own slot; no multiplayer identity or server-side persistence is implied.
 
+## Inspecting runtime memory
+
+Run the game from Godot, switch the Scene dock to **Remote**, and select the NPC actor node. Expand **Runtime Memory** on the node itself, outside **Npc Data > Profile**. Restart a game that was already running when this feature was added.
+
+The read-only section shows the stable NPC ID, initialization status, global memory turn, full memory records, recent dialogue, relationship values and pending observed events. Expand the **Memories** array and each record dictionary to see its gist, source, importance, confidence, details and rehearsal data. Values are read from the live store whenever the Remote Inspector refreshes. This debug view includes the full archive; dialogue generation still receives only filtered recall.
+
+An untouched NPC can show **Not initialized yet.** Inspecting it does not initialize or change its save state. The profile's **Core Memories** and legacy **Memories** fields remain authored inputs. Runtime inspection returns copies, is available only in debug builds, and never serializes these properties into scenes.
+
 ## Jev configuration and validation
 
 The [official TypeSafe skill](https://github.com/typesafe-ai/skills) and [API contract](https://docs.typesafe.ai/api) guide the integration. Questions and thresholds are in `tools/server/src/npc-decisions.js`. Noul is a yes-probability; Choice is a categorical decision with confidence; Score is a probability-weighted **zero-based** level. Five importance levels are normalized from 0–4 to 0–1. Raw answers remain available during the exchange.
