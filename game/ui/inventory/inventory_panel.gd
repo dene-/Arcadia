@@ -23,7 +23,8 @@ const CONTEXT_DROP_STACK_ID: int = 2
 
 @onready var panel: Panel = $Panel
 @onready var grid: GridContainer = $Panel/MarginContainer/VBoxContainer/SlotScroll/SlotGrid
-@onready var detail_label: Label = $Panel/MarginContainer/VBoxContainer/DetailLabel
+@onready var detail_scroll: ScrollContainer = $Panel/MarginContainer/VBoxContainer/DetailScroll
+@onready var detail_label: Label = $Panel/MarginContainer/VBoxContainer/DetailScroll/DetailLabel
 @onready var summary_label: Label = $Panel/MarginContainer/VBoxContainer/HeaderRow/SummaryLabel
 @onready var context_menu: PopupMenu = $ContextMenu
 
@@ -71,11 +72,11 @@ func _bind_inventory() -> void:
 	_player = get_node_or_null(player_path)
 	if inventory_data != null:
 		_set_inventory(inventory_data)
-		if _player != null and _player.has_method("set_inventory_data"):
+		if not Engine.is_editor_hint() and _player != null and _player.has_method("set_inventory_data"):
 			_player.call("set_inventory_data", inventory_data)
 		return
 
-	if _player == null or not _player.has_method("get_inventory_data"):
+	if Engine.is_editor_hint() or _player == null or not _player.has_method("get_inventory_data"):
 		return
 
 	_set_inventory(_player.call("get_inventory_data") as InventoryDataResource)
@@ -170,6 +171,10 @@ func _update_summary() -> void:
 	]
 
 func _set_inventory_open(open: bool) -> void:
+	if open:
+		var dialog_manager := get_node_or_null("/root/DialogManager")
+		if dialog_manager != null and dialog_manager.call("is_dialog_open"):
+			return
 	panel.visible = open
 	if open:
 		add_to_group("blocking_player_input")
@@ -230,7 +235,7 @@ func _on_slot_mouse_entered(slot_index: int) -> void:
 	if slot == null:
 		return
 
-	detail_label.text = slot.get_display_text()
+	_set_detail_text(slot.get_display_text())
 
 func _on_slot_mouse_exited() -> void:
 	_update_detail_for_selection()
@@ -238,10 +243,15 @@ func _on_slot_mouse_exited() -> void:
 func _update_detail_for_selection() -> void:
 	var slot := _get_slot_node(_selected_slot)
 	if slot == null:
-		detail_label.text = ""
+		_set_detail_text("")
 		return
 
-	detail_label.text = slot.get_display_text()
+	_set_detail_text(slot.get_display_text())
+
+func _set_detail_text(text: String) -> void:
+	if detail_label.text != text:
+		detail_label.text = text
+		detail_scroll.scroll_vertical = 0
 
 func _get_slot_node(slot_index: int) -> InventorySlotNode:
 	for slot: InventorySlotNode in _slot_nodes:

@@ -12,10 +12,10 @@ script = ExtResource("1_inventory_panel")
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -94.0
-offset_top = 9.0
-offset_right = 94.0
-offset_bottom = 137.0
+offset_left = -98.0
+offset_top = 21.0
+offset_right = 98.0
+offset_bottom = 155.0
 grow_horizontal = 2
 theme = ExtResource("2_theme")
 
@@ -64,14 +64,22 @@ columns = 8
 [node name="Slot" parent="Panel/MarginContainer/VBoxContainer/SlotScroll/SlotGrid" unique_id=1647318702 instance=ExtResource("3_slot")]
 layout_mode = 2
 
-[node name="DetailLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer" unique_id=156447314]
-custom_minimum_size = Vector2(0, 12)
+[node name="DetailScroll" type="ScrollContainer" parent="Panel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="DetailLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/DetailScroll" unique_id=156447314]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
 horizontal_alignment = 1
 autowrap_mode = 3
 
 [node name="ContextMenu" type="PopupMenu" parent="." unique_id=173089801]
 oversampling_override = 1.0
+canvas_item_default_texture_filter = 0
 theme = ExtResource("2_theme")
 item_count = 3
 item_0/text = "Use"

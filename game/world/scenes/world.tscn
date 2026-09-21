@@ -108,6 +108,7 @@ offset_left = 5.0
 offset_top = 5.0
 offset_right = 85.0
 offset_bottom = 15.0
+mouse_filter = 2
 theme = ExtResource("1_ic0uy")
 show_percentage = false
 script = ExtResource("21_player_health_bar")
@@ -119,6 +120,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("1_ic0uy")
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
@@ -127,8 +130,10 @@ theme_override_constants/margin_bottom = 5
 [node name="VBoxContainer" type="VBoxContainer" parent="UI/Container" unique_id=598212628]
 layout_mode = 2
 size_flags_vertical = 8
+mouse_filter = 2
 
 [node name="DialogPanel" type="Panel" parent="UI/Container/VBoxContainer" unique_id=1026008566]
+visible = false
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 theme = ExtResource("1_ic0uy")
@@ -148,6 +153,8 @@ theme_override_constants/margin_bottom = 6
 [node name="DialogText" type="RichTextLabel" parent="UI/Container/VBoxContainer/DialogPanel/DialogContainer" unique_id=1416040456]
 layout_mode = 2
 text = "Lorem ipsum dolor sit amet, consectetu'\"!-_r adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. U"
+autowrap_mode = 3
+visible_characters_behavior = 1
 scroll_active = false
 tab_size = 2
 
@@ -171,16 +178,24 @@ offset_left = -6.0
 offset_top = -3.0
 grow_horizontal = 0
 grow_vertical = 0
+mouse_filter = 2
 texture = ExtResource("4_k3n1d")
 region_rect = Rect2(1813, 95, 6, 3)
 
-[node name="RepliesContainer" type="VBoxContainer" parent="UI/Container/VBoxContainer" unique_id=1865181439]
+[node name="RepliesContainer" type="ScrollContainer" parent="UI/Container/VBoxContainer" unique_id=1865181439]
+visible = false
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 theme = ExtResource("1_ic0uy")
-theme_override_constants/separation = 1
-alignment = 1
+horizontal_scroll_mode = 0
+follow_focus = true
 
-[node name="ReplyButton1" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer" unique_id=1098818244]
+[node name="ReplyList" type="VBoxContainer" parent="UI/Container/VBoxContainer/RepliesContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="ReplyButton1" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1098818244]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
@@ -188,7 +203,7 @@ text = "Just passing through."
 alignment = 0
 autowrap_mode = 3
 
-[node name="ReplyButton2" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer" unique_id=1171674717]
+[node name="ReplyButton2" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1171674717]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
@@ -196,7 +211,7 @@ text = "What's the latest trouble around the village?"
 alignment = 0
 autowrap_mode = 3
 
-[node name="ReplyButton3" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer" unique_id=1737075623]
+[node name="ReplyButton3" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1737075623]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
@@ -205,6 +220,7 @@ alignment = 0
 autowrap_mode = 3
 
 [node name="ChatContainer" type="HBoxContainer" parent="UI/Container/VBoxContainer" unique_id=-1293967294]
+visible = false
 layout_mode = 2
 theme = ExtResource("1_ic0uy")
 
@@ -248,9 +264,8 @@ grow_vertical = 0
 theme = ExtResource("1_ic0uy")
 mouse_filter = 2
 horizontal_alignment = 1
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_outline_color = Color(0.08, 0.07, 0.06, 1)
-theme_override_constants/outline_size = 1
+theme_type_variation = &"InteractionPrompt"
+autowrap_mode = 3
 
 [node name="InventoryPanel" parent="." unique_id=707344228 instance=ExtResource("19_inventory")]
 player_path = NodePath("../BasePlayer")

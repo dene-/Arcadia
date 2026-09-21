@@ -1,3 +1,4 @@
+@tool
 class_name InventorySlot
 extends Control
 
@@ -13,7 +14,8 @@ signal item_dragged(from_slot: int, to_slot: int)
 @onready var item_swatch: ColorRect = $ItemSwatch
 @onready var item_icon: TextureRect = $ItemIcon
 @onready var count_label: Label = $CountLabel
-@onready var selection_highlight: ColorRect = $SelectionHighlight
+@onready var selection_highlight: Panel = $SelectionHighlight
+@onready var hover_highlight: Panel = $HoverHighlight
 
 var item: DropItemDataResource
 var count: int = 0
@@ -25,6 +27,11 @@ func _ready() -> void:
 		if child_control != null:
 			child_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	selection_highlight.hide()
+	hover_highlight.hide()
+	if not mouse_entered.is_connected(_on_mouse_entered):
+		mouse_entered.connect(_on_mouse_entered)
+	if not mouse_exited.is_connected(_on_mouse_exited):
+		mouse_exited.connect(_on_mouse_exited)
 
 func set_slot_data(next_item: DropItemDataResource, next_count: int) -> void:
 	item = next_item
@@ -91,8 +98,10 @@ func _create_drag_preview(at_position: Vector2) -> Control:
 	var preview_slot := duplicate() as Control
 	assert(preview_slot != null, "InventorySlot drag preview requires a Control duplicate.")
 	preview_slot.position = -at_position.round()
+	preview_slot.size = size
 	preview_slot.modulate = Color(1.0, 1.0, 1.0, 0.78)
 	preview_root.add_child(preview_slot)
+	preview_slot.get_node("HoverHighlight").hide()
 	preview_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return preview_root
 
@@ -103,3 +112,9 @@ func _format_slot_text() -> String:
 	if not item.description.is_empty():
 		text = "%s\n%s" % [text, item.description]
 	return text
+
+func _on_mouse_entered() -> void:
+	hover_highlight.show()
+
+func _on_mouse_exited() -> void:
+	hover_highlight.hide()

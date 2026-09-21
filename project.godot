@@ -32,6 +32,10 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
 window/stretch/scale_mode="integer"
 
+[gui]
+
+theme/custom="res://assets/art/ui/theme.tres"
+
 [input]
 
 player_left={
