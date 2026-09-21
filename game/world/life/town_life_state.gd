@@ -33,7 +33,8 @@ func issue_event_id() -> String:
 	_next_event += 1
 	return id
 
-func ensure_person(id: String, seed_value: int, residents: Array[String], places: Array[String]) -> void:
+func ensure_person(id: String, seed_value: int, residents: Array[String], places: Array[String],
+		population: TownPopulation = null) -> void:
 	if not _people.has(id):
 		var random := NpcRoutinePlan.random_for(seed_value, id + ":social")
 		var ties: Dictionary = {}
@@ -48,8 +49,22 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 			"social_after": minute + random.randf_range(1, 12), "encounters": 0,
 			"position": [], "recent_social": [], "decision": {}, "safety": {}}
 	var person: Dictionary = _people[id]
+	# A pre-expansion save already contains its original ties. Add only missing neighbors.
+	for other: String in residents:
+		if other == id or person.ties.has(other):
+			continue
+		var random := NpcRoutinePlan.random_for(seed_value, id + ":tie:" + other)
+		person.ties[other] = {"familiarity": random.randf_range(0.45, 0.95),
+			"trust": random.randf_range(-0.25, 0.65), "affection": random.randf_range(-0.4, 0.7)}
+	if population != null and not person.get("family_initialized", false):
+		for relative: String in population.people[id].kin:
+			var random := NpcRoutinePlan.random_for(seed_value, id + ":family:" + relative)
+			person.ties[relative] = {"familiarity": 1.0, "trust": random.randf_range(0.25, 0.9),
+				"affection": random.randf_range(0.25, 0.95)}
+		person.family_initialized = true
 	if person.plan_day != day() or person.get("plan_revision", 0) != NpcRoutinePlan.REVISION:
-		person.plan = NpcRoutinePlan.generate(seed_value, id, day(), places)
+		person.plan = NpcRoutinePlan.generate(seed_value, id, day(), places) if population == null \
+			else TownResidentSchedule.generate(population, id, seed_value, day(), places)
 		person.plan_day = day()
 		person.plan_revision = NpcRoutinePlan.REVISION
 		if not NpcSafetyState.sheltering(person.safety, minute):
@@ -148,6 +163,8 @@ static func _number(value: Variant) -> bool:
 
 static func _valid_person(person: Variant) -> bool:
 	if not person is Dictionary:
+		return false
+	if person.has("family_initialized") and not person.family_initialized is bool:
 		return false
 	if not NpcSafetyState.is_valid(person.get("safety", {})):
 		return false

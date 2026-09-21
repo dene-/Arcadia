@@ -32,6 +32,29 @@ var move_input: Vector2:
 var _attack_hold_time: float = 0.0
 var _dialog_locked: bool = false
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"player_surrender") and not _dialog_locked and health > 0:
+		surrender()
+		get_viewport().set_input_as_handled()
+
+func surrender() -> void:
+	set_hitbox_enabled(false)
+	reset_attack_hold()
+	if state_machine.get_current_state_name() in [&"attack", &"charge_attack", &"run", &"walk"]:
+		state_machine.transition_to(&"idle", {}, true)
+	var event := WorldEvent.new()
+	event.kind = &"actor_surrendered"
+	event.subject = self
+	get_node("/root/WorldEvents").publish(event)
+
+func set_hitbox_enabled(enabled: bool) -> void:
+	super.set_hitbox_enabled(enabled)
+	if enabled and is_inside_tree():
+		var event := WorldEvent.new()
+		event.kind = &"actor_brandished_weapon"
+		event.subject = self
+		get_node("/root/WorldEvents").publish(event)
+
 @onready var pickup_area: Area2D = $PickupArea
 
 func get_perceived_name() -> String:

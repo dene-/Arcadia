@@ -118,6 +118,13 @@ const threat = () =>
     response_mode: "DEFENSIVE",
   });
 
+test("surrender needs a confident intent judgment", () => {
+  const judgment = answers({ interaction_intent: "SURRENDER" });
+  assert.equal(decisionPolicy(judgment).interaction_intent, "SURRENDER");
+  judgment.interaction_intent.confidence = 0.1;
+  assert.equal(decisionPolicy(judgment).interaction_intent, "OTHER");
+});
+
 test("greetings stay short term; threat decisions produce bounded state changes", () => {
   assert.equal(decisionPolicy(answers()).remember, false);
   const result = decisionPolicy(threat());

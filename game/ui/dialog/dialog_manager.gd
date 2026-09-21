@@ -347,6 +347,10 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 
 func _apply_dialog_result(result: Dictionary) -> void:
 	_is_waiting_for_backend = false
+	if result.get("surrender", false) == true and is_instance_valid(_active_source) \
+		and _active_source.is_in_group(&"town_guards"):
+		for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
+			player.surrender()
 	_end_after_response = result.get("end_conversation", false) == true
 	_farewell_remaining = -1.0
 	_active_text = str(result.get("response", ""))

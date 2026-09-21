@@ -12,13 +12,15 @@ var _player_camera_limits: Rect2i
 
 func _ready() -> void:
 	y_sort_enabled = true
+	var population: TownPopulation = get_node("/root/NpcCognition").save_game.population
+	population.ensure_population(seed_value)
 	for index: int in range(RegionLayout.HOMES.size()):
 		var home: Dictionary = RegionLayout.HOMES[index]
-		var data: NpcData = load("res://game/resources/actors/humans/%s_npc_data.tres" % home.job)
 		var room := NpcInterior.new()
 		room.name = String(home.job).capitalize() + "Interior"
-		room.resident_id = String(data.profile.npc_id)
-		room.resident_name = data.profile.profile_name
+		room.resident_id = TownPopulation.FOUNDERS.get(home.job, home.job)
+		room.residents = population.members_of(room.resident_id)
+		room.resident_name = population.people[room.residents[0]].name.get_slice(" ", 1)
 		room.job = home.job
 		room.seed_value = seed_value
 		room.position = Vector2(4096 + index * 512, 4096)
@@ -29,7 +31,7 @@ func _ready() -> void:
 		var door := BuildingDoor.new()
 		door.name = String(home.job).capitalize() + "Door"
 		door.position = Vector2(home.cell * 8) + Vector2(0, 4)
-		door.label = "Enter " + room.resident_name + "'s shop"
+		door.label = "Enter " + room.resident_name + " household"
 		add_child(door)
 		door.used.connect(func(player: BasePlayer) -> void: move_player(player, space))
 		room.door.used.connect(func(player: BasePlayer) -> void: move_player(player, &"outdoors"))
@@ -62,14 +64,20 @@ func travel(npc: BaseNpc, id: String, space: StringName, point: Vector2,
 	_next_leg(npc, id)
 
 func advance(npc: BaseNpc, id: String) -> void:
-	if not _journeys.has(id) or not npc.can_follow_routine() \
-		or npc.global_position.distance_to(npc.daily_routine.destination) > 3:
+	if not _journeys.has(id) or not npc.can_follow_routine():
 		return
 	var journey: Dictionary = _journeys[id]
+	# A family can queue at a doorway without every body reaching the same pixel.
+	var tolerance: float = 3.0 if npc.world_space == journey.space else 10.0
+	if npc.global_position.distance_to(npc.daily_routine.destination) > tolerance:
+		return
+	if npc.world_space != journey.space and not navigation_for(npc.world_space).can_travel(
+			npc.global_position, npc.daily_routine.destination):
+		return
 	if npc.world_space == journey.space:
 		_journeys.erase(id)
-		if journey.activity == "rest" and npc.world_space == StringName("home:" + id):
-			npc.sleep_at(rooms[npc.world_space].bed_center)
+		if journey.activity == "rest" and rooms.has(npc.world_space) and id in rooms[npc.world_space].residents:
+			npc.sleep_at(rooms[npc.world_space].bed_for(id, true))
 		return
 	if npc.world_space != &"outdoors":
 		if not _transfer(npc, id, &"outdoors", rooms[npc.world_space].outside):
@@ -123,7 +131,7 @@ func _next_leg(npc: BaseNpc, id: String) -> void:
 	var navigation: TownNavigation = navigation_for(npc.world_space)
 	npc.daily_routine.navigation = navigation
 	# Door thresholds and the resident's bed are fixed anchors, not gathering spots.
-	var fixed_bed: bool = journey.activity == "rest" and npc.world_space == StringName("home:" + id)
+	var fixed_bed: bool = journey.activity == "rest" and rooms.has(npc.world_space) and id in rooms[npc.world_space].residents
 	var destination: Vector2 = navigation.reserve_destination(id, point) \
 		if npc.world_space == journey.space and not fixed_bed else navigation.nearest(point)
 	npc.daily_routine.travel(npc.global_position, destination, journey.activity, journey.label)

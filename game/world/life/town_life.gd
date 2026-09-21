@@ -9,6 +9,7 @@ var backend: DialogBackendClient
 var navigation := TownNavigation.new()
 var encounters: TownEncounters
 var buildings: TownBuildings
+var watch: TownWatch
 var _actors: Dictionary[String, BaseNpc] = {}
 var _places: Dictionary[String, Dictionary] = {}
 var _public_people: Array[Dictionary] = []
@@ -24,6 +25,8 @@ func _ready() -> void:
 	set_process(false)
 	var cognition: Node = get_node("/root/NpcCognition")
 	save_game = cognition.save_game
+	save_game.population.ensure_population(save_game.region_seed)
+	save_game.economy.ensure_households(save_game.population, save_game.life.minute)
 	backend = cognition.backend
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -54,7 +57,7 @@ func _ready() -> void:
 	ids.sort()
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"])
+		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"], save_game.population)
 		npc.daily_routine = NpcDailyRoutine.new()
 		npc.daily_routine.navigation = navigation
 		npc.daily_routine.npc_id = id
@@ -71,6 +74,9 @@ func _ready() -> void:
 	encounters.seed_value = save_game.region_seed
 	encounters.save_callback = _save
 	add_child(encounters)
+	watch = TownWatch.new()
+	watch.life = self
+	add_child(watch)
 	_light = CanvasModulate.new()
 	add_child(_light)
 	var overlay := CanvasLayer.new()
@@ -95,7 +101,9 @@ func _ready() -> void:
 	set_process(true)
 
 func _process(delta: float) -> void:
-	save_game.life.advance(delta * minutes_per_second)
+	var elapsed_minutes: float = delta * minutes_per_second
+	save_game.life.advance(elapsed_minutes)
+	save_game.economy.settle(save_game.life.minute, save_game.population, save_game.dead_npcs)
 	_tick += delta
 	_save_elapsed += delta
 	for id: String in _actors.keys():
@@ -110,6 +118,9 @@ func _process(delta: float) -> void:
 			_revisions[id] = npc.life_revision
 			save_game.life.interrupt(id)
 		npc.daily_routine.update(npc.global_position, delta, not npc.can_follow_routine())
+		if npc.daily_routine.activity in ["work", "patrol", "school"] and npc.can_follow_routine() \
+			and (npc.daily_routine.activity == "patrol" or npc.global_position.distance_to(npc.daily_routine.destination) <= 4):
+			save_game.economy.record_work(id, elapsed_minutes)
 		if not encounters.is_busy(id):
 			buildings.advance(npc, id)
 			_revisions[id] = npc.life_revision
@@ -120,8 +131,8 @@ func _process(delta: float) -> void:
 	ids.sort()
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"])
-		if _maintain_safety(npc, id):
+		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"], save_game.population)
+		if watch.maintain(npc, id) or _maintain_safety(npc, id):
 			_update_context(npc, id)
 			continue
 		_wake_for_schedule(npc, id)
@@ -165,17 +176,26 @@ func _build_places() -> void:
 	_places = {"square": {"label": "Rekala square", "position": Vector2(16, 48)},
 		"market": {"label": "the market stalls", "position": Vector2(-48, 88)},
 		"garden": {"label": "the farm garden", "position": Vector2(320, 104)}}
-	for home: Dictionary in RegionLayout.HOMES:
-		var data: NpcData = load("res://game/resources/actors/humans/%s_npc_data.tres" % home.job)
-		var profile: NpcProfile = data.profile
-		var id: String = String(profile.npc_id)
-		var room: NpcInterior = buildings.rooms[StringName("home:" + id)]
-		_places["home:" + id] = {"label": profile.profile_name + "'s home", "position": room.bed_spot,
-			"space": "home:" + id}
-		_places["work:" + id] = {"label": profile.profile_name + "'s shop", "position": room.work_spot,
-			"space": "home:" + id}
-		_public_people.append({"id": id, "name": profile.profile_name, "job": profile.job,
-			"home": profile.profile_name + "'s house in Rekala"})
+	_places["school"] = {"label": "the school lessons by the farm", "position": Vector2(128, 256)}
+	_places["playground"] = {"label": "the children's play green", "position": Vector2(-104, 232)}
+	for index: int in range(4):
+		_places["patrol:%d" % index] = {"label": "village watch route", "position":
+			[Vector2(-320, 32), Vector2(8, -232), Vector2(392, 32), Vector2(8, 304)][index]}
+	for id: String in save_game.population.people:
+		var person: Dictionary = save_game.population.people[id]
+		var space: String = "home:" + person.household
+		var room: NpcInterior = buildings.rooms[StringName(space)]
+		_places["home:" + id] = {"label": room.resident_name + " family home", "position": room.bed_for(id), "space": space}
+		_places["work:" + id] = {"label": person.name + "'s workplace", "position": room.work_spot, "space": space}
+		var outdoor_jobs: Dictionary = {"farmer": Vector2(352, 72), "farmhand": Vector2(376, 120),
+			"herb gatherer": Vector2(-304, -200), "fisher": Vector2(432, 208),
+			"miller": Vector2(416, -16), "delivery worker": Vector2(-48, 88)}
+		if outdoor_jobs.has(person.job):
+			_places["work:" + id] = {"label": person.job + " work", "position": outdoor_jobs[person.job]}
+		elif person.job == "teacher" or person.age < 16:
+			_places["work:" + id] = _places.school
+		_public_people.append({"id": id, "name": person.name, "job": person.job,
+			"home": room.resident_name + " household in Rekala"})
 
 func _choose_activity(npc: BaseNpc, id: String) -> void:
 	_pending[id] = true
@@ -226,6 +246,8 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	_save()
 
 func _maintain_safety(npc: BaseNpc, id: String) -> bool:
+	if npc.is_in_group(&"town_guards"):
+		return false
 	var person: Dictionary = save_game.life.get_person(id)
 	if not NpcSafetyState.sheltering(person.safety, save_game.life.minute):
 		return false
@@ -237,7 +259,7 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 		return true
 	# Do not retreat into the room where the threat was perceived. Outdoors, home is
 	# a known refuge; a threat in one's own home calls for leaving for the public market.
-	var refuge: String = "work:" + id if person.safety.space != "home:" + id else "market"
+	var refuge: String = "home:" + id if person.safety.space != "home:" + save_game.population.household_for(id) else "market"
 	if not _places.has(refuge):
 		return false
 	var selected: Dictionary = {"kind": "shelter", "place": refuge}
@@ -251,6 +273,9 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	_add_option(options, "PLAN", preferred.kind, preferred.place, "Follow today's planned activity.")
+	if preferred.kind in ["school", "patrol", "meal"]:
+		return options
+	var resident: Dictionary = save_game.population.people[id]
 	if preferred.kind == "rest" or save_game.life.get_person(id).activity != "rest":
 		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
 	var hour: int = int(save_game.life.minute / 60.0) % 24
@@ -261,7 +286,8 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 		var venue: String = venues[random_venue.randi_range(0, venues.size() - 1)]
 		_add_option(options, "SOCIAL", "socialize", venue, "Spend some free time here; neighbors may pass by.")
 		_add_option(options, "MEAL", "meal", "market", "Take a meal break near the market stalls.")
-		_add_option(options, "WORK", "work", "work:" + id, "Return to professional work and daily obligations.")
+		if resident.age >= 16 and not String(resident.job).begins_with("retired") and resident.job != "guard":
+			_add_option(options, "WORK", "work", "work:" + id, "Return to professional work and daily obligations.")
 		_add_option(options, "WALK", "walk", "garden", "Take a walk near the farm garden.")
 		var ties: Dictionary = save_game.life.get_person(id).ties
 		var residents: Array = ties.keys()
@@ -293,7 +319,7 @@ func _travel(npc: BaseNpc, id: String, selected: Dictionary) -> void:
 	var offset := Vector2(random.randi_range(-2, 2), random.randi_range(-1, 1)) * 8.0
 	var destination: Vector2 = place.position + (offset if space == &"outdoors" else Vector2.ZERO)
 	if selected.kind == "meal" and buildings.rooms.has(space):
-		destination = buildings.rooms[space].meal_spot
+		destination = buildings.rooms[space].meal_for(id)
 	buildings.travel(npc, id, space, destination, selected.kind, place.label)
 	_revisions[id] = npc.life_revision # A scheduled wakeup is part of this plan, not an interruption.
 	npc.state_time_remaining = 0.0
@@ -324,9 +350,14 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 		"safety_response": NpcSafetyState.context(person.safety, save_game.life.minute),
 		"daily_plan": person.plan, "known_townspeople": neighbors,
 		"recent_social": person.recent_social, "town_rumors": save_game.life.rumors.get_known(id, save_game.life.minute).slice(-4),
-		"routine_decision": person.decision, "personality": npc.get_npc_profile().personality}
+		"routine_decision": person.decision, "personality": npc.get_npc_profile().personality,
+		"family_members": save_game.population.family_context(id),
+		"household": save_game.population.household_for(id),
+		"household_economy": save_game.economy.context(save_game.population.household_for(id))}
 	if encounters != null:
 		npc.life_context.social_status = encounters.diagnostics(id)
+	if npc.is_in_group(&"town_guards"):
+		npc.life_context.enforcement = save_game.justice.known_to(id)
 
 func _save() -> Error:
 	for id: String in _actors:
@@ -336,3 +367,12 @@ func _save() -> Error:
 	if error != OK:
 		push_warning("Town life could not be saved: %s" % error)
 	return error
+
+func travel_to(npc: BaseNpc, id: String, kind: String, place: String, duration: float = 20) -> void:
+	var selected: Dictionary = {"kind": kind, "place": place}
+	save_game.life.select_activity(id, selected, duration, {"service": "town_obligation"})
+	_travel(npc, id, selected)
+
+func investigate(npc: BaseNpc, id: String, space: StringName, position: Vector2) -> void:
+	encounters.interrupt(id)
+	buildings.travel(npc, id, space, position, "investigate", "a disturbance")

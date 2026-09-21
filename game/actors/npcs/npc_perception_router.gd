@@ -7,9 +7,22 @@ var _handlers: Dictionary[StringName, Callable] = {}
 func _init() -> void:
 	register(&"actor_hurt", _combat)
 	register(&"actor_died", _combat)
+	register(&"actor_surrendered", _surrender)
+
+func _surrender(observer: BaseNpc, event: WorldEvent) -> Dictionary:
+	if observer.health <= 0 or observer.world_space != event.subject.world_space \
+		or not NpcPerception.can_see(observer, event.subject):
+		return {}
+	return {"kind": "surrender", "sense": "sight", "player_involved": true,
+		"text": "I saw %s put down their weapon and surrender." % event.subject.get_perceived_name(),
+		"directly_affected": false, "danger_possible": false, "topics": ["surrender"],
+		"participants": [{"id": "player", "name": event.subject.get_perceived_name(), "role": "speaker"}]}
 
 func register(kind: StringName, handler: Callable) -> void:
 	_handlers[kind] = handler
+
+func handles(kind: StringName) -> bool:
+	return _handlers.has(kind)
 
 func perceive(observer: BaseNpc, event: WorldEvent) -> Dictionary:
 	if not _handlers.has(event.kind):

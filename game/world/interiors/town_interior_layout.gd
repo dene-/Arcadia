@@ -32,8 +32,10 @@ const TRADES: Dictionary = {
 	"furrier": [Vector2i(13, 9), "clothes", "cabinet", 1],
 }
 
-static func create(job: String, seed_value: int, id: String) -> Dictionary:
-	var trade: Array = TRADES[job]
+static func create(job: String, seed_value: int, id: String, residents: Array[String] = []) -> Dictionary:
+	var trade: Array = TRADES.get(job, [Vector2i(12, 10), "table", "hearth", 0])
+	if residents.size() > 1:
+		return _family_layout(trade, residents)
 	var size: Vector2i = trade[0]
 	var floor_area := Rect2i(Vector2i(-size.x / 2, -size.y / 2), size)
 	var random := NpcRoutinePlan.random_for(seed_value, id + ":interior")
@@ -72,3 +74,28 @@ static func create(job: String, seed_value: int, id: String) -> Dictionary:
 		props.append({"kind": "table", "foot": Vector2(0, top + 24)})
 	return {"floor": floor_area, "props": props, "bed": bed, "work": work + Vector2(0, 8),
 		"meal": meal, "rug": int(trade[3]), "door_x": 0.0}
+
+static func _family_layout(trade: Array, residents: Array[String]) -> Dictionary:
+	var columns: int = mini(3, residents.size())
+	var size := Vector2i(12 + columns * 3, 14 if residents.size() > 3 else 11)
+	var floor_area := Rect2i(Vector2i(-size.x / 2, -size.y / 2), size)
+	var left: float = floor_area.position.x * 8
+	var right: float = floor_area.end.x * 8
+	var top: float = floor_area.position.y * 8
+	var bottom: float = floor_area.end.y * 8
+	var beds: Dictionary = {}
+	var props: Array[Dictionary] = []
+	for index: int in range(residents.size()):
+		var foot := Vector2(right - 16 - (index % columns) * 24, top + 24 + (index / columns) * 32)
+		beds[residents[index]] = foot
+		props.append({"kind": "bed", "foot": foot})
+	var work := Vector2(left + 24, top + 24)
+	var table := Vector2(left + 40, bottom - 24)
+	props.append_array([{"kind": trade[1], "foot": work},
+		{"kind": trade[2], "foot": Vector2(left + 20, bottom - 8)},
+		{"kind": "table", "foot": table},
+		{"kind": "table", "foot": table + Vector2(16, 0)},
+		{"kind": "wardrobe", "foot": Vector2(left + 16, top + 4)}])
+	return {"floor": floor_area, "props": props, "beds": beds,
+		"bed": beds[residents[0]], "work": work + Vector2(0, 8),
+		"meal": table + Vector2(8, 12), "rug": int(trade[3]), "door_x": 0.0}

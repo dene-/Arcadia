@@ -169,7 +169,8 @@ func get_cognitive_context() -> Dictionary:
 	return current
 
 func can_follow_routine() -> bool:
-	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
+	return health > 0 and not _dialog_locked and not has_enemy_target() \
+		and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
 
 func sleep_at(center: Vector2) -> void:
 	_sleep_center = center - global_position
@@ -338,8 +339,37 @@ func apply_hurt_reaction(delta: float) -> void:
 
 # -- Enemy AI -----------------------------------------------------------------
 
+## Explicitly authorized combat for peaceful residents; never enables enemy target acquisition.
+func set_enforcement_target(target: BaseActor) -> void:
+	if health <= 0 or target.health <= 0 or target.world_space != world_space:
+		return
+	if _target == target:
+		return
+	wake_from_noise("danger")
+	interrupt_for_safety()
+	_target = target
+	life_revision += 1
+
+func clear_enforcement_target() -> void:
+	if npc_data.ai_enabled:
+		return
+	_target = null
+	_pursuit.reset(self)
+	set_hitbox_enabled(false)
+	velocity = Vector2.ZERO
+	if state_machine.get_current_state_name() in [&"attack", &"run"]:
+		state_machine.transition_to(&"idle", {}, true)
+
+func is_fighting_monster() -> bool:
+	return has_enemy_target() and _target.is_in_group(&"enemies")
+
+func consume_melee_hit(target: BaseActor) -> bool:
+	if is_in_group(&"town_guards") and target != _target:
+		return false
+	return super.consume_melee_hit(target)
+
 func update_enemy_ai(delta: float) -> StringName:
-	if not npc_data.ai_enabled:
+	if not npc_data.ai_enabled and not has_enemy_target():
 		return &""
 
 	_attack_cooldown_remaining = maxf(_attack_cooldown_remaining - delta, 0.0)
@@ -704,6 +734,8 @@ func _refresh_target() -> void:
 			return
 
 	_target = null
+	if not npc_data.ai_enabled:
+		return
 	var closest_target: Node2D
 	var closest_distance_sq := npc_data.detection_range * npc_data.detection_range
 	for node: Node in get_tree().get_nodes_in_group(npc_data.target_group):

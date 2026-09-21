@@ -87,6 +87,18 @@ func test_cancel_during_decision_never_generates_dialogue_or_commits() -> void:
 	assert_eq(conversation.store.turn, 0)
 	backend.free()
 
+func test_surrender_comes_from_assessed_intent_never_dialogue_metadata() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.result.surrender = true
+	var first: Dictionary = await conversation.request(_profile(), {}, "What does surrender mean?", backend)
+	assert_false(first.surrender)
+	backend.policy.interaction_intent = "SURRENDER"
+	var second: Dictionary = await conversation.request(_profile(), {}, "I surrender.", backend)
+	assert_true(second.surrender)
+	backend.free()
+
 func test_cancel_during_dialogue_drops_late_response() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false

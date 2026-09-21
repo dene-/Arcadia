@@ -61,7 +61,7 @@ func _run() -> void:
 	var starts: Dictionary = {}
 	for npc: BaseNpc in residents:
 		starts[npc.get_instance_id()] = npc.global_position
-		if npc.life_context.known_townspeople.size() != 8:
+		if npc.life_context.known_townspeople.size() != cognition.save_game.population.people.size() - 1:
 			failures.append("Missing local knowledge: " + npc.name)
 		if npc.get_npc_profile().social_traits.size() != 5:
 			failures.append("Missing temperament: " + npc.name)

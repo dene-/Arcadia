@@ -63,6 +63,7 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 			push_warning("NPC memory could not be saved: %s" % error)
 	# Only the assessed policy can end a completed exchange, never generated dialogue metadata.
 	result["end_conversation"] = policy.get("end_conversation", false)
+	result["surrender"] = policy.get("interaction_intent", "OTHER") == "SURRENDER"
 	return result
 
 func _is_current(generation: int, current_guard: Callable) -> bool:

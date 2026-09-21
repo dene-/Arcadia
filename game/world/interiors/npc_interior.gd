@@ -8,6 +8,7 @@ var floor_area: Rect2i
 var bed_center: Vector2
 var player_entrance: Vector2
 var resident_id: String
+var residents: Array[String] = []
 var resident_name: String
 var job: String
 var seed_value: int
@@ -20,7 +21,7 @@ var meal_spot: Vector2
 var entrance: Vector2
 
 func _ready() -> void:
-	layout = TownInteriorLayout.create(job, seed_value, resident_id)
+	layout = TownInteriorLayout.create(job, seed_value, resident_id, residents)
 	floor_area = layout.floor
 	y_sort_enabled = true
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -108,3 +109,11 @@ func _furnish() -> void:
 	bed_center = global_position + Vector2(layout.bed) + Vector2(-1, -6)
 	work_spot = global_position + Vector2(layout.work)
 	meal_spot = global_position + Vector2(layout.meal)
+
+func bed_for(id: String, center: bool = false) -> Vector2:
+	var foot: Vector2 = layout.get("beds", {}).get(id, layout.bed)
+	return global_position + foot + (Vector2(-1, -6) if center else Vector2(0, 8))
+
+func meal_for(id: String) -> Vector2:
+	var index: int = maxi(0, residents.find(id))
+	return meal_spot + Vector2((index % 3 - 1) * 12, (index / 3) * -24)

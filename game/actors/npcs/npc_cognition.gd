@@ -32,6 +32,8 @@ func _on_world_event(event: WorldEvent) -> void:
 	if event.kind == &"actor_spoke":
 		ambient.record(event.subject, event.facts.text, get_tree().get_nodes_in_group(&"npc_observers"))
 		return
+	if not perception.handles(event.kind):
+		return
 	var origin_id: String = save_game.life.issue_event_id()
 	# World truth is recorded synchronously at the lethal hit, before any network call.
 	if event.kind == &"actor_died" and event.subject is BaseNpc:

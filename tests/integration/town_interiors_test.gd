@@ -32,6 +32,9 @@ func _run() -> void:
 	var life: TownLife = world.get_node("Region/TownLife")
 	var buildings: TownBuildings = life.buildings
 	life.minutes_per_second = 0
+	life.save_game.life.minute = 1380
+	for resident_id: String in life._actors:
+		life.save_game.life.ensure_person(resident_id, 274415, life._actors.keys(), ["square"], life.save_game.population)
 	print("Region navigation: ", life.navigation.metrics())
 	var residents: Array[Node] = get_nodes_in_group("town_residents")
 	var failures: Array[String] = []
@@ -45,7 +48,7 @@ func _run() -> void:
 		await physics_frame
 	for npc: BaseNpc in residents:
 		var id: String = String(npc.get_npc_profile().npc_id)
-		if npc.world_space != StringName("home:" + id) or not npc.state_machine.is_in_state(&"sleep"):
+		if npc.world_space != StringName("home:" + cognition.save_game.population.household_for(id)) or not npc.state_machine.is_in_state(&"sleep"):
 			failures.append("Did not reach bed: %s at %s, state=%s, goal=%s" %
 				[id, npc.position, npc.state_machine.get_current_state_name(), npc.daily_routine.destination])
 		else:
@@ -56,7 +59,7 @@ func _run() -> void:
 			var center: Vector2 = Vector2(used.position) + Vector2(used.size) * 0.5 - texture.get_size() * 0.5
 			if sprite.flip_h:
 				center.x = -center.x
-			if sprite.to_global(center).distance_to(bed_room.bed_center) > 1:
+			if sprite.to_global(center).distance_to(bed_room.bed_for(id, true)) > 1:
 				failures.append("Sleeping sprite misses mattress: " + id)
 	var resident: BaseNpc = residents[0]
 	var room: NpcInterior = buildings.rooms[StringName("home:" + String(resident.get_npc_profile().npc_id))]
@@ -191,7 +194,7 @@ func _run() -> void:
 		await physics_frame
 	for npc: BaseNpc in residents:
 		if npc.world_space != &"outdoors":
-			failures.append("Resident could not leave home: " + npc.name)
+			failures.append("Resident could not leave home: %s pos=%s goal=%s" % [npc.name, npc.global_position, npc.daily_routine.destination])
 	world.queue_free()
 	await process_frame
 	# Reconstruct the actual scene using saved room membership, rather than just checking JSON.
@@ -205,13 +208,16 @@ func _run() -> void:
 	for frame: int in range(30):
 		await physics_frame
 	for npc: BaseNpc in get_nodes_in_group("town_residents"):
-		if npc.world_space != StringName("home:" + String(npc.get_npc_profile().npc_id)) \
+		if npc.world_space != StringName("home:" + cognition.save_game.population.household_for(String(npc.get_npc_profile().npc_id))) \
 			or not npc.is_sleeping():
 			failures.append("Restart did not restore sleeping resident: " + npc.name)
 	life = world.get_node("Region/TownLife")
 	life.minutes_per_second = 0
+	life.save_game.life.minute = 1380
+	for resident_id: String in life._actors:
+		life.save_game.life.ensure_person(resident_id, 274415, life._actors.keys(), ["square"], life.save_game.population)
 	backend.always_rest = true
-	cognition.save_game.life.minute = 650
+	cognition.save_game.life.minute = 1440 + 650
 	for frame: int in range(90):
 		await physics_frame
 	for npc: BaseNpc in get_nodes_in_group("town_residents"):

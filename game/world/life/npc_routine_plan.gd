@@ -3,7 +3,7 @@ extends RefCounted
 
 ## Daily preferences are reproducible from world, person and day; actual choices remain contextual.
 const MINUTES_PER_DAY: int = 1440
-const REVISION: int = 2
+const REVISION: int = 3
 
 static func random_for(world_seed: int, key: String) -> RandomNumberGenerator:
 	var random := RandomNumberGenerator.new()

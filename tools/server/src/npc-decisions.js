@@ -66,6 +66,7 @@ export const QUESTIONS = {
       PROMISE: "Making a commitment.",
       CLAIM: "Providing possibly untrue information.",
       APOLOGY: "Apology or reconciliation.",
+      SURRENDER: "The player voluntarily stops resisting and surrenders now. Not a quotation, hypothetical, past event, question, negation or a demand that somebody else surrender.",
       OTHER: "No other intent clearly fits.",
     },
   },
