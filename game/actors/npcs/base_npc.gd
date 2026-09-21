@@ -385,6 +385,14 @@ func get_enemy_chase_direction() -> Vector2:
 	_set_facing_toward_target(target_position)
 	return current_move_direction
 
+func get_enemy_chase_velocity(delta: float) -> Vector2:
+	var direction := get_enemy_chase_direction()
+	if direction == Vector2.ZERO or delta <= 0.0:
+		return Vector2.ZERO
+	# Reach the slot without stepping past it, including when spacing equals attack range.
+	var distance := global_position.distance_to(get_lateral_attack_position(_target.global_position))
+	return direction * minf(current_run_speed(), distance / delta)
+
 func get_lateral_attack_position(target_position: Vector2) -> Vector2:
 	var side_sign := _get_attack_side_sign(target_position)
 	return target_position + Vector2(float(side_sign) * _get_attack_side_offset(), 0.0)
@@ -398,7 +406,7 @@ func is_in_lateral_attack_position(target_position: Vector2) -> bool:
 	var attack_side_offset := _get_attack_side_offset()
 	var minimum_horizontal_distance := maxf(
 		attack_side_offset - npc_data.attack_slot_arrival_distance,
-		1.0
+		maxf(npc_data.soft_collision_distance, 1.0)
 	)
 	minimum_horizontal_distance = minf(minimum_horizontal_distance, npc_data.attack_range)
 	return (
@@ -657,8 +665,8 @@ func _refresh_target() -> void:
 func _get_direction_to_lateral_attack_position(target_position: Vector2) -> Vector2:
 	var attack_position := get_lateral_attack_position(target_position)
 	var offset := attack_position - global_position
-	if offset.length() <= npc_data.attack_slot_arrival_distance:
-		return Vector2.ZERO
+	# Attack readiness owns arrival tolerance; proximity alone can still be too close,
+	# out of range or vertically misaligned.
 	return offset.normalized()
 
 func _get_attack_side_offset() -> float:

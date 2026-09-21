@@ -74,6 +74,18 @@ Avoid:
 - Adding one-off behavior branches to `BaseNpc` for a single NPC.
 - Having state scripts read `npc_data` directly unless the value is truly state-specific and no narrow NPC method exists yet.
 
+## Enemy Attack Positioning
+
+`BaseNpc` keeps attack arrival tolerance outside `soft_collision_distance`, clamped to the
+attack range when the configured spacing is larger than weapon reach. Enemies continue
+repositioning until horizontal range and vertical alignment both permit an attack. The run
+state uses `get_enemy_chase_velocity(delta)` to limit the final step to the preferred slot,
+preventing overshoot when the valid attack band is narrow.
+
+Run `tests/integration/npc_combat_position_test.gd` headlessly with `--fixed-fps 60` to check
+real enemy movement and attack transitions from both sides, close range, misalignment,
+and spacing beyond weapon reach. This scenario uses no dialogue providers or saved NPCs.
+
 ## Adding Player Types Or Races
 
 For player variants such as race, class, or character differences, prefer data and inherited scenes.

@@ -14,12 +14,12 @@ func physics_update(delta: float) -> void:
 		return
 
 	if npc.npc_data.ai_enabled:
-		var chase_direction := npc.get_enemy_chase_direction()
-		if chase_direction == Vector2.ZERO:
+		var chase_velocity := npc.get_enemy_chase_velocity(delta)
+		if chase_velocity == Vector2.ZERO:
 			transition_to(&"idle")
 			return
 		npc.play_animation(&"run", false, 1.25)
-		npc.apply_velocity(chase_direction * npc.current_run_speed())
+		npc.apply_velocity(chase_velocity)
 		return
 
 	var direction := npc.get_move_direction_to_target()

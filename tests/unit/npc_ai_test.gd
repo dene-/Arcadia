@@ -63,3 +63,20 @@ func test_lateral_attack_soft_collision_distance_stays_inside_attack_range() -> 
 	_npc.global_position = Vector2(-30.0, 0.0)
 
 	assert_eq(_npc.get_lateral_attack_position(Vector2.ZERO), Vector2(-13.0, 0.0))
+
+func test_attack_spacing_boundaries_on_both_sides() -> void:
+	for side: float in [-1.0, 1.0]:
+		for distance: float in [9.0, 11.99, 13.01]:
+			_npc.global_position = Vector2(side * distance, 0.0)
+			assert_false(_npc.is_in_lateral_attack_position(Vector2.ZERO))
+		for distance: float in [12.0, 12.5, 13.0]:
+			_npc.global_position = Vector2(side * distance, 0.0)
+			assert_true(_npc.is_in_lateral_attack_position(Vector2.ZERO))
+
+func test_arrival_tolerance_still_allows_valid_spacing_before_the_preferred_slot() -> void:
+	_npc.npc_data.attack_range = 20.0
+	_npc.npc_data.attack_side_offset = 18.0
+	_npc.global_position = Vector2(-15.0, 0.0)
+	assert_true(_npc.is_in_lateral_attack_position(Vector2.ZERO))
+	_npc.global_position.x = -14.99
+	assert_false(_npc.is_in_lateral_attack_position(Vector2.ZERO))
