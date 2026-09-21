@@ -42,6 +42,8 @@ var _pending_death: bool = false
 var _hurt_knockback_velocity: Vector2 = Vector2.ZERO
 var _dialog_locked: bool = false
 var _target: Node2D
+var _pursuit := NpcPursuit.new()
+var _patrol_route := ActorRoute.new()
 var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
@@ -83,6 +85,7 @@ func _ready() -> void:
 	add_to_group("interactables")
 	interaction_area.monitoring = npc_data.interaction_enabled
 	interaction_area.monitorable = npc_data.interaction_enabled
+	interaction_area.collision_mask = ActorFootprint.ACTORS
 
 	state_machine.initialize(self)
 	if get_npc_profile() != null and not get_npc_profile().npc_id.is_empty():
@@ -342,6 +345,7 @@ func update_enemy_ai(delta: float) -> StringName:
 	_attack_cooldown_remaining = maxf(_attack_cooldown_remaining - delta, 0.0)
 	_refresh_target()
 	if _target == null:
+		_pursuit.reset(self)
 		return &""
 
 	var target_position := _target.global_position
@@ -349,18 +353,24 @@ func update_enemy_ai(delta: float) -> StringName:
 	var target_distance := target_offset.length()
 	if target_distance > npc_data.lose_interest_range:
 		_target = null
+		_pursuit.reset(self)
 		current_move_direction = Vector2.ZERO
 		return &"idle"
 
-	if is_in_lateral_attack_position(target_position):
+	var in_attack_position: bool = is_in_lateral_attack_position(target_position) \
+		and has_clear_melee_path(_target)
+	_pursuit.prepare(self, _target, delta, in_attack_position)
+	if in_attack_position and _pursuit.may_attack():
 		current_move_direction = Vector2.ZERO
 		set_facing_from_direction(target_offset)
-		if _attack_cooldown_remaining <= 0.0:
-			_attack_cooldown_remaining = npc_data.attack_cooldown
+		if try_start_enemy_attack():
 			return &"attack"
 		return &"idle"
 
-	if not can_see_target(_target):
+	if movement_navigation != null and _pursuit.holding(global_position):
+		current_move_direction = Vector2.ZERO
+		return &"idle"
+	if movement_navigation == null and not can_see_target(_target):
 		if target_distance > npc_data.detection_range:
 			_target = null
 			current_move_direction = Vector2.ZERO
@@ -386,6 +396,8 @@ func get_enemy_chase_direction() -> Vector2:
 	return current_move_direction
 
 func get_enemy_chase_velocity(delta: float) -> Vector2:
+	if movement_navigation != null and is_instance_valid(_target):
+		return _pursuit.velocity_for(self, delta)
 	var direction := get_enemy_chase_direction()
 	if direction == Vector2.ZERO or delta <= 0.0:
 		return Vector2.ZERO
@@ -393,9 +405,59 @@ func get_enemy_chase_velocity(delta: float) -> Vector2:
 	var distance := global_position.distance_to(get_lateral_attack_position(_target.global_position))
 	return direction * minf(current_run_speed(), distance / delta)
 
+func has_enemy_target() -> bool:
+	return is_instance_valid(_target)
+
+func try_start_enemy_attack() -> bool:
+	if not has_enemy_target() or _attack_cooldown_remaining > 0 or not _pursuit.may_attack() \
+		or not is_in_lateral_attack_position(_target.global_position) or not has_clear_melee_path(_target):
+		return false
+	current_move_direction = Vector2.ZERO
+	set_facing_from_direction(_target.global_position - global_position)
+	_attack_cooldown_remaining = npc_data.attack_cooldown
+	return true
+
+func get_routine_velocity(delta: float, running: bool = false) -> Vector2:
+	var speed: float = current_run_speed() if running else current_walk_speed()
+	var motion: Vector2
+	if daily_routine != null:
+		motion = daily_routine.velocity_for(global_position, speed, delta)
+	elif movement_navigation != null and delta > 0:
+		if _patrol_route.navigation != movement_navigation or _patrol_route.goal != patrol_target:
+			_patrol_route.navigation = movement_navigation
+			_patrol_route.id = movement_id
+			patrol_target = movement_navigation.nearest(patrol_target)
+			_patrol_route.travel(global_position, patrol_target)
+		_patrol_route.update(global_position, delta)
+		var offset: Vector2 = _patrol_route.waypoint(global_position) - global_position
+		var desired: Vector2 = offset.normalized() * minf(speed, offset.length() / delta)
+		motion = movement_navigation.steer(movement_id, global_position, desired, delta)
+	else:
+		motion = get_move_direction_to_target() * speed
+	if motion != Vector2.ZERO:
+		current_move_direction = motion.normalized()
+		set_facing_from_direction(motion)
+	return motion
+
+func yield_to_approaching_player(delta: float) -> bool:
+	if movement_navigation == null or npc_data.ai_enabled or _dialog_locked or _sleeping:
+		return false
+	var motion: Vector2 = movement_navigation.yield_velocity(movement_id, global_position, delta)
+	if motion == Vector2.ZERO:
+		return false
+	set_facing_from_direction(motion)
+	play_animation(&"walk")
+	apply_velocity(motion)
+	return true
+
 func get_lateral_attack_position(target_position: Vector2) -> Vector2:
 	var side_sign := _get_attack_side_sign(target_position)
 	return target_position + Vector2(float(side_sign) * _get_attack_side_offset(), 0.0)
+
+func get_combat_approach_distance(target: Node2D) -> float:
+	var body_spacing: float = ActorFootprint.radius(self) + ActorFootprint.radius(target) + 0.6
+	var preferred: float = _get_attack_side_offset() - npc_data.attack_slot_arrival_distance
+	return minf(npc_data.attack_range, maxf(body_spacing, preferred))
 
 func is_in_lateral_attack_position(target_position: Vector2) -> bool:
 	var target_offset := target_position - global_position
@@ -403,15 +465,11 @@ func is_in_lateral_attack_position(target_position: Vector2) -> bool:
 		return false
 
 	var horizontal_distance := absf(target_offset.x)
-	var attack_side_offset := _get_attack_side_offset()
-	var minimum_horizontal_distance := maxf(
-		attack_side_offset - npc_data.attack_slot_arrival_distance,
-		maxf(npc_data.soft_collision_distance, 1.0)
-	)
-	minimum_horizontal_distance = minf(minimum_horizontal_distance, npc_data.attack_range)
+	# Preferred spacing guides the approach; it must not make an enemy retreat from
+	# an opponent already within striking distance. Bodies handle physical separation.
 	return (
-		horizontal_distance >= minimum_horizontal_distance
-		and horizontal_distance <= npc_data.attack_range
+		horizontal_distance >= 1.0
+		and horizontal_distance <= npc_data.attack_range + 0.02
 	)
 
 func can_see_target(target: Node2D) -> bool:
@@ -637,6 +695,10 @@ func _receive_hit(area: Area2D, damage: int) -> void:
 	take_damage(damage, area)
 
 func _refresh_target() -> void:
+	if is_instance_valid(_target) and _target is BaseActor \
+		and (_target.health <= 0 or _target.world_space != world_space):
+		_target = null
+		_pursuit.reset(self)
 	if _target != null and is_instance_valid(_target):
 		if can_see_target(_target) or global_position.distance_to(_target.global_position) <= npc_data.lose_interest_range:
 			return
@@ -647,6 +709,8 @@ func _refresh_target() -> void:
 	for node: Node in get_tree().get_nodes_in_group(npc_data.target_group):
 		var candidate := node as Node2D
 		if candidate == null or not is_instance_valid(candidate):
+			continue
+		if candidate is BaseActor and (candidate.health <= 0 or candidate.world_space != world_space):
 			continue
 
 		var distance_sq := global_position.distance_squared_to(candidate.global_position)

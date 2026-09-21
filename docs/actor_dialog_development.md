@@ -10,6 +10,7 @@ Shared actor scene contract:
 
 - Root node extends `BaseActor` through a child class such as `BasePlayer` or `BaseNpc`.
 - Required children:
+  - `CollisionShape2D` (physical feet, separate from combat areas)
   - `AnimatedSprite2D`
   - `HitBox`
   - `HitBox/CollisionShape2D`
@@ -28,6 +29,7 @@ Shared actor scene contract:
 - hitbox metadata (`owner`, `damage`)
 - animation playback and sprite flipping
 - common hitbox/hurtbox signal handling
+- rounded body setup, navigation registration cleanup and wall-aware single-hit melee contact
 
 `BasePlayer` owns:
 
@@ -76,15 +78,25 @@ Avoid:
 
 ## Enemy Attack Positioning
 
-`BaseNpc` keeps attack arrival tolerance outside `soft_collision_distance`, clamped to the
-attack range when the configured spacing is larger than weapon reach. Enemies continue
-repositioning until horizontal range and vertical alignment both permit an attack. The run
-state uses `get_enemy_chase_velocity(delta)` to limit the final step to the preferred slot,
-preventing overshoot when the valid attack band is narrow.
+`BaseNpc` treats `soft_collision_distance` as an approach preference. Enemies can attack
+closer opponents without backing away to restore that spacing. Shared pursuit aims inside
+weapon range while allowing body clearance, and the run state checks attack readiness
+after moving so a running target cannot escape the check on every physics tick.
+
+In generated worlds, `NpcPursuit` follows the shared `ActorRoute` to a leased attack approach.
+`ActorCrowd` handles nearby bodies independently of combat intent or daily activity.
+Static world geometry is layer 1, moving bodies layer 2; hit/hurt areas retain their resource
+settings. `attack_connected` fires only when a receiver accepts a contact for that swing.
+Outgoing areas remain monitorable; the weapon's collision shape activates only during a
+swing. This prevents late contact notifications caused by toggling area monitorability.
+See [town movement](town_life.md#routine-and-movement) for ownership and performance diagnostics.
 
 Run `tests/integration/npc_combat_position_test.gd` headlessly with `--fixed-fps 60` to check
 real enemy movement and attack transitions from both sides, close range, misalignment,
 and spacing beyond weapon reach. This scenario uses no dialogue providers or saved NPCs.
+`tests/integration/combat_contact_test.gd` additionally checks actual damage in both
+directions, advancing player swings, pursuit of a running player, and wall-blocked strikes.
+Run it at 30, 60 and 120 physics ticks using matching `--fixed-fps` and `-- <tick rate>`.
 
 ## Adding Player Types Or Races
 

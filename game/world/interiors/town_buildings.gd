@@ -37,6 +37,7 @@ func _ready() -> void:
 func prepare_navigation(shared: TownNavigation, bodies: Array[RID]) -> void:
 	outdoors = shared
 	for room: NpcInterior in rooms.values():
+		room.navigation.clearance = shared.clearance
 		room.navigation.build(get_world_2d().direct_space_state, bodies)
 
 func navigation_for(space: StringName) -> TownNavigation:
@@ -71,9 +72,11 @@ func advance(npc: BaseNpc, id: String) -> void:
 			npc.sleep_at(rooms[npc.world_space].bed_center)
 		return
 	if npc.world_space != &"outdoors":
-		_transfer(npc, id, &"outdoors", rooms[npc.world_space].outside)
+		if not _transfer(npc, id, &"outdoors", rooms[npc.world_space].outside):
+			return
 	else:
-		_transfer(npc, id, journey.space, rooms[journey.space].entrance)
+		if not _transfer(npc, id, journey.space, rooms[journey.space].entrance):
+			return
 	_next_leg(npc, id)
 
 func release(npc: BaseNpc, id: String) -> void:
@@ -89,6 +92,8 @@ func move_player(player: BasePlayer, destination: StringName) -> void:
 		if not rooms.has(player.world_space):
 			return
 		point = rooms[player.world_space].outside
+		if not _transfer(player, "player:%d" % player.get_instance_id(), destination, point):
+			return
 		camera.limit_left = _player_camera_limits.position.x
 		camera.limit_top = _player_camera_limits.position.y
 		camera.limit_right = _player_camera_limits.end.x
@@ -96,15 +101,16 @@ func move_player(player: BasePlayer, destination: StringName) -> void:
 	else:
 		if not rooms.has(destination):
 			return
-		_player_camera_limits = Rect2i(camera.limit_left, camera.limit_top,
-			camera.limit_right - camera.limit_left, camera.limit_bottom - camera.limit_top)
 		var room: NpcInterior = rooms[destination]
 		point = room.player_entrance
+		if not _transfer(player, "player:%d" % player.get_instance_id(), destination, point):
+			return
+		_player_camera_limits = Rect2i(camera.limit_left, camera.limit_top,
+			camera.limit_right - camera.limit_left, camera.limit_bottom - camera.limit_top)
 		camera.limit_left = int(room.global_position.x) - 120
 		camera.limit_right = int(room.global_position.x) + 120
 		camera.limit_top = int(room.global_position.y) - 80
 		camera.limit_bottom = int(room.global_position.y) + 80
-	_transfer(player, "player:%d" % player.get_instance_id(), destination, point)
 	camera.reset_smoothing()
 	camera.force_update_scroll()
 
@@ -123,11 +129,14 @@ func _next_leg(npc: BaseNpc, id: String) -> void:
 	npc.daily_routine.travel(npc.global_position, destination, journey.activity, journey.label)
 	npc.state_time_remaining = 0
 
-func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) -> void:
+func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) -> bool:
+	var safe_point: Vector2 = navigation_for(space).landing(actor, point)
+	if safe_point == Vector2.INF:
+		return false
 	navigation_for(actor.world_space).release(id)
 	actor.world_space = space
 	actor.world_space_label = "Rekala" if space == &"outdoors" else rooms[space].resident_name + "'s home and shop"
-	actor.global_position = point
+	actor.global_position = safe_point
 	actor.velocity = Vector2.ZERO
 	actor.reset_physics_interpolation()
 	navigation_for(space).register(id, actor)
@@ -135,3 +144,4 @@ func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) 
 		actor.life_revision += 1
 	elif actor is BasePlayer:
 		player_space_changed.emit()
+	return true

@@ -12,6 +12,11 @@ func physics_update(delta: float) -> void:
 	if not enemy_transition.is_empty() and enemy_transition != &"idle":
 		transition_to(enemy_transition)
 		return
+	if npc.has_enemy_target():
+		npc.apply_velocity(Vector2.ZERO)
+		return
+	if npc.yield_to_approaching_player(delta):
+		return
 
 	npc.play_animation(&"idle", false, 1.0)
 	npc.apply_velocity(Vector2.ZERO)

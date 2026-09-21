@@ -20,11 +20,14 @@ var health: int = 1
 ## Rooms share a running simulation but remain separate sensory and interaction spaces.
 var world_space: StringName = &"outdoors"
 var world_space_label: String = "Rekala"
+var movement_navigation: TownNavigation
+var movement_id: String = ""
 
 var _attack_hitbox_enabled: bool = false
 var _current_attack_damage: int = 1
 var _hit_box_shape_base_position: Vector2 = Vector2.ZERO
 var _sprite_frames: SpriteFrames
+var _hit_targets: Dictionary[int, bool] = {}
 
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var hit_box: Area2D = $HitBox
@@ -42,6 +45,11 @@ func setup_actor(
 	combat_layers: CombatLayers,
 	attack_damage: int
 ) -> void:
+	ActorFootprint.configure(self)
+	add_to_group(&"actors")
+	var navigation_world: Node = get_tree().get_first_node_in_group(&"actor_navigation_world")
+	if navigation_world != null:
+		navigation_world.register_actor.call_deferred(self)
 	facing = Facing.LEFT if starting_facing == Facing.LEFT else Facing.RIGHT
 	self.max_health = maxi(max_health, 1)
 	health = self.max_health
@@ -62,20 +70,46 @@ func setup_actor(
 
 	hit_box.add_to_group("hitboxes")
 	hurt_box.add_to_group("hurtboxes")
+	hit_box.monitorable = true
 	set_hitbox_enabled(false)
 	_connect_actor_signals()
 	call_deferred("_emit_health_changed")
 
+func _exit_tree() -> void:
+	if movement_navigation != null:
+		movement_navigation.release(movement_id)
+
 func set_hitbox_enabled(enabled: bool) -> void:
+	if enabled and not _attack_hitbox_enabled:
+		_hit_targets.clear()
 	_attack_hitbox_enabled = enabled
 	hit_box.set_meta("owner", self)
 	hit_box.set_meta("damage", _current_attack_damage)
-	hit_box.set_deferred("monitoring", enabled)
-	hit_box.set_deferred("monitorable", enabled)
+	# Keep the area discoverable and toggle its geometry. Changing monitorable during
+	# a swing can deliver contact only after deactivation, too late to accept the hit.
+	hit_box_shape.set_deferred("disabled", not enabled)
 
 func apply_velocity(next_velocity: Vector2) -> void:
 	velocity = next_velocity
 	move_and_slide()
+
+func has_clear_melee_path(target: Node2D) -> bool:
+	if not is_instance_valid(target) or not is_inside_tree():
+		return false
+	if target is BaseActor and target.world_space != world_space:
+		return false
+	var ray := PhysicsRayQueryParameters2D.create(global_position, target.global_position, ActorFootprint.WORLD)
+	ray.exclude = [get_rid()]
+	return get_world_2d().direct_space_state.intersect_ray(ray).is_empty()
+
+## The receiver consumes contact once per swing, including exit/re-entry caused by sliding.
+func consume_melee_hit(target: BaseActor) -> bool:
+	var id: int = target.get_instance_id()
+	if not _attack_hitbox_enabled or _hit_targets.has(id) or not has_clear_melee_path(target):
+		return false
+	_hit_targets[id] = true
+	attack_connected.emit(target.hurt_box)
+	return true
 
 func set_health(next_health: int) -> void:
 	var clamped_health := clampi(next_health, 0, max_health)
@@ -139,8 +173,6 @@ func _receive_hit(_area: Area2D, _damage: int) -> void:
 func _connect_actor_signals() -> void:
 	if not animated_sprite.animation_finished.is_connected(_on_animated_sprite_2d_animation_finished):
 		animated_sprite.animation_finished.connect(_on_animated_sprite_2d_animation_finished)
-	if not hit_box.area_entered.is_connected(_on_hit_box_area_entered):
-		hit_box.area_entered.connect(_on_hit_box_area_entered)
 	if not hurt_box.area_entered.is_connected(_on_hurt_box_area_entered):
 		hurt_box.area_entered.connect(_on_hurt_box_area_entered)
 	if not state_machine.transitioned.is_connected(_on_state_machine_transitioned):
@@ -173,18 +205,6 @@ func _on_animated_sprite_2d_animation_finished() -> void:
 func _on_state_machine_transitioned(current_state: StringName, _previous_state: StringName) -> void:
 	state_changed.emit(current_state)
 
-func _on_hit_box_area_entered(area: Area2D) -> void:
-	if not _attack_hitbox_enabled:
-		return
-
-	if area.has_meta("owner") and area.get_meta("owner") == self:
-		return
-
-	if area == hurt_box:
-		return
-
-	attack_connected.emit(area)
-
 func _on_hurt_box_area_entered(area: Area2D) -> void:
 	if state_machine.is_in_state(&"dead"):
 		return
@@ -193,6 +213,9 @@ func _on_hurt_box_area_entered(area: Area2D) -> void:
 		return
 
 	if area == hit_box:
+		return
+	var attacker: Variant = area.get_meta("owner", null)
+	if is_instance_valid(attacker) and attacker is BaseActor and not attacker.consume_melee_hit(self):
 		return
 
 	hurtbox_triggered.emit(area)

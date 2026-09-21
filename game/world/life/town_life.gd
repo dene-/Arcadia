@@ -29,11 +29,14 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	if not is_inside_tree():
 		return
+	var navigation_world: WorldNavigation = get_parent().get_node("WorldNavigation")
+	if not navigation_world.outdoors.ready:
+		await navigation_world.initialized
+	navigation = navigation_world.outdoors
 	var bodies: Array[RID] = []
 	for actor: Node in get_tree().get_nodes_in_group("interactables") + get_tree().get_nodes_in_group("players"):
 		if actor is PhysicsBody2D and not actor.get_rid() in bodies:
 			bodies.append(actor.get_rid())
-	navigation.build(get_parent().get_world_2d().direct_space_state, bodies)
 	buildings = get_parent().get_node("Buildings")
 	buildings.prepare_navigation(navigation, bodies)
 	for player: Node2D in get_tree().get_nodes_in_group(&"players"):

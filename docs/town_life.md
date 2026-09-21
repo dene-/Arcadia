@@ -13,9 +13,11 @@ The backend's `npc-voice.js` compiles those closed choices into concrete phrasin
 | `TownLife` | Scene-owned clock, place catalog, bounded decision scheduling and save coordination |
 | `TownLifeState` | Saved personalities, plans, relationship graph, positions and social history |
 | `NpcTemperament` / `NpcRoutinePlan` | Seeded personality generation and daily preferences |
-| `TownNavigation` | Static walkability, temporary actor obstacles and destination reservations |
+| `WorldNavigation` / `TownNavigation` | Scene-owned outdoor grid, per-room grids, static walkability and space reservations |
+| `ActorRoute` / `ActorCrowd` | Cached A* following and predictive nearby-body steering |
+| `NpcPursuit` | Enemy pursuit routes and leased lateral attack approaches |
 | `TownBuildings` / `NpcInterior` | Enterable furnished rooms, door transitions and navigation between spaces |
-| `NpcDailyRoutine` | Route following, local avoidance and retries; actor states retain physics/animation |
+| `NpcDailyRoutine` | Routine destination and hold state; delegates locomotion to the shared route component |
 | `TownEncounters` | Nearby two-way social sessions, model calls and interruption guards |
 | `TownRumors` | Per-person accounts, provenance, confidence, expiry and loop prevention |
 | `NpcMemoryStore` | Long-term admission and bounded changes to feelings toward the player |
@@ -28,6 +30,16 @@ The backend's `npc-voice.js` compiles those closed choices into concrete phrasin
 The clock advances 1.5 game minutes per real second by default, with a day/night tint. It pauses while the game is closed. Breakfast and lunch have varied times and locations; residents have their own workplaces and several leisure venues. Jev selects from supplied, feasible activities and a bounded duration. Up to four routine decisions run concurrently. Unavailable or invalid decisions fall back to the day's plan.
 
 Moving bodies are excluded from the static navigation bake. Live routes detour around residents and Den, destinations reserve personal space, and local steering lets approaching walkers yield. Blocked routes are retried. Optional visits and social destinations avoid crowded venues. Encounters arise from proximity along routes or at destinations, rather than a global gathering command.
+
+The outdoor grid covers the whole generated region, including enemy forests, and exists even with town life disabled. Interiors have separate grids. `ActorFootprint` rounds each scene's foot collider while preserving its extents and offset. Actor bodies use physics layer 2 and collide with layers 1 (world) and 2 (actors); interaction areas detect layer 2. Weapon/hurtbox layers are independent. Grid clearance derives from the largest initial NPC footprint, plus a small margin. New actor sizes or runtime changes to static geometry require rebuilding the relevant grid.
+
+Routes remain cached while the actor makes progress. Changed destinations or lack of progress trigger replanning, with a one-second retry cooldown and a budget of four route requests per physics frame per grid. Clear intermediate waypoints can be skipped using a footprint sweep. `ActorCrowd` builds one spatial snapshot per frame, predicts nearby contacts, favors passing on the right and allows a stable participant to back away from a bottleneck. NPC steering accelerates gradually; Den's input remains direct. Idle, awake, unlocked residents step aside early enough for a running player. A completely blocked passage can still require waiting for another actor to move.
+
+Enemies share this navigation for both roaming and pursuit. Two attackers can claim opposite lateral approaches while others wait at separate nearby positions. Claims expire or release when pursuit ends. Approaches and actual melee contacts require an unobstructed line through world geometry; each target receives at most one hit per swing. Preferred spacing guides the approach without preventing attacks against closer opponents. Attack readiness is also checked immediately after movement, avoiding endless tracking of a running target.
+
+Door transitions check the arriving actor's actual collider and current occupancy. If the threshold is occupied, they try offsets within 12 pixels. A fully blocked arrival leaves the actor, space and camera unchanged; residents retry and Den can interact again. Successful transitions move the actor's navigation registration between spaces.
+
+`TownNavigation.metrics()` reports build time, route count/time, steering count/time and nearby-body checks. These are diagnostic totals, not frame-rate measurements. The isolated three-enemy regression uses three searches over 12 simulated seconds at 60 and 120 physics ticks; the corridor scenario completes with two searches. The full 3,522-tree test region's outdoor bake measured about 60 ms locally; machines and scene density will vary.
 
 Each resident has an enterable home and shop, furnished with a bed, meal table and work area. Press the existing interact key (E) near the exterior door to enter, and near the interior door to leave. Rooms use the owned Towns/Towns II artwork; run the world-pack importer when installing those assets on another checkout. Doors are currently unlocked.
 
@@ -78,6 +90,8 @@ All automated provider tests use mocks and temporary saves. With Godot installed
 GODOT=/Applications/Godot.app/Contents/MacOS/Godot
 "$GODOT" --headless --path . --log-file /tmp/arcadia-unit.log --script res://tests/test_runner.gd
 "$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-traffic.log --script res://tests/integration/town_traffic_test.gd
+"$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-contacts.log --script res://tests/integration/actor_contacts_test.gd
+"$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-navigation.log --script res://tests/integration/actor_navigation_test.gd -- 60
 "$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-life.log --script res://tests/integration/town_life_world_test.gd
 "$GODOT" --headless --path . --fixed-fps 60 --log-file /tmp/arcadia-interiors.log --script res://tests/integration/town_interiors_test.gd
 cd tools/server
@@ -85,3 +99,5 @@ GODOT="$GODOT" npm test
 ```
 
 The full-world HTTP test needs the locally installed licensed world assets and skips when those assets or `GODOT` are absent. It checks real actor movement, destination arrival, social speech, rumor transfer and save reload through mocked providers. The traffic scenario checks two opposing walkers passing a stationary actor. Unit tests cover source attribution, cancellation, save validation, seeded personalities, destination spacing and dynamic bubble sizing. Actual Jev activity preferences and generated prose still need playtesting; mocks validate the application behavior and contracts.
+
+The contacts scenario exercises real player input at walking/running speeds and opposing NPCs in a corridor with a passing bay. The navigation scenario checks a wall detour and a pack reaching both attack approaches; pass `30`, `60` or `120` after `--` and match `--fixed-fps` to check different physics rates. Unit tests cover rounded footprints, cached routes, search budgets, overlap escape, blocked landings, wall occlusion and single-hit swings. The interior scenario also checks that a blocked entry preserves player position and camera limits. Stationary blockers keep their physics body enabled; disabling their entire process mode would remove the collision being tested.

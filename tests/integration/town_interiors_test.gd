@@ -32,6 +32,7 @@ func _run() -> void:
 	var life: TownLife = world.get_node("Region/TownLife")
 	var buildings: TownBuildings = life.buildings
 	life.minutes_per_second = 0
+	print("Region navigation: ", life.navigation.metrics())
 	var residents: Array[Node] = get_nodes_in_group("town_residents")
 	var failures: Array[String] = []
 	_check_prop_crops(failures)
@@ -129,6 +130,17 @@ func _run() -> void:
 	if Rect2i(camera.limit_left, camera.limit_top, camera.limit_right, camera.limit_bottom) != old_limits:
 		failures.append("Camera limits were not restored")
 	# A portal must update lighting synchronously, before another clock tick/render.
+	var original_position: Vector2 = player.global_position
+	var blocked_entry: StaticBody2D = RegionArt.barrier(world, room.player_entrance, Vector2(32, 32))
+	await physics_frame
+	buildings.move_player(player, StringName("home:" + room.resident_id))
+	if player.world_space != &"outdoors" or player.global_position != original_position:
+		failures.append("Blocked doorway moved the player")
+	if Rect2i(camera.limit_left, camera.limit_top, camera.limit_right, camera.limit_bottom) != old_limits:
+		failures.append("Blocked doorway changed the camera")
+	blocked_entry.queue_free()
+	await physics_frame
+	await process_frame
 	cognition.save_game.life.minute = 22 * 60
 	buildings.move_player(player, StringName("home:" + room.resident_id))
 	if life._light.color != Color(1, 0.96, 0.88):

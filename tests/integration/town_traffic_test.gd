@@ -20,7 +20,7 @@ func _run() -> void:
 		bodies.append(npc.get_rid())
 		navigation.register(str(index), npc)
 		if index == 2:
-			npc.process_mode = Node.PROCESS_MODE_DISABLED
+			npc.set_physics_process(false)
 	await physics_frame
 	await physics_frame
 	navigation.build(stage.get_world_2d().direct_space_state, bodies)

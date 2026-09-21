@@ -80,6 +80,13 @@ func _run() -> void:
 	cognition.save_game.life.rumors.observe(witness_id, witness.get_npc_profile().profile_name,
 		{"origin_id": "world:test", "text": "I saw Den hurt a person.", "sense": "sight", "player_involved": true},
 		{"remember": true, "importance": 0.8}, cognition.save_game.life.minute)
+	# Give the rumor scenario a real rendezvous. Random daily plans need not bring the
+	# only witness near another resident during this test's two-minute window.
+	for participant: BaseNpc in [witness, residents[1]]:
+		var id: String = String(participant.get_npc_profile().npc_id)
+		var meeting: Dictionary = {"kind": "social", "place": "square"}
+		cognition.save_game.life.select_activity(id, meeting, 90, {})
+		life._travel(participant, id, meeting)
 	var capture: String = OS.get_environment("ARCADIA_TOWN_CAPTURE")
 	var arrivals: Dictionary = {}
 	for frame: int in range(7200):

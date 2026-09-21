@@ -13,18 +13,21 @@ func physics_update(delta: float) -> void:
 		transition_to(&"idle")
 		return
 
-	if npc.npc_data.ai_enabled:
+	if npc.has_enemy_target():
 		var chase_velocity := npc.get_enemy_chase_velocity(delta)
 		if chase_velocity == Vector2.ZERO:
 			transition_to(&"idle")
 			return
 		npc.play_animation(&"run", false, 1.25)
 		npc.apply_velocity(chase_velocity)
+		# Use the position we actually reached; a moving target may leave range again
+		# before the next tick, producing endless side-by-side chasing otherwise.
+		if npc.try_start_enemy_attack():
+			transition_to(&"attack")
 		return
 
-	var direction := npc.get_move_direction_to_target()
-	if direction == Vector2.ZERO or npc.has_reached_patrol_target():
+	if npc.has_reached_patrol_target():
 		transition_to(&"idle")
 		return
 	npc.play_animation(&"run", false, 1.25)
-	npc.apply_velocity(direction * npc.current_run_speed())
+	npc.apply_velocity(npc.get_routine_velocity(delta, true))

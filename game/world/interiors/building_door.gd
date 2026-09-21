@@ -10,7 +10,7 @@ var _area: Area2D
 func _ready() -> void:
 	_area = Area2D.new()
 	_area.collision_layer = 0
-	_area.collision_mask = 1
+	_area.collision_mask = ActorFootprint.ACTORS
 	var collision := CollisionShape2D.new()
 	var rectangle := RectangleShape2D.new()
 	rectangle.size = Vector2(12, 8)

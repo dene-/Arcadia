@@ -58,9 +58,9 @@ const DropTableResource = preload("res://game/items/drops/drop_table.gd")
 @export_range(1.0, 64.0, 1.0) var attack_side_offset: float = 12.0
 ## Maximum vertical mismatch allowed before the enemy repositions beside the target.
 @export_range(0.0, 32.0, 1.0) var attack_vertical_tolerance: float = 4.0
-## Distance from the preferred side position that still counts as attack-ready.
+## How far inside the preferred side position to aim while closing for a strike.
 @export_range(0.0, 16.0, 1.0) var attack_slot_arrival_distance: float = 3.0
-## Minimum horizontal spacing kept from the target before attacking beside it.
+## Preferred approach spacing. Close opponents can still be attacked without backing away.
 @export_range(0.0, 32.0, 1.0) var soft_collision_distance: float = 12.0
 ## Minimum seconds between attack attempts.
 @export_range(0.1, 5.0, 0.05) var attack_cooldown: float = 0.9

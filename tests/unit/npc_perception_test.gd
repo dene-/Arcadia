@@ -103,6 +103,8 @@ func test_damage_dispatch_attributes_player_and_reports_lethal_hit_only_once() -
 	player.add_to_group("players")
 	# Initialize the real actor states; this exercises BaseNpc.take_damage rather than a fake event.
 	victim.npc_data.profile = null
+	victim.npc_data.sprite_frames.ensure_built()
+	victim.animated_sprite.sprite_frames = victim.npc_data.sprite_frames
 	victim.state_machine.initialize(victim)
 	player.hit_box.set_meta("owner", player)
 	victim.take_damage(3, player.hit_box)

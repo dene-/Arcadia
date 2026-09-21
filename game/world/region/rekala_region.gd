@@ -52,6 +52,9 @@ func rebuild() -> void:
 	_build_forest(art)
 	_spawn_enemies()
 	if not Engine.is_editor_hint():
+		var navigation_world := WorldNavigation.new()
+		navigation_world.name = "WorldNavigation"
+		generated.add_child(navigation_world)
 		if town_life_enabled:
 			var buildings := TownBuildings.new()
 			buildings.name = "Buildings"
