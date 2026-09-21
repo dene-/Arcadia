@@ -29,6 +29,7 @@ func sprite(parent: Node2D, sheet: String, region: Rect2i, foot: Vector2,
 	if not _textures.has(sheet):
 		_textures[sheet] = load(ROOT + sheet)
 	var prop := Sprite2D.new()
+	prop.centered = false
 	prop.texture = _textures[sheet]
 	prop.region_enabled = true
 	prop.region_rect = region
@@ -36,12 +37,14 @@ func sprite(parent: Node2D, sheet: String, region: Rect2i, foot: Vector2,
 	var key: String = sheet + str(region)
 	if not _offsets.has(key):
 		var used: Rect2i = prop.texture.get_image().get_region(region).get_used_rect()
-		_offsets[key] = Vector2(0, region.size.y * 0.5 - used.end.y)
+		_offsets[key] = Vector2(-region.size.x * 0.5, -used.end.y).round()
 	prop.offset = _offsets[key]
 	if footprint.has_area():
 		# Art and collision share an authored anchor at the bottom of the footprint.
 		var anchor := Vector2(footprint.get_center().x, footprint.end.y)
-		prop.offset = Vector2(region.size) * 0.5 - anchor
+		# Integer texture origins avoid texel sampling wobble on odd-width footprints.
+		# Only the drawing is aligned; physics keeps the exact authored footprint.
+		prop.offset = -anchor.round()
 	parent.add_child(prop)
 	if footprint.has_area():
 		barrier(prop, Vector2(0, -footprint.size.y * 0.5), footprint.size)

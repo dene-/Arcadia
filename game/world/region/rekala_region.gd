@@ -64,6 +64,7 @@ func rebuild() -> void:
 		player.world_space = &"outdoors"
 		player.world_space_label = "Rekala"
 		player.position = RegionLayout.PLAYER_SPAWN
+		player.reset_physics_interpolation()
 		var camera: Camera2D = player.get_node("Camera2D")
 		camera.limit_left = RegionLayout.BOUNDS.position.x * 8
 		camera.limit_right = RegionLayout.BOUNDS.end.x * 8

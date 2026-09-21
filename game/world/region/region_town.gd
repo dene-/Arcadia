@@ -110,12 +110,13 @@ func _workplace(parent: Node2D, job: String, foot: Vector2) -> void:
 
 func _farm(parent: Node2D) -> void:
 	var mill := AnimatedSprite2D.new()
+	mill.centered = false
 	mill.position = Vector2(424, -48)
 	mill.sprite_frames = SpriteFrames.new()
 	var texture: Texture2D = load(RegionArt.ROOT + "Minifantasy_TownsIIWindmillFrames.png")
 	var frame_size := Vector2(texture.get_width() / 8.0, texture.get_height())
 	var used: Rect2i = texture.get_image().get_region(Rect2i(Vector2i.ZERO, frame_size)).get_used_rect()
-	mill.offset = Vector2(0, frame_size.y * 0.5 - used.end.y)
+	mill.offset = Vector2(-frame_size.x * 0.5, -used.end.y).round()
 	for index: int in range(2):
 		var frame := AtlasTexture.new()
 		frame.atlas = texture

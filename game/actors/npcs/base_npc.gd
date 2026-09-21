@@ -614,6 +614,7 @@ func _emit_blood_particles(direction: Vector2) -> void:
 	if npc_data.blood_particle_count <= 0:
 		return
 	blood_particles.global_position = global_position + Vector2(0.0, -1.0)
+	blood_particles.reset_physics_interpolation()
 	blood_particles.direction = direction
 	blood_particles.emitting = false
 	blood_particles.restart()
@@ -713,6 +714,7 @@ func _spawn_drops() -> void:
 		else:
 			get_tree().current_scene.add_child(drop)
 		drop.global_position = global_position + Vector2.RIGHT.rotated(angle) * distance
+		drop.reset_physics_interpolation()
 
 # -- Signal callbacks ---------------------------------------------------------
 

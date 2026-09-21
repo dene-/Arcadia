@@ -102,6 +102,7 @@ func _spawn_inventory_drop(stack: InventoryStackDataResource) -> bool:
 
 	var drop_direction := Vector2.RIGHT if facing == Facing.RIGHT else Vector2.LEFT
 	drop.global_position = global_position + drop_direction * inventory_drop_distance
+	drop.reset_physics_interpolation()
 	return true
 
 # -- Combat -------------------------------------------------------------------
