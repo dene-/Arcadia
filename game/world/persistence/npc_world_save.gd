@@ -12,6 +12,8 @@ var deaths := TownDeaths.new()
 var dead_npcs: Array[String] = []
 ## Zero means an older save or a new world; the region assigns a seed once.
 var region_seed: int = 0
+## Zero preserves the original map-derived NPC generation for existing saves.
+var npc_seed: int = 0
 var path: String = SAVE_PATH
 var _writable: bool = true
 
@@ -21,6 +23,9 @@ func _init() -> void:
 
 func is_dead(id: StringName) -> bool:
 	return not id.is_empty() and String(id) in dead_npcs
+
+func get_npc_seed() -> int:
+	return npc_seed if npc_seed != 0 else region_seed
 
 func mark_dead(id: StringName) -> void:
 	if not id.is_empty() and not is_dead(id):
@@ -46,6 +51,7 @@ func load_file(legacy_path: String = NpcMemoryStore.SAVE_PATH) -> Error:
 
 func to_data() -> Dictionary:
 	return {"version": 1, "world": {"dead_npcs": dead_npcs.duplicate(), "region_seed": region_seed,
+		"npc_seed": npc_seed,
 		"life": life.to_data(), "population": population.to_data(), "economy": economy.to_data(),
 		"justice": justice.to_data(), "deaths": deaths.to_data()},
 		"memory": memory.to_save_data()}
@@ -68,6 +74,10 @@ func from_data(data: Variant) -> bool:
 		return false
 	if float(saved_seed) != floorf(float(saved_seed)):
 		return false
+	var saved_npc_seed: Variant = data.world.get("npc_seed", 0)
+	if not NpcMemory.is_integer(saved_npc_seed) or saved_npc_seed < 0 \
+		or saved_npc_seed > 2147483646:
+		return false
 	# Memory loading is atomic too; neither half mutates if validation fails.
 	var validated_life := TownLifeState.new()
 	if not validated_life.from_data(data.world.get("life", validated_life.to_data())):
@@ -88,6 +98,7 @@ func from_data(data: Variant) -> bool:
 		return false
 	dead_npcs = validated
 	region_seed = int(saved_seed)
+	npc_seed = int(saved_npc_seed)
 	life.from_data(validated_life.to_data())
 	population.from_data(validated_population.to_data())
 	economy.from_data(validated_economy.to_data())
@@ -101,7 +112,7 @@ func save_file() -> Error:
 	return _write(to_data())
 
 ## Call only for an explicit new-world/reset action, with the running game stopped.
-func reset(keep_region: bool = false) -> Error:
+func reset(keep_region: bool = false, reroll_npcs: bool = false) -> Error:
 	if FileAccess.file_exists(path):
 		var backup: String = path + ".reset-%s.bak" % Time.get_unix_time_from_system()
 		var backup_error: Error = DirAccess.copy_absolute(path, backup)
@@ -110,6 +121,10 @@ func reset(keep_region: bool = false) -> Error:
 	var empty := NpcWorldSave.new()
 	if keep_region:
 		empty.region_seed = region_seed
+	if reroll_npcs:
+		empty.npc_seed = randi_range(1, 2147483646)
+		while empty.npc_seed == get_npc_seed():
+			empty.npc_seed = randi_range(1, 2147483646)
 	var error: Error = _write(empty.to_data())
 	if error == OK:
 		from_data(empty.to_data())

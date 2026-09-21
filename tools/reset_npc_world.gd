@@ -12,7 +12,8 @@ func _initialize() -> void:
 		push_error("Cannot preserve the region seed: existing save could not be read.")
 		quit(1)
 		return
-	var error: Error = save.reset(keep_region)
+	var reroll_npcs: bool = "--reroll-npcs" in OS.get_cmdline_user_args()
+	var error: Error = save.reset(keep_region, reroll_npcs)
 	if error != OK:
 		push_error("NPC world reset failed: %s" % error)
 		quit(1)
@@ -20,4 +21,6 @@ func _initialize() -> void:
 	print("NPC deaths and memories reset. Existing combined save backed up beside npc_world.json.")
 	if keep_region:
 		print("Saved region seed preserved.")
+	if reroll_npcs:
+		print("New NPC seed saved. Personalities, relationships and routines regenerate on next play.")
 	quit()

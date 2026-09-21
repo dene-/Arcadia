@@ -45,7 +45,7 @@ func build(parent: Node2D, spawn_actors: bool) -> void:
 			if spawn_actors:
 				if save.is_dead(StringName(id)):
 					continue
-				NpcTemperament.apply(data.profile, save.life.personality_for(id, save.region_seed))
+				NpcTemperament.apply(data.profile, save.life.personality_for(id, save.get_npc_seed()))
 				var npc: BaseNpc = NPC.instantiate()
 				npc.name = id.to_pascal_case()
 				npc.npc_data = data

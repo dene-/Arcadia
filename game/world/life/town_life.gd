@@ -58,7 +58,7 @@ func _ready() -> void:
 	ids.sort()
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"], save_game.population)
+		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
 		npc.daily_routine = NpcDailyRoutine.new()
 		npc.daily_routine.navigation = navigation
 		npc.daily_routine.npc_id = id
@@ -72,7 +72,7 @@ func _ready() -> void:
 	encounters.state = save_game.life
 	encounters.store = save_game.memory
 	encounters.backend = backend
-	encounters.seed_value = save_game.region_seed
+	encounters.seed_value = save_game.get_npc_seed()
 	encounters.save_callback = _save
 	add_child(encounters)
 	watch = TownWatch.new()
@@ -141,7 +141,7 @@ func _process(delta: float) -> void:
 	ids.sort()
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"], save_game.population)
+		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
 		if watch.maintain(npc, id, false) or funerals.maintain(npc, id) \
 			or _maintain_safety(npc, id) or watch.maintain(npc, id):
 			_update_context(npc, id)
@@ -314,7 +314,7 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var hour: int = int(save_game.life.minute / 60.0) % 24
 	if hour >= 6 and hour < 21:
 		var venues: Array[String] = ["square", "market", "garden"]
-		var random_venue := NpcRoutinePlan.random_for(save_game.region_seed,
+		var random_venue := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 			"%s:venue:%d" % [id, int(save_game.life.minute / 60)])
 		var venue: String = venues[random_venue.randi_range(0, venues.size() - 1)]
 		_add_option(options, "SOCIAL", "socialize", venue, "Spend some free time here; neighbors may pass by.")
@@ -326,7 +326,7 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 		var residents: Array = ties.keys()
 		residents.sort()
 		if not residents.is_empty():
-			var random := NpcRoutinePlan.random_for(save_game.region_seed,
+			var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 				"%s:visit:%s" % [id, int(save_game.life.minute / 60)])
 			var other: String = residents[random.randi_range(0, residents.size() - 1)]
 			if _actors.has(other):
@@ -347,7 +347,7 @@ func _add_option(options: Array[Dictionary], id: String, kind: String, place: St
 func _travel(npc: BaseNpc, id: String, selected: Dictionary) -> void:
 	var place: Dictionary = _places.get(selected.place, _places["home:" + id])
 	var space := StringName(place.get("space", "outdoors"))
-	var random := NpcRoutinePlan.random_for(save_game.region_seed,
+	var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 		"%s:spot:%s:%s" % [id, save_game.life.day(), selected.place])
 	var offset := Vector2(random.randi_range(-2, 2), random.randi_range(-1, 1)) * 8.0
 	var destination: Vector2 = place.position + (offset if space == &"outdoors" else Vector2.ZERO)

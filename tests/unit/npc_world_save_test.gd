@@ -76,3 +76,80 @@ func test_region_seed_survives_reload_and_old_saves_upgrade_without_losing_memor
 		assert_false(loaded.from_data(data))
 		assert_eq(loaded.region_seed, 0)
 		assert_true(loaded.is_dead(&"named_victim"))
+
+func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state() -> void:
+	var save := NpcWorldSave.new()
+	save.path = OS.get_temp_dir().path_join("arcadia-npc-reroll-test.json")
+	save.region_seed = 731
+	save.population.ensure_population(save.region_seed)
+	var profile: NpcProfile = save.population.profile_for("garrin_holt")
+	save.memory.record_event(profile, "Den attacked me.")
+	save.mark_dead(profile.npc_id)
+	save.deaths.record(String(profile.npc_id), "outdoors", Vector2.ZERO, 480)
+	save.justice.notice("vale_guard", "player", "killing", 480)
+	save.economy.ensure_households(save.population, 480)
+	save.economy.record_work("garrin_holt", 120)
+	save.life.minute = 1500
+	var ids: Array[String] = ["garrin_holt", "holt_partner"]
+	save.life.ensure_person(ids[0], save.get_npc_seed(), ids, ["square"], save.population)
+	var before_personality: Dictionary = save.life.personality_for(ids[0], save.get_npc_seed())
+	var before_ties: Dictionary = save.life.get_person(ids[0]).ties
+	var before_population: Dictionary = save.population.to_data()
+	assert_eq(save.save_file(), OK)
+	var before_json: String = FileAccess.get_file_as_string(save.path)
+	assert_eq(save.reset(true, true), OK)
+	assert_eq(save.region_seed, 731)
+	assert_true(save.npc_seed > 0)
+	assert_ne(save.get_npc_seed(), 731)
+	assert_true(save.dead_npcs.is_empty())
+	assert_true(save.deaths.records.is_empty())
+	assert_true(save.justice.reports.is_empty())
+	assert_true(save.memory.snapshot(ids[0]).is_empty())
+	assert_eq(save.life.to_data(), TownLifeState.new().to_data())
+	assert_eq(save.economy.to_data(), TownEconomy.new().to_data())
+	var loaded := NpcWorldSave.new()
+	loaded.path = save.path
+	assert_eq(loaded.load_file(), OK)
+	assert_eq(loaded.npc_seed, save.npc_seed)
+	loaded.population.ensure_population(loaded.region_seed)
+	assert_eq(loaded.population.to_data(), before_population)
+	loaded.life.ensure_person(ids[0], loaded.get_npc_seed(), ids, ["square"], loaded.population)
+	var after_personality: Dictionary = loaded.life.personality_for(ids[0], loaded.get_npc_seed())
+	assert_ne(after_personality, before_personality)
+	assert_ne(loaded.life.get_person(ids[0]).ties, before_ties)
+	assert_eq(loaded.save_file(), OK)
+	var restarted := NpcWorldSave.new()
+	restarted.path = save.path
+	assert_eq(restarted.load_file(), OK)
+	assert_eq(restarted.life.personality_for(ids[0], restarted.get_npc_seed()).personality,
+		after_personality.personality)
+	for relative: String in loaded.life.get_person(ids[0]).ties:
+		var original: Dictionary = loaded.life.get_person(ids[0]).ties[relative]
+		var restored: Dictionary = restarted.life.get_person(ids[0]).ties[relative]
+		for feeling: String in original:
+			assert_true(is_equal_approx(restored[feeling], original[feeling]))
+	var backups: int = 0
+	for name: String in DirAccess.get_files_at(OS.get_temp_dir()):
+		if name.begins_with("arcadia-npc-reroll-test.json.reset-"):
+			var backup_path: String = OS.get_temp_dir().path_join(name)
+			assert_eq(FileAccess.get_file_as_string(backup_path), before_json)
+			DirAccess.remove_absolute(backup_path)
+			backups += 1
+	assert_eq(backups, 1)
+	DirAccess.remove_absolute(save.path)
+
+func test_npc_seed_migrates_old_saves_and_invalid_seeds_do_not_mutate_state() -> void:
+	var save := NpcWorldSave.new()
+	save.region_seed = 731
+	var old: Dictionary = save.to_data()
+	old.world.erase("npc_seed")
+	assert_true(save.from_data(old))
+	assert_eq(save.get_npc_seed(), 731)
+	save.npc_seed = 92
+	for invalid: Variant in ["bad", -1, 1.5, 2147483647, INF, NAN]:
+		var data: Dictionary = save.to_data()
+		data.world.npc_seed = invalid
+		data.world.region_seed = 42
+		assert_false(save.from_data(data))
+		assert_eq(save.get_npc_seed(), 92)
+		assert_eq(save.region_seed, 731)
