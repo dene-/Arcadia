@@ -28,6 +28,13 @@ const app = createApp({
     });
   },
 });
-app.listen(3536, "127.0.0.1", () =>
-  console.log("NPC chat server: http://127.0.0.1:3536"),
-);
+app.listen(3536, "127.0.0.1", (error) => {
+  if (error) {
+    console.error(error.code === "EADDRINUSE"
+      ? "Cannot start NPC chat server: port 3536 is already in use. Stop the existing server first."
+      : `Cannot start NPC chat server: ${error.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log("NPC chat server: http://127.0.0.1:3536");
+});
