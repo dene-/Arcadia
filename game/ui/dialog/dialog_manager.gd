@@ -237,6 +237,9 @@ func _start_dialog(source: Node) -> void:
 	_is_waiting_for_backend = true
 	_typewriter.reset(_dialog_text)
 	_dialog_text.text = LOADING_DIALOG
+	var dialog_layer: CanvasLayer = _dialog_panel.get_canvas_layer_node()
+	if dialog_layer != null:
+		dialog_layer.show()
 	_dialog_panel.show()
 	_is_open = true
 	set_process(true)

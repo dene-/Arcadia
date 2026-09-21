@@ -72,6 +72,20 @@ func test_nameplate_uses_the_actual_npc_identity_and_clears_on_close() -> void:
 	_manager.close_dialog()
 	assert_eq(_manager._speaker_name.text, "")
 
+func test_opening_dialog_reveals_a_hidden_ui_layer() -> void:
+	_manager.close_dialog()
+	var ui: CanvasLayer = _scene.get_node("UI")
+	ui.hide()
+	_manager._start_dialog(_source)
+	assert_true(_manager.is_dialog_open())
+	assert_true(ui.visible, "Opening a dialog must reveal its containing canvas layer")
+	assert_true(_manager._dialog_panel.visible)
+	assert_eq(_manager._dialog_text.text, "...")
+	_manager.set_process(false)
+	_reply("Hello.")
+	_manager.advance_dialog()
+	assert_true(_manager._chat_container.visible)
+
 func test_farewell_reveals_then_closes_without_showing_chat_or_replies() -> void:
 	_reply("Hello.")
 	_manager.advance_dialog()
