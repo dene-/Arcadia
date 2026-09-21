@@ -198,3 +198,16 @@ func test_name_recall_filters_names_from_gist_and_details() -> void:
 	var view: Dictionary = NpcMemoryRetriever.new().recall(memory, cognition, 0)
 	assert_false(JSON.stringify(view).contains("Edrin"))
 	assert_true(memory.gist.contains("Edrin"))
+
+func test_grounding_evidence_is_saved_but_not_exposed_as_perfect_recall() -> void:
+	var store := NpcMemoryStore.new()
+	store.ensure_npc(_profile())
+	var result: Dictionary = _result()
+	result.memory_writes[0].evidence = "I will burn down your forge."
+	store.commit_exchange("test_npc", "I will burn down your forge.", result, _policy(), [], [])
+	var loaded := NpcMemoryStore.new()
+	assert_true(loaded.from_save_data(JSON.parse_string(JSON.stringify(store.to_save_data()))))
+	var memory: Dictionary = loaded.snapshot("test_npc").memories[0]
+	assert_eq(memory.evidence, "I will burn down your forge.")
+	var recall: Dictionary = NpcMemoryRetriever.new().recall(memory, NpcCognitionProfile.new(), 10000)
+	assert_false(recall.has("evidence"))

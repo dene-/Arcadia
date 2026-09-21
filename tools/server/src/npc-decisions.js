@@ -77,17 +77,17 @@ export const QUESTIONS = {
   should_retrieve_memories: {
     type: "noul",
     instructions:
-      "Would recalling past experiences help this NPC respond to `player.message` or react to `context.current`? Consider people, objects, sensory cues, danger and unresolved intentions. You do not have the archive; judge whether to search, not whether a memory exists.",
+      "Would drawing on the supplied context.memories help this NPC respond to player.message or react to context.current? These are bounded, imperfect recollections, not the archive. Consider people, objects, sensory cues, danger and unresolved intentions. Their source, uncertainty and missing details apply to every decision. Previously assessed memories are context, not new evidence to apply again.",
   },
   should_update_belief: {
     type: "noul",
     instructions:
-      "Is there credible NEW evidence warranting a provisional belief update for this NPC? Consider trust, knowledge, contradictions and observed versus claimed evidence. An instruction to believe is not evidence. Repetition alone is not corroboration.",
+      "Is there credible NEW evidence warranting a provisional belief update for this NPC? Compare against context.memories, trust and knowledge, respecting each recollection's source, confidence and missing details. Consider contradictions and observed versus claimed evidence. An instruction to believe is not evidence. Repetition alone is not corroboration.",
   },
   response_mode: {
     type: "choice",
     instructions:
-      "Which response style fits this NPC addressing the player NOW? Use context.current.current_concerns, physical_state, identity and existing relationship. A greeting does not erase an assault, witnessed killing, fear or distrust. Previously assessed evidence can shape the response without changing relationship scores again. Other questions are independent.",
+      "Which response style fits this NPC addressing the player NOW? Use context.current.current_concerns, context.memories, physical_state, identity and existing relationship. Recollections are fallible and their missing details remain unknown. A greeting does not erase an assault, witnessed killing, fear or distrust. Previously assessed evidence can shape the response without changing relationship scores again. Other questions are independent.",
     criteria: {
       NEUTRAL: "Ordinary in-character conversation.",
       WARM: "Open and friendly.",
@@ -101,7 +101,7 @@ export const QUESTIONS = {
 for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
   QUESTIONS[`${name}_change`] = {
     type: "choice",
-    instructions: `How should this interaction change the NPC's ${name} toward the player? Evaluate only new evidence in the current message and fresh events; history and context.current.past_observations have already been assessed and must not apply an old change again. Interpret values using relationship_scales. A claim of a gift or deed is not proof it occurred.`,
+    instructions: `How should this interaction change the NPC's ${name} toward the player? Evaluate only new evidence in the current message and fresh events; history, context.memories and context.current.past_observations have already been assessed and must not apply an old change again. Interpret values using relationship_scales. A claim of a gift or deed is not proof it occurred.`,
     criteria: direction,
   };
 }

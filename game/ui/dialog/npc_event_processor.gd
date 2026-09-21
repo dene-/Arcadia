@@ -20,7 +20,7 @@ var _speaking: Dictionary = {}
 
 func observe(profile: NpcProfile, current: Dictionary, event: Dictionary,
 		source: BaseNpc = null) -> void:
-	store.record_observation(profile, event)
+	store.record_observation(profile, event, float(current.get("world_minute", -1.0)))
 	_save()
 	resume(profile, current, source)
 
@@ -67,7 +67,7 @@ func _process_npc(id: String, job: Dictionary) -> void:
 		current.recent_events = []
 		current.past_observations = NpcCognitiveContext.observations(
 			state.observations.filter(func(item: Dictionary) -> bool:
-				return item.id != event.id and item.status != "pending"))
+				return item.id != event.id and item.status != "pending"), current)
 		var reason: String = _speech_block(source, event)
 		event.speech_allowed = reason.is_empty() and not _speaking.has(id)
 		var started: int = Time.get_ticks_msec()
@@ -78,7 +78,9 @@ func _process_npc(id: String, job: Dictionary) -> void:
 			"npc": {"id": id, "profile": job.profile.to_backend_profile()},
 			"player": {"message": ""}, "event": event,
 			"context": {"current": current, "relationship": state.relationship,
-				"recent_dialogue": state.recent_dialogue, "memories": []}}
+				"recent_dialogue": state.recent_dialogue,
+				"memories": NpcMemoryRetriever.new().retrieve(state.memories, event.text,
+					current, job.profile.get_cognition(), store.turn)}}
 		var judgment: Dictionary = await backend.request_observation(payload)
 		var policy: Dictionary = judgment.get("policy", {})
 		var committed: bool = store.commit_observation(id, int(event.id), policy)
@@ -128,11 +130,17 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 	payload.context.memories = NpcMemoryRetriever.new().retrieve(state.memories,
 		payload.event.text, payload.context.current, job.profile.get_cognition(), store.turn)
 	payload.answers = judgment.get("answers", {})
+	var revision: int = store.revision(payload.npc.id)
+	var life_revision: int = source.life_revision
+	var space: StringName = source.world_space
 	var result: Dictionary = await backend.request_reaction(payload)
 	source = _source(job)
 	var text: Variant = result.get("response")
 	if source == null:
 		return "source_gone"
+	if store.revision(payload.npc.id) != revision or source.life_revision != life_revision \
+		or source.world_space != space:
+		return "context_changed"
 	if not _is_recent(payload.event):
 		return "expired_during_generation"
 	if not text is String or text.strip_edges().is_empty() or text.length() > 160:
@@ -140,7 +148,7 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 	if _repeats_recent_speech(source.get_cognitive_context(), text):
 		return "repeated_line"
 	if source.show_spoken_reaction(text):
-		store.record_spoken_reaction(payload.npc.id, text)
+		# WorldEvent.speech records actual listeners in ambient history, not player dialogue.
 		return "displayed"
 	return "dead_or_in_dialogue"
 

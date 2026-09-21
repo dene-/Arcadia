@@ -106,6 +106,8 @@ func test_background_processing_commits_without_conversation_and_keeps_new_arriv
 	assert_eq(processor.store.turn, 2)
 	assert_eq(backend.payloads.size(), 2)
 	assert_eq(backend.payloads[1].context.current.past_observations.size(), 1)
+	assert_eq(backend.payloads[1].context.memories.size(), 1,
+		"Observation decisions must be able to recognize a prior related experience")
 	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.16)
 	assert_eq(backend.reaction_calls, 0)
 	processor.queue_free()
@@ -132,7 +134,7 @@ func test_classifier_failure_preserves_short_term_observation_without_relationsh
 	await tree.process_frame
 	backend.free()
 
-func test_cooldown_limits_reactions_and_only_spoken_lines_enter_history() -> void:
+func test_cooldown_limits_reactions_without_impersonating_player_conversation() -> void:
 	var tree: SceneTree = Engine.get_main_loop()
 	var processor := NpcEventProcessor.new()
 	processor.persist = false
@@ -150,7 +152,7 @@ func test_cooldown_limits_reactions_and_only_spoken_lines_enter_history() -> voi
 	await processor.flush("test_observer")
 	assert_eq(backend.reaction_calls, 1)
 	assert_eq(npc.spoken, ["Keep away!"])
-	assert_eq(processor.store.snapshot("test_observer").recent_dialogue.size(), 1)
+	assert_true(processor.store.snapshot("test_observer").recent_dialogue.is_empty())
 	processor.queue_free()
 	await tree.process_frame
 	backend.free()
@@ -219,3 +221,80 @@ func test_speech_generation_has_a_global_limit_without_blocking_assessment() -> 
 	for source: BaseNpc in sources:
 		source.free()
 	backend.free()
+
+func test_reactions_generated_before_a_new_perception_or_move_are_discarded() -> void:
+	var tree: SceneTree = Engine.get_main_loop()
+	for change: String in ["perception", "injury", "space"]:
+		var processor := NpcEventProcessor.new()
+		processor.persist = false
+		processor.store = NpcMemoryStore.new()
+		var backend := FakeBackend.new()
+		backend.policy = _policy()
+		backend.policy.speak = true
+		backend.hold_reaction = true
+		processor.backend = backend
+		tree.root.add_child(processor)
+		var npc := SpeakingNpc.new()
+		npc.npc_data = NpcData.new()
+		processor.observe(_profile(), {}, _event(), npc)
+		await tree.process_frame
+		assert_eq(backend.reaction_calls, 1)
+		match change:
+			"perception":
+				processor.observe(_profile(), {}, _event("touch"), npc)
+				await tree.process_frame
+				await processor.wait_for_assessment("test_observer")
+			"injury":
+				npc.life_revision += 1
+			"space":
+				npc.world_space = &"home:test"
+		backend.release_reaction.emit()
+		await processor.flush("test_observer")
+		assert_true(npc.spoken.is_empty(), change + " should invalidate the old response")
+		assert_eq(processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
+			"context_changed")
+		processor.queue_free()
+		await tree.process_frame
+		backend.free()
+		npc.free()
+
+func test_working_memory_expires_in_game_time_without_erasing_diagnostics_or_archive() -> void:
+	var store := NpcMemoryStore.new()
+	store.record_observation(_profile(), _event(), 500.0)
+	store.commit_observation("test_observer", 1, _policy(false))
+	store.record_observation(_profile(), _event("touch"), 501.0)
+	store.commit_observation("test_observer", 2, _policy())
+	var state: Dictionary = store.snapshot("test_observer")
+	var early: Dictionary = NpcCognitiveContext.build(state, {"world_minute": 510.0})
+	assert_eq(early.past_observations.size(), 2)
+	assert_eq(early.past_observations[0].age_game_minutes, 10.0)
+	assert_false(early.past_observations[0].has("age_seconds"))
+	var later: Dictionary = NpcCognitiveContext.build(state, {"world_minute": 700.0})
+	assert_true(later.past_observations.is_empty())
+	assert_true(later.current_concerns.is_empty())
+	assert_eq(store.snapshot("test_observer").observations.size(), 2)
+	assert_eq(store.snapshot("test_observer").memories.size(), 1)
+	var injured: Dictionary = NpcCognitiveContext.build(state,
+		{"world_minute": 700.0, "physical_state": "injured"})
+	assert_eq(injured.current_concerns.size(), 1)
+	assert_eq(injured.current_concerns[0].sense, "touch")
+	assert_false(injured.current_concerns[0].recent)
+
+func test_game_time_observations_do_not_age_while_the_game_is_closed() -> void:
+	var store := NpcMemoryStore.new()
+	store.record_observation(_profile(), _event(), 500.0)
+	var saved: Dictionary = store.to_save_data()
+	saved.npcs.test_observer.observations[0].created_at -= 86400
+	var restored := NpcMemoryStore.new()
+	assert_true(restored.from_save_data(saved))
+	var context: Dictionary = NpcCognitiveContext.build(restored.snapshot("test_observer"),
+		{"world_minute": 501.0})
+	assert_eq(context.current_concerns.size(), 1)
+	assert_eq(context.current_concerns[0].age_game_minutes, 1.0)
+	# Legacy records lacking game time still load and expire using their old timestamp.
+	saved.npcs.test_observer.observations[0].erase("world_minute")
+	assert_true(restored.from_save_data(saved))
+	context = NpcCognitiveContext.build(restored.snapshot("test_observer"), {"world_minute": 501.0})
+	assert_true(context.past_observations.is_empty())
+	saved.npcs.test_observer.observations[0].world_minute = -1
+	assert_false(restored.from_save_data(saved))

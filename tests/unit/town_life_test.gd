@@ -123,3 +123,48 @@ func test_hearsay_enters_memory_with_source_and_player_identity_is_explicit() ->
 	assert_true(state.memories[0].gist.contains("Mirelle told me"))
 	assert_eq(preload("res://game/resources/actors/player_data.tres").social_identity(),
 		{"id": "player", "name": "Den", "sex": "Male"})
+
+func test_forgotten_hearsay_cannot_repeat_its_trust_penalty_after_save() -> void:
+	var profile := NpcProfile.new()
+	profile.npc_id = &"listener"
+	var rumors := TownRumors.new()
+	rumors.observe("a", "Mirelle", _event(), _policy(), 500)
+	var account: Dictionary = rumors.hear("listener", "a", "Mirelle",
+		rumors.candidates("a", "listener", 500)[0], _policy(), 501)
+	var policy: Dictionary = _policy()
+	policy.remember = false
+	var memory := NpcMemoryStore.new()
+	memory.record_hearsay(profile, account, policy)
+	assert_true(memory.snapshot("listener").memories.is_empty())
+	assert_eq(memory.snapshot("listener").relationship.trust, -0.03)
+	var loaded := NpcMemoryStore.new()
+	assert_true(loaded.from_save_data(JSON.parse_string(JSON.stringify(memory.to_save_data()))))
+	loaded.record_hearsay(profile, account, policy)
+	assert_eq(loaded.snapshot("listener").relationship.trust, -0.03)
+
+func test_weak_accounts_cannot_change_trust_even_with_an_inconsistent_policy() -> void:
+	var profile := NpcProfile.new()
+	profile.npc_id = &"listener"
+	var rumors := TownRumors.new()
+	var event: Dictionary = _event()
+	event.basis = "player_claim"
+	rumors.observe("a", "Mirelle", event, _policy(), 500)
+	var topic: Dictionary = rumors.candidates("a", "listener", 500)[0]
+	assert_eq(topic.confidence, 0.6)
+	var account: Dictionary = rumors.hear("listener", "a", "Mirelle", topic, _policy(), 501)
+	var memory := NpcMemoryStore.new()
+	memory.record_hearsay(profile, account, _policy())
+	assert_eq(memory.snapshot("listener").relationship.trust, 0.0)
+	assert_eq(memory.snapshot("listener").memories[0].confidence, 0.6)
+
+func test_expired_accounts_are_not_known_and_stale_assessments_cannot_transfer_new_text() -> void:
+	var rumors := TownRumors.new()
+	var policy: Dictionary = _policy()
+	policy.remember = false
+	rumors.observe("a", "Mirelle", _event(), policy, 500)
+	assert_false(rumors.knows("a", "event:1", 681))
+	var topic: Dictionary = rumors.candidates("a", "b", 500)[0]
+	var updated: Dictionary = _event()
+	updated.text = "I saw a different person."
+	rumors.observe("a", "Mirelle", updated, policy, 501)
+	assert_true(rumors.hear("b", "a", "Mirelle", topic, policy, 502).is_empty())

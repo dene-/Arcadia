@@ -50,6 +50,7 @@ func test_decision_preview_precedes_dialogue_but_commit_waits_for_success() -> v
 	assert_eq(conversation.store.snapshot("test_npc").relationship.trust, 0.0)
 	assert_eq(backend.payload.context.relationship.trust, -0.08)
 	assert_eq(backend.payload.context.memories.size(), 1)
+	assert_eq(backend.decision_payload.context.memories, backend.payload.context.memories)
 	assert_false(backend.payload.npc.profile.has("memories"))
 	backend.dialogue_ready.emit()
 	assert_true(_completed)
@@ -136,8 +137,58 @@ func test_retrieval_gate_and_failed_dialogue_do_not_change_memory() -> void:
 	backend.result = {}
 	await _start(conversation, backend)
 	assert_true(backend.payload.context.memories.is_empty())
+	assert_eq(backend.decision_payload.context.memories.size(), 1,
+		"Judgment needs past evidence even if it elects not to recall it aloud")
 	assert_true(_result.is_empty())
 	assert_eq(conversation.store.turn, 0)
+	backend.free()
+
+func test_new_observation_during_decision_invalidates_old_judgment() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.hold_decision = true
+	_start(conversation, backend)
+	conversation.store.record_observation(_profile(), {
+		"text": "Den hurt me.", "sense": "touch", "player_involved": true})
+	backend.decision_ready.emit()
+	assert_true(_completed)
+	assert_true(_result.get("interrupted", false))
+	assert_eq(backend.dialogue_calls, 0)
+	assert_eq(conversation.store.turn, 0)
+	backend.free()
+
+func test_event_during_dialogue_does_not_commit_stale_response_or_feelings() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.hold_dialogue = true
+	_start(conversation, backend)
+	conversation.store.record_event(_profile(), "The shop caught fire.")
+	backend.dialogue_ready.emit()
+	assert_true(_result.get("interrupted", false))
+	var state: Dictionary = conversation.store.snapshot("test_npc")
+	assert_true(state.recent_dialogue.is_empty())
+	assert_eq(state.relationship.trust, 0.0)
+	assert_eq(state.recent_events, ["The shop caught fire."])
+	assert_eq(conversation.store.turn, 0)
+	backend.free()
+
+func test_other_npc_and_diagnostics_do_not_cancel_valid_exchange() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	backend.hold_dialogue = true
+	conversation.store.record_observation(_profile(), {
+		"text": "A noise.", "sense": "hearing", "player_involved": false})
+	_start(conversation, backend)
+	var other: NpcProfile = _profile()
+	other.npc_id = &"other"
+	conversation.store.record_event(other, "A bell rang.")
+	conversation.store.annotate_observation("test_npc", 1, {"assessment_ms": 300})
+	backend.dialogue_ready.emit()
+	assert_eq(_result.response, "Leave my forge.")
+	assert_eq(conversation.store.turn, 1)
 	backend.free()
 
 func test_reopened_same_npc_cannot_commit_previous_request() -> void:

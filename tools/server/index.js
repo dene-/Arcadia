@@ -5,12 +5,12 @@ import { createApp } from "./src/app.js";
 
 // Lazy clients let the server start without credentials.
 const app = createApp({
-  decide: async (request) => {
+  decide: async (request, options = {}) => {
     if (!process.env.TYPESAFE_API_KEY)
       throw new Error("TypeSafe is not configured");
     const client = new TypeSafeClient({
-      timeout: 10000,
-      retry: { maxRetries: 1 },
+      timeout: options.timeout ?? 10000,
+      retry: { maxRetries: options.maxRetries ?? 1 },
     });
     return client.systemOne({
       ...request,

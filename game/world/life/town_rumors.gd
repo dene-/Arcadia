@@ -12,12 +12,16 @@ func observe(id: String, name: String, event: Dictionary, policy: Dictionary, mi
 		return
 	if name.is_empty():
 		name = id
+	var basis: String = event.get("basis", "perception")
+	var confidence: float = 0.9 if basis == "perception" else 0.6
+	if NpcMemory.is_unit(event.get("confidence")):
+		confidence = minf(confidence, event.confidence)
 	var account: Dictionary = {
 		"origin_id": origin, "text": event.text, "originator": id,
 		"originator_name": name, "source_id": id, "source_name": name,
 		"sense": event.sense, "hops": 0, "chain": [id],
-		"basis": event.get("basis", "perception"),
-		"player_involved": event.player_involved, "confidence": 0.9,
+		"basis": basis,
+		"player_involved": event.player_involved, "confidence": confidence,
 		"importance": policy.importance, "learned_at": minute,
 		"expires_at": minute + (10080.0 if policy.remember else 180.0),
 	}
@@ -45,7 +49,7 @@ func hear(listener: String, speaker: String, speaker_name: String, account: Dict
 	for known: Dictionary in get_known(speaker, minute):
 		if known.origin_id == account.origin_id:
 			original = known
-	if original.is_empty() or original.hops >= MAX_HOPS or listener in original.chain \
+	if original != account or original.is_empty() or original.hops >= MAX_HOPS or listener in original.chain \
 		or knows(listener, original.origin_id, minute):
 		return {}
 	var heard: Dictionary = original.duplicate(true)
@@ -60,8 +64,9 @@ func hear(listener: String, speaker: String, speaker_name: String, account: Dict
 	_put(listener, heard, minute)
 	return heard.duplicate(true)
 
-func knows(id: String, origin: String, _minute: float) -> bool:
-	return _known.get(id, []).any(func(item: Dictionary) -> bool: return item.origin_id == origin)
+func knows(id: String, origin: String, minute: float) -> bool:
+	return _known.get(id, []).any(func(item: Dictionary) -> bool:
+		return item.origin_id == origin and item.expires_at > minute)
 
 func get_known(id: String, minute: float) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

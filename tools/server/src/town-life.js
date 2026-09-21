@@ -111,9 +111,10 @@ export function townLifeRoutes({ decide, generate }) {
     base(body); account(body.topic); text(body.speaker?.id, 100); text(body.speaker?.name, 100);
     return body;
   }, () => LISTEN_QUESTIONS, (answers, body) => ({
-    belief: answers.belief.noul, remember: answers.remember.noul >= 0.65,
+    belief: Math.min(answers.belief.noul, body.topic.confidence), remember: answers.remember.noul >= 0.65,
     importance: answers.importance.score / 4, affinity: delta(answers.affinity),
-    trust_player: body.topic.player_involved && answers.belief.noul >= 0.7 ? delta(answers.trust_player) : 0,
+    trust_player: body.topic.player_involved && Math.min(answers.belief.noul, body.topic.confidence) >= 0.7
+      ? delta(answers.trust_player) : 0,
   }));
   router.post("/say", async (req, res) => {
     let state;

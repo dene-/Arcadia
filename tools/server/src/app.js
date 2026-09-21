@@ -15,6 +15,7 @@ import {
   REACTION_FORMAT,
   parseReaction,
 } from "./dialogue.js";
+import { groundMemories } from "./memory-grounding.js";
 function validateRequest(body) {
   if (
     body?.protocol_version !== 1 ||
@@ -91,7 +92,6 @@ export function createApp({ decide, generate }) {
       const state = {
         ...request,
         relationship_scales: RELATIONSHIP_SCALES,
-        context: { ...request.context, memories: [] },
       };
       const result = await decide({ state, questions: QUESTIONS });
       res.json({
@@ -113,7 +113,6 @@ export function createApp({ decide, generate }) {
       const state = {
         ...request,
         relationship_scales: RELATIONSHIP_SCALES,
-        context: { ...request.context, memories: [] },
       };
       const result = await decide({ state, questions: EVENT_QUESTIONS });
       res.json({
@@ -194,7 +193,9 @@ export function createApp({ decide, generate }) {
       });
       if (response.status && response.status !== "completed")
         throw new Error("Incomplete response");
-      res.json(parseDialogue(response.output_text, request, policy));
+      const result = parseDialogue(response.output_text, request, policy);
+      result.memory_writes = await groundMemories(result.memory_writes, request, result.response, decide);
+      res.json(result);
     } catch {
       res.status(503).json({ error: "NPC dialogue service unavailable." });
     }

@@ -82,7 +82,8 @@ function dialogue(overrides = {}) {
 }
 async function server(t, services = {}) {
   const app = createApp({
-    decide: async () => ({ answers: answers() }),
+    decide: async ({ questions }) => ({ answers: answers(
+      { supported_0: 0.95, supported_1: 0.95, supported_2: 0.95 }, questions) }),
     generate: async () => ({ output_text: JSON.stringify(dialogue()) }),
     ...services,
   });
@@ -229,10 +230,11 @@ test("official SDK contract uses named questions and the systemone endpoint (moc
   assert.equal(sent.body.questions.should_remember.type, "noul");
   assert.equal(decisionPolicy(result.answers).remember, true);
 });
-test("decision stage excludes archive; dialogue receives updated state and recall only", async (t) => {
+test("decisions and dialogue receive only the supplied bounded recollections", async (t) => {
   let seenDecision, seenPrompt;
   const post = await server(t, {
     decide: async (input) => {
+      if (input.questions.supported_0) return { answers: answers({ supported_0: 0.95 }, input.questions) };
       seenDecision = input;
       return { answers: threat() };
     },
@@ -253,7 +255,7 @@ test("decision stage excludes archive; dialogue receives updated state and recal
   };
   const decision = await post("/decide", body);
   assert.equal(decision.status, 200);
-  assert.deepEqual(seenDecision.state.context.memories, []);
+  assert.deepEqual(seenDecision.state.context.memories, body.context.memories);
   body.answers = decision.body.answers;
   body.context.relationship.trust =
     decision.body.policy.relationship_delta.trust;
@@ -522,7 +524,9 @@ test(
     t.after(() => rm(path, { recursive: true, force: true }));
     const listener = createApp({
       decide: async ({ questions, state }) => ({
-        answers: questions.should_speak
+        answers: questions.supported_0
+          ? answers({ supported_0: 0.95 }, questions)
+          : questions.should_speak
           ? answers(
               {
                 should_remember: 0.93,
@@ -590,4 +594,52 @@ test("live assault judgment admits memory and speech; moderate speech judgments 
   assert.equal(observationPolicy(raw, event).speak, false);
   raw.should_speak.noul = 0.99;
   assert.equal(observationPolicy(raw, { ...event, speech_allowed: false }).speak, false);
+});
+
+test("a valid quote cannot launder unsupported memory details", async (t) => {
+  let checks = 0;
+  const post = await server(t, {
+    generate: async () => ({ output_text: JSON.stringify(dialogue({ memory_writes: [
+      proposal(),
+      proposal({ gist: "The player burned the forge yesterday.", important_details: ["Three people died."] }),
+      proposal({ type: "prospective", gist: "The player promised to pay for a new forge." }),
+    ] })) }),
+    decide: async ({ state, questions }) => {
+      checks++;
+      assert.equal(Object.keys(questions).length, 3);
+      assert.equal(state.candidates[1].source_text, request().player.message);
+      assert.equal(state.candidates[1].proposal.evidence, "burn down your forge");
+      assert.deepEqual(state.candidates[1].proposal.important_details, ["Three people died."]);
+      // Labeled mock judgments exercise admission, not actual Jev accuracy.
+      return { answers: answers({ supported_0: 0.95, supported_1: 0.1, supported_2: 0.5 }, questions) };
+    },
+  });
+  const result = await post("/chat", { ...request(), answers: threat() });
+  assert.equal(result.status, 200);
+  assert.equal(checks, 1);
+  assert.equal(result.body.memory_writes.length, 1);
+  assert.equal(result.body.memory_writes[0].gist, proposal().gist);
+  assert.equal(result.body.memory_writes[0].evidence, proposal().evidence);
+});
+
+test("grounding failures discard proposals while preserving valid dialogue", async (t) => {
+  for (const answer of [null, { type: "noul", noul: 1.1 }, { type: "noul", noul: "0.99" },
+    { type: "choice", noul: 0.99 }, { type: "noul", noul: 0.84 }]) {
+    const post = await server(t, { decide: async () => ({ answers: { supported_0: answer } }) });
+    const result = await post("/chat", { ...request(), answers: threat() });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.response, "Leave my forge.");
+    assert.deepEqual(result.body.memory_writes, []);
+  }
+  const post = await server(t, { decide: async () => { throw Error("provider unavailable"); } });
+  const result = await post("/chat", { ...request(), answers: threat() });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.memory_writes, []);
+});
+
+test("no grounding call is made when nothing merits memory", async (t) => {
+  const post = await server(t, { decide: async () => { assert.fail("unnecessary inference"); } });
+  const result = await post("/chat", { ...request(), answers: answers() });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.memory_writes, []);
 });

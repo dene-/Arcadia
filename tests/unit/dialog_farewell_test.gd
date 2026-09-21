@@ -120,3 +120,68 @@ func test_closing_and_reopening_cancels_pending_farewell() -> void:
 	assert_true(_manager.is_dialog_open())
 	assert_true(_manager._chat_container.visible)
 	assert_eq(_finished_sources.size(), 1)
+
+func test_dialogue_retries_with_fresh_evidence_without_committing_stale_reply() -> void:
+	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
+	npc.npc_data = npc.npc_data.duplicate()
+	npc.npc_data.profile = NpcProfile.new()
+	npc.npc_data.profile.npc_id = &"dialogue_retry_test"
+	_scene.add_child(npc)
+	_manager.close_dialog()
+	_manager._start_dialog(npc)
+	_manager.set_process(false)
+	var conversation: NpcConversation = _manager._conversation
+	conversation.store = NpcMemoryStore.new()
+	conversation.persist = false
+	var previous_backend: DialogBackendClient = _manager._backend_client
+	var backend = preload("res://tests/unit/npc_conversation_test.gd").FakeBackend.new()
+	_manager._backend_client = backend
+	backend.hold_dialogue = true
+	var received: Array[Dictionary] = []
+	var run: Callable = func() -> void:
+		received.append(await _manager._resolve_dialog_text_async(npc, "Hello."))
+	run.call()
+	assert_eq(backend.dialogue_calls, 1)
+	conversation.store.record_event(npc.get_npc_profile(), "Smoke fills the shop.")
+	backend.hold_dialogue = false
+	backend.dialogue_ready.emit()
+	assert_eq(backend.dialogue_calls, 2)
+	assert_eq(backend.payload.context.current.recent_events, ["Smoke fills the shop."])
+	assert_eq(conversation.store.turn, 1, "Only the fresh exchange may commit")
+	assert_eq(conversation.store.snapshot("dialogue_retry_test").recent_dialogue.size(), 2)
+	assert_eq(received[0].response, "Leave my forge.")
+	_manager._backend_client = previous_backend
+	backend.free()
+
+func test_continuing_interruptions_close_dialogue_without_fallback_or_commit() -> void:
+	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
+	npc.npc_data = npc.npc_data.duplicate()
+	npc.npc_data.profile = NpcProfile.new()
+	npc.npc_data.profile.npc_id = &"dialogue_interrupt_test"
+	_scene.add_child(npc)
+	_manager.close_dialog()
+	_manager._start_dialog(npc)
+	_manager.set_process(false)
+	var conversation: NpcConversation = _manager._conversation
+	conversation.store = NpcMemoryStore.new()
+	conversation.persist = false
+	var previous_backend: DialogBackendClient = _manager._backend_client
+	var backend = preload("res://tests/unit/npc_conversation_test.gd").FakeBackend.new()
+	_manager._backend_client = backend
+	backend.hold_dialogue = true
+	var received: Array[Dictionary] = []
+	var run: Callable = func() -> void:
+		received.append(await _manager._resolve_dialog_text_async(npc, "Hello."))
+	run.call()
+	npc.life_revision += 1
+	backend.dialogue_ready.emit()
+	assert_eq(backend.dialogue_calls, 2)
+	npc.life_revision += 1
+	backend.dialogue_ready.emit()
+	assert_eq(backend.dialogue_calls, 2, "Do not keep retrying during ongoing danger")
+	assert_false(_manager.is_dialog_open())
+	assert_true(received[0].is_empty())
+	assert_eq(conversation.store.turn, 0)
+	assert_true(conversation.store.snapshot("dialogue_interrupt_test").recent_dialogue.is_empty())
+	_manager._backend_client = previous_backend
+	backend.free()

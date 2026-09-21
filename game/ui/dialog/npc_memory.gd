@@ -44,6 +44,8 @@ static func is_valid(value: Variant) -> bool:
 			return false
 	if not value.type in TYPES or not value.source in SOURCES:
 		return false
+	if value.has("evidence") and (not value.evidence is String or value.evidence.length() > 500):
+		return false
 	for key: String in UNIT_FIELDS:
 		if not is_unit(value.get(key)):
 			return false

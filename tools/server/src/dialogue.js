@@ -147,6 +147,7 @@ export function parseDialogue(output, request, policy) {
       type: memory.type,
       gist: memory.gist.trim(),
       source: memory.source,
+      evidence: memory.evidence,
     };
     let valid = true;
     for (const key of [

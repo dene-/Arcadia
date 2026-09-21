@@ -306,15 +306,35 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 			var still_current: Callable = func() -> bool:
 				return source_ref.get_ref() != null and _is_open and _active_source == source_ref.get_ref() \
 					and generation == _dialog_generation and get_tree().current_scene == _bound_scene
-			_events.resume(profile, current, source as BaseNpc)
-			await _events.wait_for_assessment(String(profile.npc_id))
-			if not still_current.call():
-				return {}
-			current = source.call("get_cognitive_context")
-			var result: Dictionary = await _conversation.request(
-				profile, current, player_message, _backend_client, still_current)
-			if not result.is_empty():
-				return result
+			# One retry absorbs an event arriving during inference. Ongoing danger interrupts
+			# the conversation instead of displaying stale prose or looping indefinitely.
+			for attempt: int in range(2):
+				_events.resume(profile, current, source as BaseNpc)
+				await _events.wait_for_assessment(String(profile.npc_id))
+				if not still_current.call():
+					return {}
+				current = source.call("get_cognitive_context")
+				var npc: BaseNpc = source as BaseNpc
+				var revision: int = npc.life_revision if npc != null else 0
+				var space: StringName = npc.world_space if npc != null else &""
+				var attempt_current: Callable = func() -> bool:
+					if not still_current.call():
+						return false
+					var actor: BaseNpc = source_ref.get_ref() as BaseNpc
+					return actor == null or (actor.life_revision == revision and actor.world_space == space)
+				var result: Dictionary = await _conversation.request(
+					profile, current, player_message, _backend_client, attempt_current)
+				if not still_current.call():
+					return {}
+				if result.get("interrupted", false) or (npc != null
+						and (npc.life_revision != revision or npc.world_space != space)):
+					if attempt == 1:
+						close_dialog()
+						return {}
+					continue
+				if not result.is_empty():
+					return result
+				break
 	if is_instance_valid(source) and source.has_method("get_dialog_text"):
 		var source_text: String = str(source.call("get_dialog_text")).strip_edges()
 		if not source_text.is_empty():

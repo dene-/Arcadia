@@ -64,7 +64,7 @@ test("hearsay affects belief separately from memory and never blames an unidenti
   }) }) });
   const body = { ...request(), topic: rumor(), speaker: { id: "mirelle", name: "Mirelle" } };
   const result = await post("listen", body);
-  assert.equal(result.body.policy.belief, 0.9);
+  assert.equal(result.body.policy.belief, 0.7);
   assert.equal(result.body.policy.remember, false);
   assert.equal(result.body.policy.trust_player, -0.03);
   body.topic.player_involved = false;
@@ -125,4 +125,18 @@ test("real town routes, social decisions, audible speech and rumor memory cross 
   } });
   assert.match(stdout, /Town life failures: \[\]/);
   assert.doesNotMatch(stderr, /SCRIPT ERROR|Dialog backend unavailable/);
+});
+
+test("a confident listener cannot amplify a weak account into a trust penalty", async (t) => {
+  const post = await server(t, {
+    decide: async ({ questions }) => ({ answers: answers(questions, {
+      belief: 0.99, remember: 0.9, trust_player: "NEGATIVE",
+    }) }),
+  });
+  const body = { ...request(), topic: { ...rumor(), confidence: 0.2 },
+    speaker: { id: "lysa", name: "Lysa" } };
+  const result = await post("listen", body);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.policy.belief, 0.2);
+  assert.equal(result.body.policy.trust_player, 0);
 });
