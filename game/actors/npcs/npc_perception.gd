@@ -60,12 +60,19 @@ static func can_see(observer: BaseNpc, target: BaseActor) -> bool:
 		return false
 	if observer == target:
 		return true
+	return can_see_point(observer, target.world_space, target.global_position, target)
+
+static func can_see_point(observer: BaseNpc, space: StringName, point: Vector2,
+		target: BaseActor = null) -> bool:
+	if observer.health <= 0 or observer.is_sleeping() or not observer.npc_data.perception_enabled \
+		or observer.world_space != space:
+		return false
 	if observer.npc_data.vision_radius <= 0.0 or observer.global_position.distance_to(
-			target.global_position) > observer.npc_data.vision_radius:
+			point) > observer.npc_data.vision_radius:
 		return false
 	var offset := Vector2(0.0, -4.0)
 	var ray := PhysicsRayQueryParameters2D.create(observer.global_position + offset,
-		target.global_position + offset, observer.npc_data.vision_collision_mask)
+		point + offset, observer.npc_data.vision_collision_mask)
 	ray.exclude = [observer.get_rid()]
 	var hit: Dictionary = observer.get_world_2d().direct_space_state.intersect_ray(ray)
-	return hit.is_empty() or hit.get("collider") == target
+	return hit.is_empty() or (target != null and hit.get("collider") == target)

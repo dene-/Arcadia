@@ -10,6 +10,7 @@ var navigation := TownNavigation.new()
 var encounters: TownEncounters
 var buildings: TownBuildings
 var watch: TownWatch
+var funerals: TownFunerals
 var _actors: Dictionary[String, BaseNpc] = {}
 var _places: Dictionary[String, Dictionary] = {}
 var _public_people: Array[Dictionary] = []
@@ -77,6 +78,10 @@ func _ready() -> void:
 	watch = TownWatch.new()
 	watch.life = self
 	add_child(watch)
+	funerals = TownFunerals.new()
+	funerals.name = "Funerals"
+	funerals.life = self
+	add_child(funerals)
 	_light = CanvasModulate.new()
 	add_child(_light)
 	var overlay := CanvasLayer.new()
@@ -103,12 +108,17 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	var elapsed_minutes: float = delta * minutes_per_second
 	save_game.life.advance(elapsed_minutes)
+	funerals.advance(delta)
 	save_game.economy.settle(save_game.life.minute, save_game.population, save_game.dead_npcs)
 	_tick += delta
 	_save_elapsed += delta
 	for id: String in _actors.keys():
+		if not is_instance_valid(_actors[id]):
+			navigation.release(id)
+			_actors.erase(id)
+			continue
 		var npc: BaseNpc = _actors[id]
-		if not is_instance_valid(npc) or npc.health <= 0:
+		if npc.health <= 0:
 			navigation.release(id)
 			if is_instance_valid(npc):
 				buildings.release(npc, id)
@@ -132,7 +142,8 @@ func _process(delta: float) -> void:
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
 		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"], save_game.population)
-		if watch.maintain(npc, id) or _maintain_safety(npc, id):
+		if watch.maintain(npc, id, false) or funerals.maintain(npc, id) \
+			or _maintain_safety(npc, id) or watch.maintain(npc, id):
 			_update_context(npc, id)
 			continue
 		_wake_for_schedule(npc, id)
@@ -147,8 +158,12 @@ func _process(delta: float) -> void:
 		var offset: int = int(save_game.life.minute) % ids.size()
 		for index: int in range(ids.size()):
 			var first: BaseNpc = _actors[ids[(index + offset) % ids.size()]]
+			if funerals.is_assigned(ids[(index + offset) % ids.size()]) or first.alert_response.active():
+				continue
 			for second_id: String in ids:
 				var second: BaseNpc = _actors[second_id]
+				if funerals.is_assigned(second_id) or second.alert_response.active():
+					continue
 				if first != second and first.can_speak_reaction() and second.can_speak_reaction():
 					encounters.consider(first, second)
 	_update_environment()
@@ -168,9 +183,9 @@ func _update_environment() -> void:
 func _exit_tree() -> void:
 	if _initialized:
 		_save()
-	for npc: BaseNpc in _actors.values():
-		if is_instance_valid(npc):
-			npc.daily_routine = null
+	for id: String in _actors:
+		if is_instance_valid(_actors[id]):
+			_actors[id].daily_routine = null
 
 func _build_places() -> void:
 	_places = {"square": {"label": "Rekala square", "position": Vector2(16, 48)},
@@ -218,7 +233,7 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	var result: Dictionary = await backend.request_life("routine", payload)
 	_pending.erase(id)
 	if not is_inside_tree() or not is_instance_valid(npc) or not npc.can_follow_routine() \
-		or npc.life_revision != revision or encounters.is_busy(id):
+		or npc.life_revision != revision or encounters.is_busy(id) or funerals.is_assigned(id):
 		return
 	if save_game.life.get_person(id).safety != person.safety:
 		return # A routine decision cannot supersede a new or newly assessed concern.
@@ -249,14 +264,30 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 	if npc.is_in_group(&"town_guards"):
 		return false
 	var person: Dictionary = save_game.life.get_person(id)
+	if person.activity == "assess_safety" and (not NpcSafetyState.active(person.safety, save_game.life.minute) \
+		or save_game.life.minute - float(person.safety.observed_at) >= 10):
+		npc.daily_routine.hold(false)
+		save_game.life.interrupt(id)
+	if NpcSafetyState.active(person.safety, save_game.life.minute) and person.safety.response == "CAUTION" \
+		and save_game.life.minute - float(person.safety.observed_at) < 10:
+		encounters.interrupt(id)
+		if npc.can_follow_routine() and not npc.is_sleeping():
+			npc.daily_routine.hold(true)
+			if person.activity != "assess_safety":
+				save_game.life.select_activity(id, {"kind": "assess_safety", "place": person.place}, 10,
+					{"service": "listening_after_disturbance"})
+		return true
 	if not NpcSafetyState.sheltering(person.safety, save_game.life.minute):
 		return false
 	encounters.interrupt(id)
+	if npc.alert_response.active():
+		return true
 	if person.activity == "shelter" and person.decision.get("safety_origin") == person.safety.origin_id:
 		return true
 	npc.interrupt_for_safety()
 	if not npc.can_follow_routine():
 		return true
+	npc.daily_routine.hold(false)
 	# Do not retreat into the room where the threat was perceived. Outdoors, home is
 	# a known refuge; a threat in one's own home calls for leaving for the public market.
 	var refuge: String = "home:" + id if person.safety.space != "home:" + save_game.population.household_for(id) else "market"
@@ -276,6 +307,8 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	if preferred.kind in ["school", "patrol", "meal"]:
 		return options
 	var resident: Dictionary = save_game.population.people[id]
+	if resident.job == "guard" and preferred.kind == "rest":
+		return options
 	if preferred.kind == "rest" or save_game.life.get_person(id).activity != "rest":
 		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
 	var hour: int = int(save_game.life.minute / 60.0) % 24
@@ -356,6 +389,8 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 		"household_economy": save_game.economy.context(save_game.population.household_for(id))}
 	if encounters != null:
 		npc.life_context.social_status = encounters.diagnostics(id)
+	if funerals != null:
+		npc.life_context.known_deaths = funerals.known_losses(id)
 	if npc.is_in_group(&"town_guards"):
 		npc.life_context.enforcement = save_game.justice.known_to(id)
 
@@ -367,6 +402,16 @@ func _save() -> Error:
 	if error != OK:
 		push_warning("Town life could not be saved: %s" % error)
 	return error
+
+func save_snapshot() -> Error:
+	return _save()
+
+func resident_ids() -> Array[String]:
+	return _actors.keys()
+
+func resident(id: String) -> BaseNpc:
+	var npc: Variant = _actors.get(id)
+	return npc if is_instance_valid(npc) and npc.health > 0 else null
 
 func travel_to(npc: BaseNpc, id: String, kind: String, place: String, duration: float = 20) -> void:
 	var selected: Dictionary = {"kind": kind, "place": place}

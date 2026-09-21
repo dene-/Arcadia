@@ -8,6 +8,7 @@ var life := TownLifeState.new()
 var population := TownPopulation.new()
 var economy := TownEconomy.new()
 var justice := TownJustice.new()
+var deaths := TownDeaths.new()
 var dead_npcs: Array[String] = []
 ## Zero means an older save or a new world; the region assigns a seed once.
 var region_seed: int = 0
@@ -46,7 +47,7 @@ func load_file(legacy_path: String = NpcMemoryStore.SAVE_PATH) -> Error:
 func to_data() -> Dictionary:
 	return {"version": 1, "world": {"dead_npcs": dead_npcs.duplicate(), "region_seed": region_seed,
 		"life": life.to_data(), "population": population.to_data(), "economy": economy.to_data(),
-		"justice": justice.to_data()},
+		"justice": justice.to_data(), "deaths": deaths.to_data()},
 		"memory": memory.to_save_data()}
 
 func from_data(data: Variant) -> bool:
@@ -74,10 +75,15 @@ func from_data(data: Variant) -> bool:
 	var validated_population := TownPopulation.new()
 	var validated_economy := TownEconomy.new()
 	var validated_justice := TownJustice.new()
+	var validated_deaths := TownDeaths.new()
 	if not validated_population.from_data(data.world.get("population", validated_population.to_data())) \
 		or not validated_economy.from_data(data.world.get("economy", validated_economy.to_data())) \
-		or not validated_justice.from_data(data.world.get("justice", validated_justice.to_data())):
+		or not validated_justice.from_data(data.world.get("justice", validated_justice.to_data())) \
+		or not validated_deaths.from_data(data.world.get("deaths", {})):
 		return false
+	for id: String in validated_deaths.records:
+		if not id in validated:
+			return false
 	if not memory.from_save_data(data.get("memory"), validated_life.minute):
 		return false
 	dead_npcs = validated
@@ -86,6 +92,7 @@ func from_data(data: Variant) -> bool:
 	population.from_data(validated_population.to_data())
 	economy.from_data(validated_economy.to_data())
 	justice.from_data(validated_justice.to_data())
+	deaths.from_data(validated_deaths.to_data())
 	return true
 
 func save_file() -> Error:

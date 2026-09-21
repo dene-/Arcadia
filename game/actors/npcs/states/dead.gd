@@ -8,6 +8,7 @@ func enter(_previous_state: Node, _data: Dictionary = {}) -> void:
 
 func physics_update(_delta: float) -> void:
 	get_npc().apply_velocity(Vector2.ZERO)
+	get_npc().advance_death_pose()
 
 func animation_finished() -> void:
-	get_npc().queue_free()
+	get_npc().finish_death()

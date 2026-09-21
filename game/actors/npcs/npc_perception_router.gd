@@ -8,6 +8,11 @@ func _init() -> void:
 	register(&"actor_hurt", _combat)
 	register(&"actor_died", _combat)
 	register(&"actor_surrendered", _surrender)
+	for kind: StringName in [&"body_found", &"body_reported", &"body_buried"]:
+		register(kind, _aftermath)
+
+func _aftermath(observer: BaseNpc, event: WorldEvent) -> Dictionary:
+	return event.facts.duplicate(true) if observer == event.subject and observer.health > 0 else {}
 
 func _surrender(observer: BaseNpc, event: WorldEvent) -> Dictionary:
 	if observer.health <= 0 or observer.world_space != event.subject.world_space \

@@ -34,10 +34,8 @@ func _initialize() -> void:
 func _run() -> void:
 	var cognition: Node = root.get_node("NpcCognition")
 	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-town-test-%d.json" % OS.get_process_id())
-	cognition.save_game.life.from_data(TownLifeState.new().to_data())
-	cognition.save_game.dead_npcs.clear()
+	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
-	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
 	var backend := MockLifeBackend.new()
 	var endpoint: String = OS.get_environment("ARCADIA_TOWN_SERVER_URL")
 	if not endpoint.is_empty():

@@ -40,12 +40,14 @@ func _on_world_event(event: WorldEvent) -> void:
 		var profile: NpcProfile = event.subject.get_npc_profile()
 		if profile != null:
 			save_game.mark_dead(profile.npc_id)
+			if event.subject.is_in_group(&"town_residents"):
+				save_game.deaths.record(String(profile.npc_id), String(event.subject.world_space),
+					event.subject.global_position, save_game.life.minute)
 	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
 		var observed: Dictionary = perception.perceive(observer, event)
 		if not observed.is_empty():
-			if observer != event.subject:
-				observer.wake_from_noise()
 			observed.origin_id = origin_id
+			observer.alert_response.notice(observer, observed)
 			save_game.life.notice_perception(String(observer.get_npc_profile().npc_id),
 				observed, String(observer.world_space))
 			var current: Dictionary = observer.get_cognitive_context()

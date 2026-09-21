@@ -9,7 +9,9 @@ for a saved seed. Everyone uses the existing chat, perception and memory system.
 
 ## Playing and inspecting
 
-- Guards patrol on staggered daytime/evening shifts and return home off duty.
+- Guards patrol on day and overnight shifts and return home off duty. The Ash
+  household guard works 18:30–06:30 and sleeps 07:30–15:30. The Voss guard starts
+  at 06:00. Saved plans migrate without rerolling identities or relationships.
   Weapon brandishing near residents earns a warning. Witnessed repeated assault
   or a killing permits combat. Guards protect residents and the player from
   witnessed monster attacks; helping fight a monster is not a crime.
@@ -39,6 +41,10 @@ for a saved seed. Everyone uses the existing chat, perception and memory system.
 | `TownBuildings` / `NpcInterior` | Shared spaces, per-person beds and door transfers |
 | `TownJustice` | Serializable per-guard evidence, warnings and surrender |
 | `TownWatch` | Visible/heard events, patrol routes, enforcement and surrender UI |
+| `NpcAlertResponse` | Real-time stirring, startle and orientation beats before movement |
+| `TownDeaths` | Serializable body locations, discovery, reporting and burial stages |
+| `TownFunerals` | Witness errands, guard recovery, interruptions and perceived aftermath |
+| `TownCemetery` / `NpcRemains` | Fixed named graves, intact fallen poses and carried shrouds |
 | `BaseNpc` | Explicit combat target and existing pathing/melee mechanics |
 | `TownEconomy` | Work accounting, production, input goods, consumption and budgets |
 
@@ -48,6 +54,38 @@ Occupation-specific schedules and work locations live separately from identity.
 Production recipes and baseline prices belong to `TownEconomy`, not actor states.
 Changes to existing identity templates require a save migration rather than
 renaming persisted IDs. Existing feelings are preserved when new neighbors arrive.
+
+## Danger and death
+
+Direct injury still causes an immediate physical response. Other sleepers stir
+for 1.2–3.4 real seconds, then take a separate moment to get their bearings.
+Orientation varies with the resident and their courage. Repeated sounds do not
+restart the timer indefinitely. Hearing supplies a disturbance, not knowledge of
+an unseen attacker. Jev continues to assess memories, feelings, speech and safety;
+physical reaction timing does not depend on provider latency. Brief caution keeps
+a newly awakened resident listening before an ordinary routine can send them back
+to bed. Shelter routes wait for the reaction beat and use the existing doors.
+
+New town-resident deaths leave a persistent body, frozen before the original art's
+disappearance frames. An awake resident must see it through an unobstructed sight
+line to discover it. A witness pauses, seeks a guard using ordinary paths and
+reports in person. A guard can also discover a body directly. Seeing remains does
+not identify a killer or authorize attacking the player.
+
+The guard visits the scene, waits while danger persists, spends six game minutes
+recovering the body, carries a shrouded body through the doors to the southwest
+cemetery, and spends twelve game minutes at the grave. Combat interrupts carrying;
+a dead carrier leaves the body for physical rediscovery. With no surviving guard,
+the remains stay in the world. Recovery outranks ordinary errands and social
+chatter; immediate enforcement outranks recovery. Saved progress resumes after a
+restart, and graves use stable resident plots with names visible nearby.
+
+Discovery, an actual report and witnessed burial enter the existing cognition and
+rumor pipeline. Dialogue/routine context includes only deaths the resident has
+learned about, together with their family connection. This is a first recovery
+and burial flow, not a funeral-attendance or criminal-investigation simulation.
+Older death flags remain respected; missing historical body locations are not
+invented. Monsters retain their existing death cleanup.
 
 ## Economy foundations
 
@@ -86,7 +124,8 @@ On another licensed checkout, download the two owned ZIPs and run:
 ```
 
 Then run the unit suite and the `town_interiors_test.gd`,
-`town_life_world_test.gd`, `town_watch_test.gd` and `combat_contact_test.gd`
+`town_life_world_test.gd`, `town_watch_test.gd`, `town_emergency_flow_test.gd`
+and `combat_contact_test.gd`
 integration scripts under `tests/integration/`. Use `--fixed-fps 60` for deterministic
 fast headless runs. Backend tests include mocked Jev intent validation and an HTTP
 town-life scenario; no live provider check is required.

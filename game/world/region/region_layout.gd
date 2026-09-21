@@ -49,6 +49,7 @@ func generate(value: int) -> void:
 	# Connected loops with three permanent river crossings.
 	_road([Vector2i(-145, 4), Vector2i(145, 4)], 2)
 	_road([Vector2i(0, -113), Vector2i(0, 111)], 2)
+	_road([Vector2i(-15, 45), Vector2i(0, 45)], 1)
 	_road([Vector2i(-110, 4), Vector2i(-110, -70), Vector2i(-42, -68),
 		Vector2i(108, -68), Vector2i(108, 4)], 1)
 	_road([Vector2i(-100, 4), Vector2i(-100, 56), Vector2i(-48, 76),

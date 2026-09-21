@@ -11,10 +11,8 @@ func _initialize() -> void:
 func _run() -> void:
 	var cognition: Node = root.get_node("NpcCognition")
 	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-interiors-%d.json" % OS.get_process_id())
-	cognition.save_game.life.from_data(TownLifeState.new().to_data())
-	cognition.save_game.dead_npcs.clear()
+	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
-	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
 	var backend := MockBackend.new()
 	root.add_child(backend)
 	cognition.backend = backend
@@ -41,6 +39,8 @@ func _run() -> void:
 	_check_prop_crops(failures)
 	for npc: BaseNpc in residents:
 		var id: String = String(npc.get_npc_profile().npc_id)
+		if id == "vale_guard":
+			continue # The late watch is working at 23:00; its daytime rest is checked below.
 		var home: Dictionary = {"kind": "rest", "place": "home:" + id}
 		life.save_game.life.select_activity(id, home, 120, {})
 		life._travel(npc, id, home)
@@ -48,6 +48,10 @@ func _run() -> void:
 		await physics_frame
 	for npc: BaseNpc in residents:
 		var id: String = String(npc.get_npc_profile().npc_id)
+		if id == "vale_guard":
+			if npc.is_sleeping() or npc.daily_routine.activity != "patrol":
+				failures.append("The night watch abandoned its shift")
+			continue
 		if npc.world_space != StringName("home:" + cognition.save_game.population.household_for(id)) or not npc.state_machine.is_in_state(&"sleep"):
 			failures.append("Did not reach bed: %s at %s, state=%s, goal=%s" %
 				[id, npc.position, npc.state_machine.get_current_state_name(), npc.daily_routine.destination])
@@ -208,6 +212,10 @@ func _run() -> void:
 	for frame: int in range(30):
 		await physics_frame
 	for npc: BaseNpc in get_nodes_in_group("town_residents"):
+		if npc.get_npc_profile().npc_id == &"vale_guard":
+			if npc.is_sleeping():
+				failures.append("Restart put the night watch to sleep")
+			continue
 		if npc.world_space != StringName("home:" + cognition.save_game.population.household_for(String(npc.get_npc_profile().npc_id))) \
 			or not npc.is_sleeping():
 			failures.append("Restart did not restore sleeping resident: " + npc.name)
@@ -221,6 +229,10 @@ func _run() -> void:
 	for frame: int in range(90):
 		await physics_frame
 	for npc: BaseNpc in get_nodes_in_group("town_residents"):
+		if npc.get_npc_profile().npc_id == &"vale_guard":
+			if npc.daily_routine.activity != "rest":
+				failures.append("The night watch missed its daytime rest")
+			continue
 		if npc.is_sleeping() or npc.daily_routine.activity == "rest":
 			failures.append("Resident ignored the scheduled wakeup: " + npc.name)
 	print("Town interior failures: ", failures)

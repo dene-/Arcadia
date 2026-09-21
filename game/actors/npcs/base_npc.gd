@@ -25,6 +25,7 @@ var state_time_remaining: float = 0.0
 var daily_routine: NpcDailyRoutine
 var life_context: Dictionary = {}
 var life_revision: int = 0
+var alert_response := NpcAlertResponse.new()
 var _awake_sprite_position: Vector2
 var _awake_interaction_position: Vector2
 var _awake_hurt_position: Vector2
@@ -48,6 +49,7 @@ var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
 var _reaction_cooldown_until: int = 0
+var _fallen_frame: int = -1
 
 @onready var blood_particles: CPUParticles2D = $BloodParticles
 @onready var interaction_area: Area2D = $InteractionArea
@@ -93,6 +95,14 @@ func _ready() -> void:
 		get_node("/root/NpcCognition").resume(self)
 
 # -- Dialog & interaction -----------------------------------------------------
+
+func _physics_process(delta: float) -> void:
+	alert_response.advance(self, delta)
+	if alert_response.active() and state_machine.get_current_state_name() in [&"idle", &"walk", &"run"]:
+		play_animation(&"idle")
+		apply_velocity(Vector2.ZERO)
+		return
+	super._physics_process(delta)
 
 func interact(interactor: Node = null) -> void:
 	if health <= 0 or not npc_data.interaction_enabled:
@@ -162,6 +172,7 @@ func get_cognitive_context() -> Dictionary:
 	current.world_space = String(world_space)
 	current.location = world_space_label
 	current.sleeping = _sleeping
+	current.alert_phase = alert_response.phase
 	var awake_minutes: float = float(current.get("world_minute", 0)) - _woke_world_minute
 	current.recently_awakened = not _sleeping and world_space == _woke_space \
 		and awake_minutes >= 0 and awake_minutes < 5 and Time.get_ticks_msec() - _woke_at < 30000
@@ -169,7 +180,7 @@ func get_cognitive_context() -> Dictionary:
 	return current
 
 func can_follow_routine() -> bool:
-	return health > 0 and not _dialog_locked and not has_enemy_target() \
+	return health > 0 and not _dialog_locked and not has_enemy_target() and not alert_response.active() \
 		and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
 
 func sleep_at(center: Vector2) -> void:
@@ -309,12 +320,26 @@ func die() -> void:
 	hurt_box.set_deferred("monitoring", false)
 	hurt_box.set_deferred("monitorable", false)
 	_emit_health_changed()
+	if is_in_group(&"town_residents"):
+		_fallen_frame = NpcRemains.fallen_frame(npc_data.sprite_frames)
 	state_machine.transition_to(&"dead", {}, true)
 	velocity = Vector2.ZERO
 	died.emit()
 
 func is_pending_death() -> bool:
 	return _pending_death
+
+func finish_death() -> void:
+	if is_in_group(&"town_residents") and get_npc_profile() != null:
+		var event := WorldEvent.new()
+		event.kind = &"body_settled"
+		event.subject = self
+		get_node("/root/WorldEvents").publish(event)
+	queue_free()
+
+func advance_death_pose() -> void:
+	if _fallen_frame >= 0 and animated_sprite.frame >= _fallen_frame:
+		finish_death()
 
 func set_hitbox_enabled(enabled: bool) -> void:
 	if npc_data != null:
@@ -541,7 +566,7 @@ func choose_idle_duration() -> float:
 
 func choose_roam_state() -> StringName:
 	if daily_routine != null:
-		return &"walk"
+		return &"run" if daily_routine.activity == "seek_guard" else &"walk"
 	if npc_data.roam_radius <= 0.0 and npc_data.patrol_points.is_empty():
 		return &"idle"
 
@@ -589,6 +614,8 @@ func has_reached_patrol_target() -> bool:
 	return global_position.distance_to(patrol_target) <= npc_data.arrival_distance
 
 func current_walk_speed() -> float:
+	if daily_routine != null and daily_routine.activity == "burial":
+		return npc_data.move_speed * 0.7
 	return npc_data.move_speed
 
 func current_run_speed() -> float:

@@ -20,8 +20,7 @@ func _run_tests() -> void:
 	# Exercise the real application boundary without touching the player's save or providers.
 	var cognition: Node = root.get_node("NpcCognition")
 	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-tests-%s.json" % OS.get_process_id())
-	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
-	cognition.save_game.dead_npcs.clear()
+	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
 	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
 	cognition.backend.life_endpoint = "http://127.0.0.1:1/life"

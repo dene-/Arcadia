@@ -74,7 +74,7 @@ func test_children_have_school_and_play_and_guards_have_off_duty_time() -> void:
 	var early: Array[Dictionary] = TownResidentSchedule.generate(town, "voss_guard", 99, 0, ["square"])
 	var late: Array[Dictionary] = TownResidentSchedule.generate(town, "vale_guard", 99, 0, ["square"])
 	assert_eq(NpcRoutinePlan.current(early, 600).kind, "patrol")
-	assert_eq(NpcRoutinePlan.current(late, 600).kind, "socialize")
+	assert_eq(NpcRoutinePlan.current(late, 600).kind, "rest")
 	assert_eq(NpcRoutinePlan.current(late, 1200).kind, "patrol")
 	assert_eq(NpcRoutinePlan.current(early, 1300).kind, "rest")
 

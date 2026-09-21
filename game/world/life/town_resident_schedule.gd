@@ -23,14 +23,24 @@ static func generate(population: TownPopulation, id: String, seed_value: int,
 		plan[4].place = "square"
 	elif person.job == "guard":
 		var early: bool = id == "voss_guard"
+		# The late watch crosses midnight and sleeps after handing over in the morning.
+		if not early:
+			return [
+				{"minute": 0, "kind": "patrol", "place": "patrol:2"},
+				{"minute": 390, "kind": "meal", "place": "home:" + id},
+				{"minute": 450, "kind": "rest", "place": "home:" + id},
+				{"minute": 930, "kind": "meal", "place": "home:" + id},
+				{"minute": 960, "kind": "socialize", "place": "square"},
+				{"minute": 1110, "kind": "patrol", "place": "patrol:1"},
+			]
 		plan = [
 			{"minute": 0, "kind": "rest", "place": "home:" + id},
-			{"minute": 330 if early else 450, "kind": "meal", "place": "home:" + id},
-			{"minute": 360 if early else 500, "kind": "patrol" if early else "socialize", "place": "patrol:0" if early else "square"},
-			{"minute": 660 if early else 790, "kind": "meal", "place": "home:" + id},
-			{"minute": 690 if early else 840, "kind": "patrol", "place": "patrol:2"},
-			{"minute": 840 if early else 1140, "kind": "visit" if early else "meal", "place": "square" if early else "home:" + id},
-			{"minute": 1130 if early else 1170, "kind": "meal" if early else "patrol", "place": "home:" + id if early else "patrol:1"},
-			{"minute": 1250 if early else 1320, "kind": "rest", "place": "home:" + id},
+			{"minute": 330, "kind": "meal", "place": "home:" + id},
+			{"minute": 360, "kind": "patrol", "place": "patrol:0"},
+			{"minute": 690, "kind": "meal", "place": "home:" + id},
+			{"minute": 720, "kind": "patrol", "place": "patrol:2"},
+			{"minute": 1140, "kind": "meal", "place": "home:" + id},
+			{"minute": 1200, "kind": "socialize", "place": "square"},
+			{"minute": 1250, "kind": "rest", "place": "home:" + id},
 		]
 	return plan

@@ -16,6 +16,10 @@ func build(parent: Node2D, spawn_actors: bool) -> void:
 		save = parent.get_node("/root/NpcCognition").save_game
 		population = save.population
 	population.ensure_population(save.region_seed if save != null else 274415)
+	var cemetery := TownCemetery.new()
+	cemetery.name = "Cemetery"
+	cemetery.residents.assign(population.people.keys())
+	parent.add_child(cemetery)
 	for index: int in range(RegionLayout.HOMES.size()):
 		var home: Dictionary = RegionLayout.HOMES[index]
 		var foot: Vector2 = Vector2(home.cell * 8)

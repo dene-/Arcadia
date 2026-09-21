@@ -118,9 +118,11 @@ func _accept_surrender(player: BasePlayer) -> void:
 			life.save_game.life.interrupt(id)
 	life.save_game.save_file()
 
-func maintain(npc: BaseNpc, id: String) -> bool:
+func maintain(npc: BaseNpc, id: String, include_patrol: bool = true) -> bool:
 	if not npc.is_in_group(&"town_guards"):
 		return false
+	if npc.alert_response.active():
+		return true
 	for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
 		var report: Dictionary = life.save_game.justice.current(id, "player", life.save_game.life.minute)
 		if not report.is_empty() and report.status == "combat" and player.health > 0 \
@@ -137,6 +139,8 @@ func maintain(npc: BaseNpc, id: String) -> bool:
 				life.investigate(npc, id, investigation.space, investigation.point)
 			return true
 		_investigations.erase(id)
+	if not include_patrol:
+		return false
 	var person: Dictionary = life.save_game.life.get_person(id)
 	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, life.save_game.life.minute)
 	if preferred.kind != "patrol":
