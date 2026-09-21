@@ -118,6 +118,9 @@ func _process(delta: float) -> void:
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
 		save_game.life.ensure_person(id, save_game.region_seed, ids, ["market", "garden", "square"])
+		if _maintain_safety(npc, id):
+			_update_context(npc, id)
+			continue
 		_wake_for_schedule(npc, id)
 		_update_context(npc, id)
 		if npc.can_follow_routine() and not encounters.is_busy(id) and not _pending.has(id) \
@@ -182,6 +185,10 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	var current: Dictionary = NpcCognitiveContext.build(memory, npc.get_cognitive_context())
 	current.participants = [id]
 	current.relationship_with_player = memory.relationship
+	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
+		str(current.get("activity", "")) + " " + preferred.kind + " "
+		+ str(current.get("safety_response", {}).get("concern", "")),
+		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute)
 	var payload: Dictionary = {"protocol_version": 1,
 		"npc": {"id": id, "profile": npc.get_backend_profile()},
 		"current": current, "candidates": options}
@@ -190,6 +197,8 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	if not is_inside_tree() or not is_instance_valid(npc) or not npc.can_follow_routine() \
 		or npc.life_revision != revision or encounters.is_busy(id):
 		return
+	if save_game.life.get_person(id).safety != person.safety:
+		return # A routine decision cannot supersede a new or newly assessed concern.
 	if NpcRoutinePlan.current(save_game.life.get_person(id).plan, save_game.life.minute) != preferred:
 		save_game.life.interrupt(id)
 		return # A delayed nighttime decision cannot overwrite the morning routine.
@@ -212,6 +221,29 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	_travel(npc, id, selected)
 	_update_context(npc, id)
 	_save()
+
+func _maintain_safety(npc: BaseNpc, id: String) -> bool:
+	var person: Dictionary = save_game.life.get_person(id)
+	if not NpcSafetyState.sheltering(person.safety, save_game.life.minute):
+		return false
+	encounters.interrupt(id)
+	if person.activity == "shelter" and person.decision.get("safety_origin") == person.safety.origin_id:
+		return true
+	npc.interrupt_for_safety()
+	if not npc.can_follow_routine():
+		return true
+	# Do not retreat into the room where the threat was perceived. Outdoors, home is
+	# a known refuge; a threat in one's own home calls for leaving for the public market.
+	var refuge: String = "work:" + id if person.safety.space != "home:" + id else "market"
+	if not _places.has(refuge):
+		return false
+	var selected: Dictionary = {"kind": "shelter", "place": refuge}
+	npc.life_revision += 1
+	save_game.life.select_activity(id, selected, person.safety.until - save_game.life.minute,
+		{"service": "safety_response", "safety_origin": person.safety.origin_id})
+	_travel(npc, id, selected)
+	_save()
+	return true
 
 func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
@@ -248,8 +280,7 @@ func _add_option(options: Array[Dictionary], id: String, kind: String, place: St
 		if id in ["SOCIAL", "VISIT", "WALK"] and crowd >= 3:
 			return
 		options.append({"id": id, "kind": kind, "place": place,
-			"description": "%s At %s. %s Already %d residents heading/staying there." %
-				[kind.capitalize(), _places[place].label, reason, crowd]})
+			"description": "%s At %s. %s" % [kind.capitalize(), _places[place].label, reason]})
 
 func _travel(npc: BaseNpc, id: String, selected: Dictionary) -> void:
 	var place: Dictionary = _places.get(selected.place, _places["home:" + id])
@@ -287,6 +318,7 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 		known.relationship = person.ties.get(public_person.id, {})
 		neighbors.append(known)
 	npc.life_context = {"world_time": save_game.life.clock_text(), "world_minute": save_game.life.minute,
+		"safety_response": NpcSafetyState.context(person.safety, save_game.life.minute),
 		"daily_plan": person.plan, "known_townspeople": neighbors,
 		"recent_social": person.recent_social, "town_rumors": save_game.life.rumors.get_known(id, save_game.life.minute).slice(-4),
 		"routine_decision": person.decision, "personality": npc.get_npc_profile().personality}

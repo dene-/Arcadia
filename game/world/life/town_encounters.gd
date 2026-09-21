@@ -23,6 +23,16 @@ func _process(_delta: float) -> void:
 func is_busy(id: String) -> bool:
 	return _busy.has(id)
 
+func interrupt(id: String) -> void:
+	if not _busy.has(id):
+		return
+	var token: int = _busy[id]
+	var session: Dictionary = _sessions[token]
+	_release(session.a, session.b, token)
+
+func _sheltering(id: String) -> bool:
+	return NpcSafetyState.sheltering(state.get_person(id).get("safety", {}), state.minute)
+
 func diagnostics(id: String) -> Dictionary:
 	return _diagnostics.get(id, {}).duplicate(true)
 
@@ -30,6 +40,7 @@ func consider(first: BaseNpc, second: BaseNpc) -> void:
 	var a: String = String(first.get_npc_profile().npc_id)
 	var b: String = String(second.get_npc_profile().npc_id)
 	if _busy.size() >= MAX_SESSIONS * 2 or _busy.has(a) or _busy.has(b) \
+		or _sheltering(a) or _sheltering(b) \
 		or first.daily_routine.activity == "rest" or second.daily_routine.activity == "rest" \
 		or not _near(first, second) or state.get_person(a).social_after > state.minute \
 		or state.get_person(b).social_after > state.minute:
@@ -51,6 +62,7 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 		return is_inside_tree() and is_instance_valid(first) and is_instance_valid(second) \
 			and _busy.get(a) == token and _busy.get(b) == token \
 			and first.life_revision == rev_a and second.life_revision == rev_b \
+			and not _sheltering(a) and not _sheltering(b) \
 			and Time.get_ticks_msec() - start < 45000 and _near(first, second)
 	_sessions[token] = {"valid": valid, "a": a, "b": b,
 		"first": weakref(first), "second": weakref(second)}
@@ -146,6 +158,9 @@ func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 	var current: Dictionary = NpcCognitiveContext.build(memory, speaker.get_cognitive_context())
 	current.participants = [String(profile.npc_id), String(other.npc_id)]
 	current.relationship_with_player = memory.relationship
+	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
+		other.profile_name + " " + str(current.get("activity", "")), current,
+		profile.get_cognition(), store.world_minute)
 	return {"protocol_version": 1, "npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
 		"listener": {"id": String(other.npc_id), "name": other.profile_name, "job": other.job,
 			"activity": listener.daily_routine.activity},

@@ -7,6 +7,24 @@ const SOURCES: Array[String] = ["authored", "player_claim", "npc_statement", "ob
 const TEXT_LISTS: Array[String] = ["topics", "people", "places", "sensory_cues",
 	"important_details", "weak_details", "known_gaps"]
 const UNIT_FIELDS: Array[String] = ["importance", "emotional_intensity", "vividness", "confidence"]
+## One retention unit is half an in-game hour, independent of NPC/event counts.
+const MINUTES_PER_RETENTION_UNIT: float = 30.0
+
+static func anchor_legacy(memory: Dictionary, minute: float, previous_turn: int) -> void:
+	if memory.has("created_minute") or memory.has("age_anchor_minute"):
+		return
+	# Preserve old recall strength without pretending to know when this happened.
+	memory.age_anchor_minute = minute
+	memory.age_at_anchor = maxi(0, previous_turn - int(memory.created_turn))
+
+static func retention_age(memory: Dictionary, minute: float) -> float:
+	if memory.has("created_minute"):
+		return maxf(0.0, minute - float(memory.created_minute)) / MINUTES_PER_RETENTION_UNIT
+	if memory.has("age_anchor_minute"):
+		return float(memory.age_at_anchor) + maxf(0.0, minute - float(memory.age_anchor_minute)) \
+			/ MINUTES_PER_RETENTION_UNIT
+	# Uninstantiated authored records have relative age, not a known world date.
+	return maxf(0.0, -float(memory.created_turn))
 
 static func create(id: String, type: String, gist: String, source: String,
 		turn: int) -> Dictionary:
@@ -46,6 +64,14 @@ static func is_valid(value: Variant) -> bool:
 		return false
 	if value.has("evidence") and (not value.evidence is String or value.evidence.length() > 500):
 		return false
+	if value.has("age_anchor_minute") != value.has("age_at_anchor"):
+		return false
+	if value.has("created_minute") and value.has("age_anchor_minute"):
+		return false
+	for key: String in ["created_minute", "age_anchor_minute", "age_at_anchor", "last_recalled_minute"]:
+		if value.has(key) and (not (value[key] is float or value[key] is int) \
+			or not is_finite(float(value[key])) or value[key] < 0):
+			return false
 	for key: String in UNIT_FIELDS:
 		if not is_unit(value.get(key)):
 			return false

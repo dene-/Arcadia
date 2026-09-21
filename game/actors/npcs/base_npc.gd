@@ -247,6 +247,11 @@ func exit_dialog() -> void:
 
 	state_machine.transition_to(&"idle", {}, true)
 
+func interrupt_for_safety() -> void:
+	if _dialog_locked:
+		get_node("/root/DialogManager").interrupt_source(self)
+	wake_from_noise("danger")
+
 func get_interaction_prompt() -> String:
 	return npc_data.interaction_text
 

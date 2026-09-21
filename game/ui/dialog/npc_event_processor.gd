@@ -80,7 +80,7 @@ func _process_npc(id: String, job: Dictionary) -> void:
 			"context": {"current": current, "relationship": state.relationship,
 				"recent_dialogue": state.recent_dialogue,
 				"memories": NpcMemoryRetriever.new().retrieve(state.memories, event.text,
-					current, job.profile.get_cognition(), store.turn)}}
+					current, job.profile.get_cognition(), store.world_minute)}}
 		var judgment: Dictionary = await backend.request_observation(payload)
 		var policy: Dictionary = judgment.get("policy", {})
 		var committed: bool = store.commit_observation(id, int(event.id), policy)
@@ -128,7 +128,7 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 	payload.context.current.merge(source.get_cognitive_context(), true)
 	payload.context.relationship = state.relationship
 	payload.context.memories = NpcMemoryRetriever.new().retrieve(state.memories,
-		payload.event.text, payload.context.current, job.profile.get_cognition(), store.turn)
+		payload.event.text, payload.context.current, job.profile.get_cognition(), store.world_minute)
 	payload.answers = judgment.get("answers", {})
 	var revision: int = store.revision(payload.npc.id)
 	var life_revision: int = source.life_revision

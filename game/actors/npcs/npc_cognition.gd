@@ -44,13 +44,18 @@ func _on_world_event(event: WorldEvent) -> void:
 			if observer != event.subject:
 				observer.wake_from_noise()
 			observed.origin_id = origin_id
-			events.observe(observer.get_npc_profile(), observer.get_cognitive_context(),
+			save_game.life.notice_perception(String(observer.get_npc_profile().npc_id),
+				observed, String(observer.world_space))
+			var current: Dictionary = observer.get_cognitive_context()
+			current.world_minute = save_game.life.minute
+			events.observe(observer.get_npc_profile(), current,
 				observed, observer)
 	var error: Error = save_game.save_file()
 	if error != OK:
 		push_warning("NPC world could not be saved: %s" % error)
 
 func _on_perception_classified(id: String, event: Dictionary, policy: Dictionary) -> void:
+	save_game.life.assess_perception(id, event, policy)
 	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
 		if String(observer.get_npc_profile().npc_id) == id:
 			save_game.life.rumors.observe(id, observer.get_npc_profile().profile_name,

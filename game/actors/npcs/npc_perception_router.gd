@@ -24,6 +24,7 @@ func _combat(observer: BaseNpc, event: WorldEvent) -> Dictionary:
 	# Unseen deaths and identities must never leak into the model's metadata.
 	perceived.kind = String(event.kind) if perceived.sense != "hearing" else "combat_noise"
 	perceived.directly_affected = observer == event.subject
+	perceived.danger_possible = true
 	perceived.topics = (["combat", "injury" if event.kind == &"actor_hurt" else "death"]
 		if perceived.sense != "hearing" else ["combat"])
 	if observer == event.subject:

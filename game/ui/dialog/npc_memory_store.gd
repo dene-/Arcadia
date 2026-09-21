@@ -9,6 +9,7 @@ const MAX_HISTORY: int = 12
 const SAVE_PATH: String = "user://npc_memory.json"
 
 var turn: int = 0
+var world_minute: float = 480.0
 var _states: Dictionary = {}
 var _next_memory_id: int = 1
 var _save_allowed: bool = true
@@ -33,6 +34,8 @@ func ensure_npc(profile: NpcProfile) -> void:
 			profile.memories[index], "authored", 0)
 		if NpcMemory.is_valid(legacy):
 			memories.append(legacy)
+	for memory: Dictionary in memories:
+		NpcMemory.anchor_legacy(memory, world_minute, 0)
 	_states[id] = {"recent_dialogue": [], "memories": memories,
 		"relationship": NpcRelationshipState.initial(), "recent_events": [],
 		"observations": [], "next_observation_id": 1, "heard_origins": {}}
@@ -69,6 +72,7 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 	var gist: String = "%s told me that %s reported: %s" % [account.source_name,
 		account.originator_name, account.text]
 	var memory: Dictionary = NpcMemory.create(id, "episodic", gist.substr(0, 500), "hearsay", turn)
+	memory.created_minute = world_minute
 	memory.confidence = account.confidence
 	memory.importance = policy.importance
 	memory.topics = ["town", "news"]
@@ -77,6 +81,11 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 
 func advance_time(turns: int = 1) -> void:
 	turn += maxi(turns, 0)
+
+## The world clock owns elapsed time. The turn counter is only an exchange/event sequence.
+func set_world_minute(minute: float) -> void:
+	if is_finite(minute) and minute >= 0.0:
+		world_minute = minute
 
 ## Call only for events this NPC actually perceived, never for unverified player claims.
 func record_event(profile: NpcProfile, event: String) -> void:
@@ -182,6 +191,7 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 			return view.id == memory.id):
 			memory.recall_count += 1
 			memory.last_recalled_turn = turn
+			memory.last_recalled_minute = world_minute
 	var previous_count: int = state.memories.size()
 	if policy.remember:
 		for proposal: Variant in result.get("memory_writes", []):
@@ -194,16 +204,23 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 	return true
 
 func to_save_data() -> Dictionary:
-	return {"version": SAVE_VERSION, "turn": turn,
+	return {"version": SAVE_VERSION, "turn": turn, "world_minute": world_minute,
 		"next_memory_id": _next_memory_id, "npcs": _states.duplicate(true)}
 
-func from_save_data(data: Variant) -> bool:
+func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 	if not data is Dictionary or data.get("version") != SAVE_VERSION:
 		return false
 	if not NpcMemory.is_integer(data.get("turn")) or data.turn < 0 \
 		or not NpcMemory.is_integer(data.get("next_memory_id")) or data.next_memory_id < 1:
 		return false
 	if not data.get("npcs") is Dictionary:
+		return false
+	var saved_minute: Variant = data.get("world_minute", 480.0)
+	if not (saved_minute is float or saved_minute is int) \
+		or not is_finite(float(saved_minute)) or saved_minute < 0:
+		return false
+	var load_minute: float = at_minute if at_minute >= 0.0 else float(saved_minute)
+	if not is_finite(load_minute):
 		return false
 	for id: Variant in data.npcs:
 		if not id is String or id.is_empty():
@@ -241,7 +258,10 @@ func from_save_data(data: Variant) -> bool:
 			state.next_observation_id = 1
 		if not state.has("heard_origins"):
 			state.heard_origins = {}
+		for memory: Dictionary in state.memories:
+			NpcMemory.anchor_legacy(memory, load_minute, int(data.turn))
 	turn = int(data.turn)
+	world_minute = load_minute
 	_next_memory_id = int(data.next_memory_id)
 	return true
 
@@ -282,6 +302,8 @@ static func is_valid_policy(policy: Variant) -> bool:
 		return false
 	if policy.has("end_conversation") and not policy.end_conversation is bool:
 		return false
+	if policy.has("safety_response") and not policy.safety_response in NpcSafetyState.RESPONSES:
+		return false
 	for key: String in ["remember", "retrieve", "update_belief"]:
 		if not policy.get(key) is bool:
 			return false
@@ -318,6 +340,7 @@ func _admit(memories: Array, proposal: Variant, policy: Dictionary) -> void:
 	var memory: Dictionary = NpcMemory.create("mem:%d" % _next_memory_id,
 		str(proposal.get("type", "")), str(proposal.get("gist", "")),
 		str(proposal.get("source", "")), turn)
+	memory.created_minute = world_minute
 	if memory.source == "authored":
 		return
 	if memory.type == "semantic" and (not policy.update_belief or memory.source == "npc_statement"):

@@ -2,7 +2,12 @@ class_name TownLifeState
 extends RefCounted
 
 ## Save-owned daily life. No scene nodes or provider clients are serialized.
-var minute: float = 480.0
+signal time_changed(minute: float)
+
+var minute: float = 480.0:
+	set(value):
+		minute = value
+		time_changed.emit(minute)
 var rumors := TownRumors.new()
 var _people: Dictionary = {}
 var _next_event: int = 1
@@ -40,13 +45,14 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 		_people[id] = {"plan_day": -1, "plan": [], "ties": ties,
 			"activity": "rest", "place": "home:" + id, "until": minute,
 			"social_after": minute + random.randf_range(1, 12), "encounters": 0,
-			"position": [], "recent_social": [], "decision": {}}
+			"position": [], "recent_social": [], "decision": {}, "safety": {}}
 	var person: Dictionary = _people[id]
 	if person.plan_day != day() or person.get("plan_revision", 0) != NpcRoutinePlan.REVISION:
 		person.plan = NpcRoutinePlan.generate(seed_value, id, day(), places)
 		person.plan_day = day()
 		person.plan_revision = NpcRoutinePlan.REVISION
-		person.until = minute
+		if not NpcSafetyState.sheltering(person.safety, minute):
+			person.until = minute
 
 func get_person(id: String) -> Dictionary:
 	return _people.get(id, {}).duplicate(true)
@@ -58,8 +64,24 @@ func select_activity(id: String, activity: Dictionary, duration: float, diagnost
 	person.activity = activity.kind
 	person.place = activity.place
 	person.until = minute + clampf(duration, 5, 120)
-	person.until = minf(person.until, NpcRoutinePlan.next_change(person.plan, minute))
+	if activity.kind == "shelter" and NpcSafetyState.sheltering(person.safety, minute):
+		person.until = minf(person.until, person.safety.until)
+	else:
+		person.until = minf(person.until, NpcRoutinePlan.next_change(person.plan, minute))
 	person.decision = diagnostic.duplicate(true)
+
+func notice_perception(id: String, event: Dictionary, space: String) -> void:
+	if _people.has(id):
+		_set_safety(id, NpcSafetyState.notice(_people[id].safety, event, space, minute))
+
+func assess_perception(id: String, event: Dictionary, policy: Dictionary) -> void:
+	if _people.has(id):
+		_set_safety(id, NpcSafetyState.assess(_people[id].safety, event, policy, minute))
+
+func _set_safety(id: String, concern: Dictionary) -> void:
+	if _people[id].safety != concern:
+		_people[id].safety = concern.duplicate(true)
+		interrupt(id)
 
 func remember_position(id: String, position: Vector2, space: String = "outdoors") -> void:
 	if _people.has(id):
@@ -113,6 +135,9 @@ func from_data(data: Variant) -> bool:
 	minute = float(data.minute)
 	_next_event = int(data.next_event)
 	_people = data.people.duplicate(true)
+	for person: Dictionary in _people.values():
+		if not person.has("safety"):
+			person.safety = {}
 	_personalities = personalities.duplicate(true)
 	rumors.from_data(validated.to_data())
 	return true
@@ -122,6 +147,8 @@ static func _number(value: Variant) -> bool:
 
 static func _valid_person(person: Variant) -> bool:
 	if not person is Dictionary:
+		return false
+	if not NpcSafetyState.is_valid(person.get("safety", {})):
 		return false
 	if not person.get("space", "outdoors") is String or person.get("space", "outdoors").length() > 200:
 		return false

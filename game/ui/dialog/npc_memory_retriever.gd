@@ -7,7 +7,7 @@ const STOP_WORDS: Array[String] = ["the", "and", "you", "your", "that", "this", 
 	"have", "what", "when", "were", "was", "for", "are", "about", "remember", "player"]
 
 func retrieve(memories: Array, message: String, current: Dictionary,
-		cognition: NpcCognitionProfile, turn: int) -> Array[Dictionary]:
+		cognition: NpcCognitionProfile, minute: float) -> Array[Dictionary]:
 	var words: PackedStringArray = _words(message + " " + str(current.get("location", "")))
 	var sensory_words: PackedStringArray = _words(" ".join(current.get("sensory_cues", [])))
 	var candidates: Array[Dictionary] = []
@@ -24,7 +24,7 @@ func retrieve(memories: Array, message: String, current: Dictionary,
 		var prospective: bool = memory.type == "prospective" and not memory.completed
 		if relevance == 0.0 and entities == 0.0 and sensory == 0.0 and not prospective:
 			continue
-		var age: int = maxi(0, turn - int(memory.created_turn))
+		var age: float = NpcMemory.retention_age(memory, minute)
 		var recency: float = exp(-float(age) / 100.0)
 		var rehearsal: float = minf(float(memory.recall_count) / 10.0, 1.0)
 		var score: float = relevance * 0.4 + entities * 0.2 + memory.importance * 0.15 \
@@ -40,12 +40,12 @@ func retrieve(memories: Array, message: String, current: Dictionary,
 	var result: Array[Dictionary] = []
 	for index: int in range(mini(candidates.size(), MAX_RECALLS)):
 		var candidate: Dictionary = candidates[index]
-		result.append(recall(candidate.memory, cognition, turn, candidate.sensory))
+		result.append(recall(candidate.memory, cognition, minute, candidate.sensory))
 	return result
 
 func recall(memory: Dictionary, cognition: NpcCognitionProfile,
-		turn: int, sensory_match: float = 0.0) -> Dictionary:
-	var age: int = maxi(0, turn - int(memory.created_turn))
+		minute: float, sensory_match: float = 0.0) -> Dictionary:
+	var age: float = NpcMemory.retention_age(memory, minute)
 	var retention: float = 40.0 + memory.importance * 800.0 \
 		+ memory.emotional_intensity * cognition.emotional_retention * 500.0
 	var skill: float = cognition.social_recall if memory.type == "social" else cognition.factual_recall

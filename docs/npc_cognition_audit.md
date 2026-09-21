@@ -25,35 +25,46 @@ Existing saves load without a reset. New optional fields are validated. Runtime
 revision counters are not persisted. Origin receipts contain IDs, not the story's
 contents; their eventual compaction must preserve deduplication.
 
-## Remaining findings, in recommended order
+## Follow-up status and remaining priorities
 
-### 1. Make memory age independent of how busy the rest of town is
+### 1. Memory age now follows the saved world clock
 
-`NpcMemoryStore.turn` advances for every classified perception and conversation
-across all NPCs. `NpcMemoryRetriever` uses it for retention and recency. A crowded
-fight can therefore age an uninvolved NPC's childhood memory much faster than a
-quiet day. Working-memory timestamps are corrected above, but archive retention
-still has this defect. Dialogue history also has no age or session metadata.
+Implemented in the continuation: new durable memories have `created_minute` and
+rehearsals have `last_recalled_minute`. The turn counter remains an ordering value;
+other NPCs' conversations and combat do not alter retention. `TownLifeState` owns
+the clock and publishes changes to the memory store through `NpcWorldSave`.
 
-Use the saved world clock for new durable memories and rehearsal timestamps.
-Migrate legacy turn-based records explicitly: their exact game dates cannot be
-reconstructed. Keep temporal uncertainty rather than inventing dates. Test that
-an identical NPC's recall is unchanged by extra traffic in another part of town,
-and that closing the game does not age either clock.
+Legacy memories preserve their existing retention age at a saved game-time anchor.
+They do not gain fabricated event dates, and repeated loads do not re-anchor them.
+Authored memories initialize independently of how many exchanges occurred before
+meeting that NPC. A retention unit is currently 30 game minutes; this is a tuning
+policy, not an empirically calibrated model of human memory.
 
-### 2. Give concerns consequences in the action system
+Still needed: age/session metadata on dialogue history and better consolidation
+and rehearsal policies.
 
-`TownLife._options` supplies plans, rest, work, meals, socializing, walks and visits.
-It does not offer fleeing, taking shelter, seeking help, checking on a friend or
-refusing access to an aggressor. Better judgments cannot choose unavailable
-behavior. Injured NPCs can consequently speak defensively while returning to
-ordinary errands.
+### 2. Perceived danger now produces an executable safety response
 
-Add a small set of executable safety actions before expanding prompts. Jev should
-appraise the threat and choose among feasible actions; game code should own paths,
-doors, distance, completion and cancellation. Give actions priorities and a brief
-commitment period so tiny score changes do not cause oscillation. Demonstrate the
-whole sequence: witness harm, seek safety/help, then resume interrupted work.
+Implemented: Jev independently chooses NONE, CAUTION or SHELTER during perception
+assessment. `NpcSafetyState` keeps the temporary concern separate from persistent
+relationships. A direct injury provisionally requests shelter even if inference
+is unavailable; anonymous noise initially creates caution. A confident assessment
+may conclude that no continuing danger warrants a response. Late assessments
+cannot replace newer concerns or revive expired ones.
+
+Town life interrupts social holds and an existing player conversation, then uses
+the normal navigation and door system to seek the NPC's home. If the danger was
+inside that home, the NPC instead leaves for the public market. Shelter lasts at
+most 45 game minutes from the perception, unless another injury renews it. It does
+not become sleep, restart on each tick, or end merely because a schedule slot or
+day boundary changed. Ordinary routines resume when the concern expires or is
+cleared. A pending routine request cannot block or overwrite the retreat.
+
+The refuge is a known destination, not a guarantee of safety. This first action
+does not lock doors, heal injuries or detect a pursuer without a new perception.
+Next executable actions should be seeking help and checking on a friend, with
+actual interaction/completion conditions. Persistent needs and goal commitments
+remain the next architectural priority.
 
 ### 3. Separate needs, temporary emotion, relationships and commitments
 
@@ -73,25 +84,25 @@ expression without undoing commitments or knowledge.
 
 ### 4. Make social and routine decisions use personal memory consistently
 
-`TownLife._choose_activity` and `TownEncounters._payload` include observations,
-relationships and recent rumors, but do not retrieve durable personal memories.
-An old betrayal or promise can affect player dialogue while being absent from a
-visit or gossip decision. Lexical retrieval also misses paraphrases and competes
-for six slots when many memories mention the player.
+Implemented in the continuation: routine and social requests now retrieve the
+same bounded, imperfect memory views used by conversation. Routine cues include
+current/planned activity and safety concerns; social cues include the other
+person. The full archive stays local. Other people's private memories are never
+included. Routine candidate descriptions no longer expose exact counts of unseen
+residents and their future destinations; navigation retains its own reservations.
 
-Build purpose-specific cues for plans, people and topics, using the same filtered
-recall contract. Consider Jev reranking a small candidate set after deterministic
-retrieval, with a no-match outcome. Do not send the full archive. Test that an
-unresolved appointment affects a visit and a past betrayal affects disclosure,
-without leaking someone else's private state.
+Remaining: lexical retrieval misses paraphrases and many player-related memories
+compete for six slots. Consider Jev reranking a small candidate set with a no-match
+outcome, then evaluate whether appointments affect visits and past betrayal affects
+disclosure under varied phrasing.
 
 ### 5. Preserve who said what and limit social omniscience
 
 `TownLifeState.remember_exchange` stores `with`, `text` and `minute`, but no
 speaker. `TownEncounters` stores the same initial utterance for both people, and a
 reply only for its speaker. That makes attribution ambiguous and leaves the first
-speaker without the reply in their social history. `TownLife._add_option` also
-passes exact counts of residents heading toward a venue, including unseen plans.
+speaker without the reply in their social history. The separate leak of exact
+crowd counts and unseen destinations in routine descriptions is now corrected.
 
 Record speaker, listener and whether an entry is an utterance or an abstract
 encounter summary. Record audible replies for both participants. Keep occupancy
@@ -145,12 +156,15 @@ separate, dependent grounding call and bounded decision evidence.
 
 ## Validation
 
-- Backend: 27 tests, including real Godot HTTP requests against mocked providers.
-- Godot: 129 of 130 tests pass. The existing failure is
+- Backend: 28 tests, including real Godot HTTP requests against mocked providers.
+- Godot: 138 of 139 tests pass. The existing failure is
   `npc_ai_test.gd::test_lateral_attack_position_respects_soft_collision_distance`,
   also present before this branch; combat positioning was not changed.
 - Added regressions cover new evidence during both inference stages, bounded retry,
   repeated interruption, obsolete speech after injury/movement, forgotten rumors
   across save/reload, weak-source trust, expiry, altered accounts, evidence
   persistence, and working-memory game time.
+- The isolated `npc_safety_world_test.gd` exercises actual damage, an unavailable
+  classifier, a delayed routine response, movement through doors into shelter,
+  evacuation after a new indoor attack, saved concerns and return to the plan.
 - No live provider calls or player-save resets were made for this audit.

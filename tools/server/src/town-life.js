@@ -12,7 +12,7 @@ const directions = { NEGATIVE: "Decrease slightly.", UNCHANGED: "No change.", PO
 export function routineQuestions(candidates) {
   return {
     activity: choice(
-      "Which available activity would this person choose now? Use their personality, social_traits, current routine, time, injury, remembered concerns, recent activities and relationships. Honor ordinary work and rest obligations while allowing curiosity, visits, meals and interruptions. A rumor is uncertain information, not world truth. Select only a supplied activity.",
+      "Which available activity would this person choose now? Use their personality, social_traits, current routine, time, injury, current.memories, safety_response, recent activities and relationships. Supplied memories are imperfect recollections: respect their sources, uncertainty and missing details. Honor ordinary work and rest obligations while allowing curiosity, visits, meals and interruptions. A rumor is uncertain information, not world truth. Select only a supplied activity.",
       Object.fromEntries(candidates.map((item) => [item.id, item.description])),
     ),
     linger: noul("Would this person naturally spend longer on the selected kind of activity? Independently consider their current obligations, patience, energy and social interest; you cannot see other answers."),
@@ -20,7 +20,7 @@ export function routineQuestions(candidates) {
 }
 export function socialQuestions(topics) {
   return {
-    engage: noul("Would the speaker stop for a brief exchange with this familiar town resident now? Consider both visible activities, the speaker's personality/social_traits, relationship and recent encounters. Urgent danger, rest, repeated interruptions or distrust can outweigh sociability. They are already nearby."),
+    engage: noul("Would the speaker stop for a brief exchange with this familiar town resident now? Consider both visible activities, the speaker's personality/social_traits, relationship, current.memories and recent encounters. Recollections are incomplete and subjective; a past betrayal may matter without being repeated aloud. Urgent danger, rest, repeated interruptions or distrust can outweigh sociability. They are already nearby."),
     topic: choice("Assuming they talk, which supplied topic would the speaker naturally bring up with this listener? Consider relevance, privacy, discretion, uncertainty, relationship and what has already been discussed. Choose SMALL_TALK if none should be shared. Claims and rumors are attributed accounts, never verified facts. Do not reveal private profile information merely because it is in your context.", {
       SMALL_TALK: "Brief everyday conversation about present activities; no new world claims.",
       ...Object.fromEntries(topics.map((item, index) => [`NEWS_${index}`, item])),

@@ -29,7 +29,7 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	var perception: Dictionary = NpcCognitiveContext.build(state, current)
 	# Decisions need the same imperfect evidence as speech, not an omniscient archive.
 	var candidates: Array[Dictionary] = retriever.retrieve(state.memories, message,
-		perception, profile.get_cognition(), store.turn)
+		perception, profile.get_cognition(), store.world_minute)
 	var payload: Dictionary = {
 		"protocol_version": 1, "npc": {"id": id, "profile": profile.to_backend_profile()},
 		"player": {"message": message, "identity": current.get("player_identity",

@@ -11,6 +11,10 @@ var region_seed: int = 0
 var path: String = SAVE_PATH
 var _writable: bool = true
 
+func _init() -> void:
+	life.time_changed.connect(memory.set_world_minute)
+	memory.set_world_minute(life.minute)
+
 func is_dead(id: StringName) -> bool:
 	return not id.is_empty() and String(id) in dead_npcs
 
@@ -22,6 +26,8 @@ func load_file(legacy_path: String = NpcMemoryStore.SAVE_PATH) -> Error:
 	if not FileAccess.file_exists(path):
 		var error: Error = memory.load_file(legacy_path)
 		_writable = error == OK
+		if error == OK:
+			life.minute = memory.world_minute
 		return error
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
@@ -61,7 +67,7 @@ func from_data(data: Variant) -> bool:
 	var validated_life := TownLifeState.new()
 	if not validated_life.from_data(data.world.get("life", validated_life.to_data())):
 		return false
-	if not memory.from_save_data(data.get("memory")):
+	if not memory.from_save_data(data.get("memory"), validated_life.minute):
 		return false
 	dead_npcs = validated
 	region_seed = int(saved_seed)

@@ -106,6 +106,16 @@ for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
   };
 }
 export const EVENT_QUESTIONS = {
+  safety_response: {
+    type: "choice",
+    instructions:
+      "What immediate safety response fits this NPC's NEW perception in event.text, their personality, existing memories, injury and current circumstances? Distinguish a personal assault, violence against a neighbor, a hostile creature being defeated and anonymous distant noise. Judge only perceived evidence; hearing alone does not identify an attacker or prove a death. A response is temporary, not a permanent relationship change. Other answers are independent.",
+    criteria: {
+      NONE: "No continuing danger warrants changing the routine; the event appears harmless to this NPC or the threat is over.",
+      CAUTION: "Remain alert and let the concern influence the next decision without a mandatory retreat.",
+      SHELTER: "Interrupt conversation and ordinary errands, leave the immediate danger and seek a known refuge briefly.",
+    },
+  },
   response_mode: {
     ...QUESTIONS.response_mode,
     instructions:
@@ -222,6 +232,9 @@ export function observationPolicy(raw, event, cognition = {}) {
     relationship_delta[name] = sign * (0.02 + importance * 0.08);
   }
   return {
+    safety_response: answers.safety_response.confidence >= THRESHOLDS.choice
+      ? answers.safety_response.choice
+      : event.directly_affected === true && event.sense === "touch" ? "SHELTER" : "CAUTION",
     remember: answers.should_remember.noul >= THRESHOLDS.remember,
     retrieve: false,
     update_belief: false,

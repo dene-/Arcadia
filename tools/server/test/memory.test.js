@@ -581,7 +581,9 @@ test(
 
 // Captured from the approved live probe: ordinary blacksmith, injured by the player.
 test("live assault judgment admits memory and speech; moderate speech judgments remain usable", () => {
-  const raw = JSON.parse(readFileSync(new URL("../../../tests/fixtures/jev_assault_decision.json", import.meta.url)));
+  // The recorded fixture predates safety appraisal; only that additional answer is mocked.
+  const raw = { ...answers({ safety_response: "SHELTER" }, EVENT_QUESTIONS),
+    ...JSON.parse(readFileSync(new URL("../../../tests/fixtures/jev_assault_decision.json", import.meta.url))) };
   const event = { sense: "touch", player_involved: true, speech_allowed: true };
   const policy = observationPolicy(raw, event, { verbal_reactivity: 0.5 });
   assert.equal(policy.speak, true);
@@ -642,4 +644,19 @@ test("no grounding call is made when nothing merits memory", async (t) => {
   const result = await post("/chat", { ...request(), answers: answers() });
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.memory_writes, []);
+});
+
+test("safety appraisal selects bounded behavior and uncertain personal injury keeps its fallback", () => {
+  const event = { sense: "touch", directly_affected: true, player_involved: false, speech_allowed: false };
+  for (const response of ["NONE", "CAUTION", "SHELTER"]) {
+    const raw = answers({ safety_response: response }, EVENT_QUESTIONS);
+    assert.equal(observationPolicy(raw, event).safety_response, response);
+    assert.ok(Object.values(observationPolicy(raw, event).relationship_delta).every((delta) => delta === 0));
+    raw.safety_response.confidence = 0.1;
+    assert.equal(observationPolicy(raw, event).safety_response, "SHELTER");
+    assert.equal(observationPolicy(raw, { ...event, sense: "hearing", directly_affected: false }).safety_response, "CAUTION");
+  }
+  const invalid = answers({}, EVENT_QUESTIONS);
+  invalid.safety_response.choice = "KILL_PLAYER";
+  assert.throws(() => observationPolicy(invalid, event));
 });

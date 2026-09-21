@@ -79,6 +79,7 @@ func test_age_rehearsal_emotion_and_sensory_cues_change_recall() -> void:
 	var retriever := NpcMemoryRetriever.new()
 	var cognition := NpcCognitionProfile.new()
 	var memory: Dictionary = NpcMemory.create("one", "episodic", "A fire.", "authored", 0)
+	memory.created_minute = 0.0
 	var fresh: Dictionary = retriever.recall(memory, cognition, 0)
 	var old: Dictionary = retriever.recall(memory, cognition, 10000)
 	assert_true(fresh.recall_quality > old.recall_quality)
@@ -211,3 +212,65 @@ func test_grounding_evidence_is_saved_but_not_exposed_as_perfect_recall() -> voi
 	assert_eq(memory.evidence, "I will burn down your forge.")
 	var recall: Dictionary = NpcMemoryRetriever.new().recall(memory, NpcCognitionProfile.new(), 10000)
 	assert_false(recall.has("evidence"))
+
+func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
+	var save := NpcWorldSave.new()
+	var profile: NpcProfile = _profile()
+	save.memory.ensure_npc(profile)
+	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	var memory: Dictionary = save.memory.snapshot("test_npc").memories[0]
+	var retriever := NpcMemoryRetriever.new()
+	var cognition := NpcCognitionProfile.new()
+	var before: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)
+	for index: int in range(100):
+		save.memory.record_observation(_profile(&"other"),
+			{"text": "I heard a noise.", "sense": "hearing", "player_involved": false})
+		save.memory.commit_observation("other", index + 1, _policy(false))
+	assert_eq(retriever.recall(memory, cognition, save.memory.world_minute), before)
+	save.life.advance(1440)
+	var later: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)
+	assert_true(later.recall_quality < before.recall_quality)
+	var restored := NpcWorldSave.new()
+	assert_true(restored.from_data(JSON.parse_string(JSON.stringify(save.to_data()))))
+	assert_eq(restored.memory.world_minute, save.life.minute)
+	assert_eq(retriever.recall(restored.memory.snapshot("test_npc").memories[0], cognition,
+		restored.memory.world_minute), later)
+
+func test_legacy_migration_preserves_retention_without_inventing_an_event_date() -> void:
+	var save := NpcWorldSave.new()
+	save.memory.ensure_npc(_profile())
+	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	var data: Dictionary = save.to_data()
+	data.memory.turn = 501
+	data.memory.erase("world_minute")
+	data.memory.npcs.test_npc.memories[0].erase("created_minute")
+	data.world.life.minute = 4320.0
+	var restored := NpcWorldSave.new()
+	assert_true(restored.from_data(data))
+	var memory: Dictionary = restored.memory.snapshot("test_npc").memories[0]
+	assert_false(memory.has("created_minute"))
+	assert_eq(memory.age_anchor_minute, 4320.0)
+	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 500.0)
+	restored.life.advance(60)
+	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 502.0)
+	var again := NpcWorldSave.new()
+	assert_true(again.from_data(restored.to_data()))
+	assert_eq(again.memory.snapshot("test_npc").memories[0], memory,
+		"Repeated loads must not re-anchor old memories")
+
+func test_authored_memories_and_rehearsal_are_independent_of_global_turn_count() -> void:
+	var store := NpcMemoryStore.new()
+	store.advance_time(9000)
+	var profile: NpcProfile = _profile()
+	profile.memories = ["A lesson about a forge."]
+	store.ensure_npc(profile)
+	var memory: Dictionary = store.snapshot("test_npc").memories[0]
+	assert_eq(NpcMemory.retention_age(memory, store.world_minute), 0.0)
+	var result: Dictionary = _result()
+	result.recalled_memory_ids = ["legacy:0"]
+	store.set_world_minute(1200.0)
+	store.commit_exchange("test_npc", "Forge", result, _policy(false), [{"id": "legacy:0"}], [])
+	assert_eq(store.snapshot("test_npc").memories[0].last_recalled_minute, 1200.0)
+	var invalid: Dictionary = store.to_save_data()
+	invalid.npcs.test_npc.memories[0].created_minute = NAN
+	assert_false(store.from_save_data(invalid))

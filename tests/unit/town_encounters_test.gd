@@ -94,3 +94,33 @@ func test_successful_speech_creates_attributed_memory_and_affects_next_player_co
 	_first.enter_dialog()
 	_encounters._process(0.01)
 	assert_false(_encounters.is_busy("social_b"))
+
+func test_danger_cancels_social_holds_and_prevents_transferring_a_late_rumor() -> void:
+	_backend.hold_stage = "listen"
+	await _scene.get_tree().physics_frame
+	_encounters.consider(_first, _second)
+	assert_true(_encounters.is_busy("social_a"))
+	_encounters.state.notice_perception("social_b", {"origin_id": "danger:1", "text": "I was hurt.",
+		"sense": "touch", "directly_affected": true, "danger_possible": true}, "outdoors")
+	_encounters.interrupt("social_b")
+	assert_false(_encounters.is_busy("social_a"))
+	assert_false(_first.daily_routine._held)
+	assert_false(_second.daily_routine._held)
+	_backend.released.emit()
+	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
+	_encounters.consider(_first, _second)
+	assert_false(_encounters.is_busy("social_b"))
+
+func test_social_decisions_retrieve_only_the_speakers_bounded_personal_memories() -> void:
+	var profile: NpcProfile = _first.get_npc_profile()
+	profile.core_memories = []
+	profile.memories = []
+	_second.get_npc_profile().profile_name = "Jon"
+	for index: int in range(10):
+		profile.memories.append("Jon once helped me with errand %d." % index)
+	_second.get_npc_profile().memories = ["Jon has a private secret."]
+	_encounters.store.ensure_npc(_second.get_npc_profile())
+	var payload: Dictionary = _encounters._payload(_first, _second)
+	assert_eq(payload.current.memories.size(), NpcMemoryRetriever.MAX_RECALLS)
+	assert_false(JSON.stringify(payload.current.memories).contains("private secret"))
+	assert_false(payload.current.memories[0].has("weak_details"))

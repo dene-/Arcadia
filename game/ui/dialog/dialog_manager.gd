@@ -96,6 +96,10 @@ func _input(event: InputEvent) -> void:
 func is_dialog_open() -> bool:
 	return _is_open
 
+func interrupt_source(source: Node) -> void:
+	if _is_open and _active_source == source:
+		close_dialog()
+
 func request_npc_dialog(source: Node) -> void:
 	if not is_instance_valid(source):
 		return
