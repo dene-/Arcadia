@@ -10,6 +10,7 @@ import {
   observationPolicy,
 } from "../src/npc-decisions.js";
 import { createApp } from "../src/app.js";
+import { VOICE_DIRECTIONS, voiceInstructions } from "../src/npc-voice.js";
 
 function answers(overrides = {}, questions = QUESTIONS) {
   return Object.fromEntries(
@@ -280,6 +281,36 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
     "suspicion",
   ])
     assert.equal(typeof prompt.relationship_scales[field], "string");
+});
+
+test("dialogue and reactions preserve different voices under the same response policy", async (t) => {
+  const calls = [];
+  const post = await server(t, { generate: async (input) => {
+    calls.push({ instructions: input.instructions, state: JSON.parse(input.input[0].content) });
+    return { output_text: JSON.stringify(dialogue({ memory_writes: [] })) };
+  } });
+  for (const path of ["/chat", "/react"]) {
+    for (const voice of [
+      { cadence: "BRISK", directness: "BLUNT", verbosity: "SPARE" },
+      { cadence: "MEASURED", directness: "TACTFUL", verbosity: "EXPANSIVE" },
+    ]) {
+      const body = request();
+      body.npc.profile.voice = voice;
+      body.event = { text: "I heard fighting nearby.", sense: "hearing",
+        player_involved: false, speech_allowed: true };
+      body.answers = path === "/chat" ? answers() : answers({ should_speak: 0.99 }, EVENT_QUESTIONS);
+      assert.equal((await post(path, body)).status, 200);
+    }
+  }
+  assert.equal(calls.length, 4);
+  for (const { instructions, state } of calls) {
+    assert.ok(instructions.endsWith(voiceInstructions(state.npc.profile)));
+    assert.ok(instructions.includes(VOICE_DIRECTIONS.cadence[state.npc.profile.voice.cadence]));
+  }
+  for (const offset of [0, 2]) {
+    assert.notEqual(calls[offset].instructions, calls[offset + 1].instructions);
+    assert.deepEqual(calls[offset].state.policy, calls[offset + 1].state.policy);
+  }
 });
 
 test("observations classify independently of dialogue and cannot blame an unseen player", async (t) => {

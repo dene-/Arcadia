@@ -16,6 +16,7 @@ var _personalities: Dictionary = {}
 func personality_for(id: String, seed_value: int) -> Dictionary:
 	if not _personalities.has(id):
 		_personalities[id] = NpcTemperament.generate(seed_value, id)
+	NpcTemperament.ensure_voice(_personalities[id], seed_value, id)
 	return _personalities[id].duplicate(true)
 
 func advance(minutes: float) -> void:

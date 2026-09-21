@@ -2,6 +2,10 @@
 
 The saved world seed generates each resident's personality, speech style, initial relationships and daily preferences. Names, jobs, biographies and the town layout remain authored. Personalities and relationships persist; plans vary by resident and day. Den's name and sex are editable on `PlayerData` (`Den`, `Male` by default).
 
+Each saved personality also has a stable `voice`: register, cadence, verbosity, directness, humor, disclosure and question frequency. Most choices follow the resident's temperament; register and humor use a separate seeded draw. Older personalities gain these choices once without rerolling traits, relationships or memories. The runtime `NpcProfile.voice` dictionary is visible in the Remote Inspector and travels with the profile to every provider request.
+
+The backend's `npc-voice.js` compiles those closed choices into concrete phrasing guidance shared by player dialogue, event reactions and resident conversations. Response modes and social tones describe the current disposition, while voice governs how that person expresses it. Shared prompts allow different sentence rhythms and levels of elaboration. Voices are tendencies, not catchphrases or mandatory jokes; evidence limits, relationship context, direct speech, farewell behavior and bubble size limits still apply. Mocks verify propagation and save stability, not the dialogue model's actual prose quality.
+
 ## Ownership
 
 | Component | Responsibility |

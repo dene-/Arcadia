@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createApp } from "../src/app.js";
 import { existsSync } from "node:fs";
+import { VOICE_DIRECTIONS, voiceInstructions } from "../src/npc-voice.js";
 
 function answers(questions, overrides = {}) {
   return Object.fromEntries(Object.entries(questions).map(([id, q]) => {
@@ -71,13 +72,17 @@ test("hearsay affects belief separately from memory and never blames an unidenti
   assert.equal((await post("listen", body)).body.policy.trust_player, 0);
 });
 test("social speech gets attributed evidence and normalized direct dialogue", async (t) => {
+  const body = { ...request(), topic: rumor(), mode: "share" };
+  body.npc.profile.voice = { register: "PRECISE", questions: "RARE" };
   const post = await server(t, { generate: async ({ instructions, input, store }) => {
     assert.equal(store, false);
     assert.match(instructions, /ORIGINAL observer/);
     assert.equal(JSON.parse(input[0].content).topic.originator_name, "Mirelle");
+    assert.ok(instructions.endsWith(voiceInstructions(body.npc.profile)));
+    assert.ok(instructions.includes(VOICE_DIRECTIONS.register.PRECISE));
     return { output_text: JSON.stringify({ response: "She said—‘Den did it.’" }) };
   } });
-  const result = await post("say", { ...request(), topic: rumor(), mode: "share" });
+  const result = await post("say", body);
   assert.equal(result.status, 200);
   assert.equal(result.body.response, "She said, 'Den did it.'");
 });
@@ -112,7 +117,15 @@ test("real town routes, social decisions, audible speech and rumor memory cross 
       } : { belief: 0.8, remember: 0.9, trust_player: "NEGATIVE", affinity: "POSITIVE" };
       return { answers: answers(questions, overrides) };
     },
-    generate: async () => ({ output_text: JSON.stringify({ response: "Did you hear about the fighting?" }) }),
+    generate: async ({ instructions, input }) => {
+      const profile = JSON.parse(input[0].content).npc.profile;
+      // Cross the real Godot profile/HTTP boundary: every generated enum must be understood.
+      for (const [axis, choices] of Object.entries(VOICE_DIRECTIONS)) {
+        assert.ok(Object.hasOwn(choices, profile.voice[axis]));
+        assert.ok(instructions.includes(choices[profile.voice[axis]]));
+      }
+      return { output_text: JSON.stringify({ response: "Did you hear about the fighting?" }) };
+    },
   }).listen(0, "127.0.0.1");
   await once(listener, "listening");
   t.after(() => { listener.closeAllConnections(); listener.close(); });

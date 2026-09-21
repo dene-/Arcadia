@@ -12,6 +12,8 @@ extends Resource
 @export_multiline var speech_style: String = ""
 ## Save-generated social tendencies, copied into a runtime profile by town life.
 @export var social_traits: Dictionary = {}
+## Stable procedural speech choices; separate from temporary mood and response policy.
+@export var voice: Dictionary = {}
 @export var home: String = "Rekala"
 @export var cognition: NpcCognitionProfile
 @export var knowledge_packs: Array[NpcKnowledgePack] = []
@@ -46,6 +48,7 @@ func to_backend_profile() -> Dictionary:
 		"id": String(npc_id), "background": background, "values": values,
 		"fears": fears, "goals": goals, "speech_style": speech_style, "home": home,
 		"social_traits": social_traits.duplicate(true),
+		"voice": voice.duplicate(true),
 		"cognition": get_cognition().to_data(), "knowledge": knowledge,
 		"name": profile_name,
 		"age": str(age),

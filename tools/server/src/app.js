@@ -16,6 +16,7 @@ import {
   parseReaction,
 } from "./dialogue.js";
 import { groundMemories } from "./memory-grounding.js";
+import { voiceInstructions } from "./npc-voice.js";
 function validateRequest(body) {
   if (
     body?.protocol_version !== 1 ||
@@ -142,7 +143,7 @@ export function createApp({ decide, generate }) {
     if (!policy.speak) return res.json({ response: "" });
     try {
       const response = await generate({
-        instructions: REACTION_PROMPT,
+        instructions: REACTION_PROMPT + voiceInstructions(request.npc.profile),
         input: [
           {
             role: "user",
@@ -175,7 +176,7 @@ export function createApp({ decide, generate }) {
     }
     try {
       const response = await generate({
-        instructions: COGNITIVE_PROMPT,
+        instructions: COGNITIVE_PROMPT + voiceInstructions(request.npc.profile),
         input: [
           {
             role: "user",
