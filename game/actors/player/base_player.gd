@@ -34,6 +34,12 @@ var _dialog_locked: bool = false
 
 @onready var pickup_area: Area2D = $PickupArea
 
+func get_perceived_name() -> String:
+	return player_data.display_name if player_data != null else "Den"
+
+func get_social_identity() -> Dictionary:
+	return player_data.social_identity() if player_data != null else {"id": "player", "name": "Den", "sex": "Male"}
+
 # -- Lifecycle ----------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
@@ -96,15 +102,18 @@ func _spawn_inventory_drop(stack: InventoryStackDataResource) -> bool:
 
 	var drop_direction := Vector2.RIGHT if facing == Facing.RIGHT else Vector2.LEFT
 	drop.global_position = global_position + drop_direction * inventory_drop_distance
+	drop.reset_physics_interpolation()
 	return true
 
 # -- Combat -------------------------------------------------------------------
 
-func take_damage(amount: int = 1) -> void:
-	if state_machine.is_in_state(&"dead"):
+func take_damage(amount: int = 1, source: Area2D = null) -> void:
+	if health <= 0 or state_machine.is_in_state(&"dead"):
 		return
 
 	set_health(health - maxi(amount, 0))
+	if amount > 0:
+		report_damage_event(source)
 	reset_attack_hold()
 	set_hitbox_enabled(false)
 	if health <= 0:
@@ -266,8 +275,8 @@ func _try_collect_drop(area: Area2D) -> void:
 
 	area.call("collect_into", inventory_data)
 
-func _receive_hit(_area: Area2D, damage: int) -> void:
-	take_damage(damage)
+func _receive_hit(area: Area2D, damage: int) -> void:
+	take_damage(damage, area)
 
 # -- Signal callbacks ---------------------------------------------------------
 

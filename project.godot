@@ -18,6 +18,8 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+WorldEvents="*res://game/world/events/world_events.gd"
+NpcCognition="*res://game/actors/npcs/npc_cognition.gd"
 DialogManager="*res://game/ui/dialog/dialog_manager.tscn"
 
 [display]
@@ -26,7 +28,8 @@ window/size/viewport_width=240
 window/size/viewport_height=160
 window/size/window_width_override=1620
 window/size/window_height_override=1080
-window/stretch/mode="viewport"
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
 window/stretch/scale_mode="integer"
 
 [input]
@@ -85,6 +88,7 @@ inventory_toggle={
 
 [physics]
 
+common/physics_interpolation=true
 3d/physics_engine="Jolt Physics"
 
 [rendering]

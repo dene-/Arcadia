@@ -2,8 +2,43 @@
 
 [ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
 
+[ext_resource type="Script" path="res://game/resources/actors/npc_cognition_profile.gd" id="cognition_script"]
+[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="knowledge_script"]
+[ext_resource type="Resource" path="res://game/resources/actors/knowledge/rekala_common.tres" id="town"]
+[ext_resource type="Script" path="res://game/resources/actors/npc_core_memory.gd" id="memory_script"]
+
+[sub_resource type="Resource" id="Cognition"]
+script = ExtResource("cognition_script")
+factual_recall = 0.7
+social_recall = 0.9
+name_recall = 0.8
+
+[sub_resource type="Resource" id="TradeKnowledge"]
+script = ExtResource("knowledge_script")
+knowledge_id = &"tailor"
+title = "Tailor expertise"
+knowledge = "Clothing, fitting, measurements and understanding customer preferences."
+limitations = "No access to private motives; social impressions may be wrong."
+
+[sub_resource type="Resource" id="CoreMemory"]
+script = ExtResource("memory_script")
+memory_id = &"aunt_hem"
+gist = "Maris remembers their aunt criticizing an early attempt at a hem."
+age_turns = 500
+importance = 0.8
+emotional_intensity = 0.7
+vividness = 0.8
+topics = PackedStringArray("aunt", "sewing", "learning")
+sensory_cues = PackedStringArray("needle against cloth")
+important_details = PackedStringArray("Their aunt noticed an uneven stitch.")
+known_gaps = PackedStringArray("The exact words of the criticism.")
+
 [resource]
 script = ExtResource("1_profile_script")
+npc_id = &"maris_bell"
+cognition = SubResource("Cognition")
+knowledge_packs = Array[ExtResource("knowledge_script")]([ExtResource("town"), SubResource("TradeKnowledge")])
+core_memories = Array[ExtResource("memory_script")]([SubResource("CoreMemory")])
 profile_name = "Maris Bell"
 age = 41
 sex = "Non-binary"

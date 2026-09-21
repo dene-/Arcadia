@@ -5,7 +5,7 @@ signal dialog_advanced(page_index: int)
 signal dialog_finished(source: Node)
 
 const LOADING_DIALOG: String = "..."
-const PLACEHOLDER_DIALOG: String = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+const PLACEHOLDER_DIALOG: String = "I cannot talk just now. Try me again in a moment."
 const DIALOG_PANEL_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel"
 const DIALOG_TEXT_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/DialogContainer/DialogText"
 const DIALOG_NEXT_PAGE_INDICATOR_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/NextPageIndicator"
@@ -18,8 +18,10 @@ const INDICATOR_BOB_DISTANCE: float = 2.0
 const INDICATOR_BOB_SPEED: float = 4.0
 const INDICATOR_RIGHT_MARGIN: float = 5.0
 const INDICATOR_BOTTOM_MARGIN: float = 5.0
+const FAREWELL_HOLD_SECONDS: float = 1.5
 var _dialog_panel: Panel
 var _dialog_text: RichTextLabel
+var _speaker_name: Label
 var _next_page_indicator: Control
 var _replies_container: Control
 var _reply_buttons: Array[Button] = []
@@ -27,6 +29,9 @@ var _chat_container: Control
 var _chat_line_edit: LineEdit
 var _chat_send_button: Button
 var _chat_cancel_button: Button
+var _conversation: NpcConversation = NpcConversation.new()
+var _events: NpcEventProcessor
+var _dialog_generation: int = 0
 var _backend_client: DialogBackendClient
 var _speech_player: DialogVoicePlayer
 var _paginator: DialogPaginator = DialogPaginator.new()
@@ -40,6 +45,8 @@ var _active_replies: Array[String] = []
 var _able_to_chat: bool = false
 var _is_open: bool = false
 var _is_waiting_for_backend: bool = false
+var _end_after_response: bool = false
+var _farewell_remaining: float = -1.0
 var _page_index: int = 0
 var _indicator_base_position: Vector2 = Vector2.ZERO
 
@@ -50,11 +57,25 @@ func _ready() -> void:
 	_speech_player = DialogVoicePlayer.new()
 	add_child(_speech_player)
 
-	_backend_client = DialogBackendClient.new()
-	add_child(_backend_client)
+	var cognition: Node = get_node("/root/NpcCognition")
+	_conversation.store = cognition.store
+	_conversation.save_callback = cognition.save_game.save_file
+	_backend_client = cognition.backend
+	_events = cognition.events
 
 
 func _process(delta: float) -> void:
+	if _is_open and (not is_instance_valid(_active_source) or get_tree().current_scene != _bound_scene):
+		close_dialog()
+		return
+	if _is_open and _active_source is BaseActor and _active_source.health <= 0:
+		close_dialog()
+		return
+	if _farewell_remaining >= 0.0:
+		_farewell_remaining -= delta
+		if _farewell_remaining <= 0.0:
+			close_dialog()
+			return
 	_update_typewriter(delta)
 
 	if _next_page_indicator == null or not _next_page_indicator.visible:
@@ -74,20 +95,25 @@ func is_dialog_open() -> bool:
 	return _is_open
 
 func request_npc_dialog(source: Node) -> void:
+	if not is_instance_valid(source):
+		return
+	if _is_open:
+		close_dialog()
 	if not _bind_dialog_ui():
 		return
 
 	_start_dialog(source)
+	var generation: int = _dialog_generation
 	dialog_started.emit(source, "")
 	await get_tree().process_frame
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	if not _bind_dialog_ui():
 		close_dialog()
 		return
 
 	var backend_result := await _resolve_dialog_text_async(source, "")
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	_apply_dialog_result(backend_result)
 
@@ -106,7 +132,7 @@ func advance_dialog() -> void:
 		return
 
 	if not _has_next_page():
-		if not _active_replies.is_empty() or _able_to_chat:
+		if not _end_after_response and (not _active_replies.is_empty() or _able_to_chat):
 			return
 		close_dialog()
 		return
@@ -120,7 +146,9 @@ func close_dialog() -> void:
 		return
 	_bind_dialog_ui()
 
-	var finished_source := _active_source
+	_dialog_generation += 1
+	_conversation.cancel()
+	var finished_source: Node = _active_source if is_instance_valid(_active_source) else null
 	_active_source = null
 	_active_text = ""
 	_active_pages.clear()
@@ -128,9 +156,13 @@ func close_dialog() -> void:
 	_able_to_chat = false
 	_is_open = false
 	_is_waiting_for_backend = false
+	_end_after_response = false
+	_farewell_remaining = -1.0
 	_page_index = 0
 	if _dialog_text != null:
 		_dialog_text.text = ""
+	if _speaker_name != null:
+		_speaker_name.text = ""
 	_typewriter.reset(_dialog_text)
 	if _dialog_panel != null:
 		_dialog_panel.hide()
@@ -150,6 +182,7 @@ func _bind_dialog_ui() -> bool:
 
 	_dialog_panel = current_scene.get_node_or_null(DIALOG_PANEL_PATH) as Panel
 	_dialog_text = current_scene.get_node_or_null(DIALOG_TEXT_PATH) as RichTextLabel
+	_speaker_name = current_scene.get_node_or_null(String(DIALOG_PANEL_PATH) + "/SpeakerName") as Label
 	_next_page_indicator = current_scene.get_node_or_null(DIALOG_NEXT_PAGE_INDICATOR_PATH) as Control
 	_replies_container = current_scene.get_node_or_null(REPLIES_CONTAINER_PATH) as Control
 	_chat_container = current_scene.get_node_or_null(CHAT_CONTAINER_PATH) as Control
@@ -182,11 +215,18 @@ func _has_next_page() -> bool:
 	return _page_index + 1 < _active_pages.size()
 
 func _start_dialog(source: Node) -> void:
+	_dialog_generation += 1
+	_conversation.cancel()
 	_active_source = source
+	if _speaker_name != null:
+		_speaker_name.text = source.get_npc_profile().profile_name if source is BaseNpc \
+			and source.get_npc_profile() != null else ""
 	_active_text = ""
 	_active_pages.clear()
 	_active_replies.clear()
 	_able_to_chat = _source_is_able_to_chat(source)
+	_end_after_response = false
+	_farewell_remaining = -1.0
 	_page_index = 0
 	_is_waiting_for_backend = true
 	_dialog_text.text = LOADING_DIALOG
@@ -242,27 +282,46 @@ func _play_speech_sound_for_character(character: String, character_index: int) -
 		return
 	_speech_player.play_character(character, character_index)
 
-func _resolve_dialog_text_async(source: Node, player_message: String) -> Dictionary:
-	if source != null and source.has_method("get_backend_profile") and _backend_client != null:
-		var backend_profile: Dictionary = source.call("get_backend_profile") as Dictionary
-		if backend_profile is Dictionary and not backend_profile.is_empty():
-			var result: Dictionary = await _backend_client.request_dialog(backend_profile, player_message)
-			var response: String = result.get("response", "")
-			if not response.is_empty():
-				return {
-					"response": response.strip_edges().replace("\r\n", "\n"),
-					"replies": result.get("replies", []),
-				}
+func record_npc_event(profile: NpcProfile, event: String) -> void:
+	if profile == null or profile.npc_id.is_empty():
+		return
+	_conversation.store.record_event(profile, event)
+	var error: Error = _conversation.save_callback.call()
+	if error != OK:
+		push_warning("NPC event could not be saved: %s" % error)
 
-	if source != null and source.has_method("get_dialog_text"):
-		var source_text := str(source.call("get_dialog_text")).strip_edges().replace("\r\n", "\n")
+func get_memory_store() -> NpcMemoryStore:
+	return _conversation.store
+
+func _resolve_dialog_text_async(source: Node, player_message: String) -> Dictionary:
+	if is_instance_valid(source) and source.has_method("get_npc_profile"):
+		var profile: NpcProfile = source.call("get_npc_profile")
+		if profile != null and not profile.npc_id.is_empty():
+			var current: Dictionary = source.call("get_cognitive_context")
+			var generation: int = _dialog_generation
+			var source_ref: WeakRef = weakref(source)
+			var still_current: Callable = func() -> bool:
+				return source_ref.get_ref() != null and _is_open and _active_source == source_ref.get_ref() \
+					and generation == _dialog_generation and get_tree().current_scene == _bound_scene
+			_events.resume(profile, current, source as BaseNpc)
+			await _events.wait_for_assessment(String(profile.npc_id))
+			if not still_current.call():
+				return {}
+			current = source.call("get_cognitive_context")
+			var result: Dictionary = await _conversation.request(
+				profile, current, player_message, _backend_client, still_current)
+			if not result.is_empty():
+				return result
+	if is_instance_valid(source) and source.has_method("get_dialog_text"):
+		var source_text: String = str(source.call("get_dialog_text")).strip_edges()
 		if not source_text.is_empty():
 			return {"response": source_text, "replies": []}
-
 	return {"response": PLACEHOLDER_DIALOG, "replies": []}
 
 func _apply_dialog_result(result: Dictionary) -> void:
 	_is_waiting_for_backend = false
+	_end_after_response = result.get("end_conversation", false) == true
+	_farewell_remaining = -1.0
 	_active_text = str(result.get("response", ""))
 	_active_replies = _get_replies_from_result(result)
 	_active_pages = _paginator.paginate(_active_text)
@@ -283,6 +342,12 @@ func _update_reply_ui() -> void:
 
 	var on_last_page := not _has_next_page()
 	var can_show := _is_open and not _is_waiting_for_backend and not _typewriter.is_revealing() and on_last_page
+	if _end_after_response:
+		if _chat_container != null:
+			_chat_container.hide()
+		if can_show and _farewell_remaining < 0.0:
+			_farewell_remaining = FAREWELL_HOLD_SECONDS
+		return
 
 	if can_show and not _able_to_chat and _replies_container != null and not _active_replies.is_empty():
 		var visible_reply_count: int = mini(_active_replies.size(), _reply_buttons.size())
@@ -337,7 +402,8 @@ func _bind_reply_buttons() -> void:
 			button.pressed.connect(_on_reply_button_pressed.bind(button_index))
 
 func _send_player_reply(player_message: String) -> void:
-	if not _is_open or _active_source == null:
+	if not _is_open or not is_instance_valid(_active_source) \
+		or _is_waiting_for_backend or _end_after_response:
 		return
 	_clear_reply_ui()
 	_page_index = 0
@@ -348,8 +414,9 @@ func _send_player_reply(player_message: String) -> void:
 	_update_next_page_indicator()
 
 	var source := _active_source
+	var generation: int = _dialog_generation
 	var backend_result := await _resolve_dialog_text_async(source, player_message)
-	if not _is_open or _active_source != source:
+	if not _is_open or _active_source != source or generation != _dialog_generation:
 		return
 	_apply_dialog_result(backend_result)
 

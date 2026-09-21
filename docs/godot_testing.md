@@ -4,12 +4,12 @@ This project uses a small Godot-native GDScript test runner instead of an extern
 
 ## Configure Godot
 
-Set `GODOT` to the Godot 4.6 executable when `godot` is not already on `PATH`.
+Set `GODOT` to the Godot 4.7.1 executable when `godot` is not already on `PATH`.
 
 PowerShell:
 
 ```powershell
-$env:GODOT = "C:\Path\To\Godot_v4.6.2-stable_win64.exe"
+$env:GODOT = "C:\Path\To\Godot_v4.7.1-stable_win64.exe"
 ```
 
 macOS or Linux:
@@ -51,6 +51,8 @@ Run the direct command from the project root. If `godot` is on `PATH`, replace `
 ## Write Tests
 
 Add test scripts under `tests/unit/` with filenames ending in `_test.gd`.
+
+The runner awaits test methods, so synchronous and asynchronous tests are supported.
 
 Each test script must:
 

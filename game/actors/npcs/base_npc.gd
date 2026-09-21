@@ -9,6 +9,11 @@ signal interacted(interactor: Node)
 
 const RUN_ANIMATION_NAME: StringName = &"run"
 const WALK_ANIMATION_NAME: StringName = &"walk"
+const MEMORY_DEBUG_PROPERTIES: Dictionary[String, int] = {
+	"npc_id": TYPE_STRING, "status": TYPE_STRING, "turn": TYPE_INT,
+	"memories": TYPE_ARRAY, "recent_dialogue": TYPE_ARRAY,
+	"relationship": TYPE_DICTIONARY, "recent_events": TYPE_ARRAY, "observations": TYPE_ARRAY,
+}
 
 ## Data resource containing movement, combat, AI, interaction, and animation tuning.
 @export var npc_data: NpcData
@@ -17,6 +22,19 @@ var spawn_position: Vector2 = Vector2.ZERO
 var patrol_target: Vector2 = Vector2.ZERO
 var current_move_direction: Vector2 = Vector2.ZERO
 var state_time_remaining: float = 0.0
+var daily_routine: NpcDailyRoutine
+var life_context: Dictionary = {}
+var life_revision: int = 0
+var _awake_sprite_position: Vector2
+var _awake_interaction_position: Vector2
+var _awake_hurt_position: Vector2
+var _awake_sprite_z: int
+var _sleep_center := Vector2(0, -20)
+var _sleeping: bool = false
+var _woke_at: int = -90001
+var _woke_world_minute: float = -100.0
+var _woke_space: StringName
+var _wake_reason: String = ""
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _patrol_index: int = 0
@@ -27,6 +45,7 @@ var _target: Node2D
 var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
+var _reaction_cooldown_until: int = 0
 
 @onready var blood_particles: CPUParticles2D = $BloodParticles
 @onready var interaction_area: Area2D = $InteractionArea
@@ -37,6 +56,15 @@ var _drops_spawned: bool = false
 func _ready() -> void:
 	assert(npc_data != null, "BaseNpc requires an NpcData resource.")
 	assert(npc_data.sprite_frames != null, "BaseNpc requires a SpriteFrames resource.")
+
+	var cognition: Node = get_node("/root/NpcCognition")
+	var profile: NpcProfile = get_npc_profile()
+	if profile != null and cognition.save_game.is_dead(profile.npc_id):
+		# No death animation, event, loot or provider call is replayed during loading.
+		hide()
+		process_mode = Node.PROCESS_MODE_DISABLED
+		queue_free()
+		return
 
 	spawn_position = global_position
 	_rng.randomize()
@@ -56,17 +84,20 @@ func _ready() -> void:
 	interaction_area.monitoring = npc_data.interaction_enabled
 	interaction_area.monitorable = npc_data.interaction_enabled
 
-	state_machine.initialize(self )
+	state_machine.initialize(self)
+	if get_npc_profile() != null and not get_npc_profile().npc_id.is_empty():
+		add_to_group(&"npc_observers")
+		get_node("/root/NpcCognition").resume(self)
 
 # -- Dialog & interaction -----------------------------------------------------
 
 func interact(interactor: Node = null) -> void:
-	if not npc_data.interaction_enabled:
+	if health <= 0 or not npc_data.interaction_enabled:
 		return
 
 	var dialog_manager := get_node_or_null("/root/DialogManager")
 	if dialog_manager != null:
-		dialog_manager.call("request_npc_dialog", self )
+		dialog_manager.call("request_npc_dialog", self)
 	interacted.emit(interactor)
 
 func get_dialog_text() -> String:
@@ -77,6 +108,117 @@ func get_backend_profile() -> Dictionary:
 		return {}
 	return npc_data.profile.to_backend_profile()
 
+func get_npc_profile() -> NpcProfile:
+	return npc_data.profile if npc_data != null else null
+
+func get_perceived_name() -> String:
+	var profile: NpcProfile = get_npc_profile()
+	if profile != null:
+		return "a person"
+	return "a hostile creature" if npc_data != null and npc_data.ai_enabled else "a creature"
+
+func can_speak_reaction() -> bool:
+	return health > 0 and not _dialog_locked and not _sleeping \
+		and Time.get_ticks_msec() >= _reaction_cooldown_until
+
+func reserve_spoken_reaction() -> bool:
+	if not can_speak_reaction():
+		return false
+	_reaction_cooldown_until = Time.get_ticks_msec() + int(npc_data.reaction_cooldown * 1000.0)
+	return true
+
+func show_spoken_reaction(text: String) -> bool:
+	if health <= 0 or _dialog_locked or _sleeping:
+		return false
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble == null:
+		return false
+	bubble.call("say", text)
+	if get_npc_profile() != null:
+		get_node("/root/WorldEvents").publish(WorldEvent.speech(self, text))
+	return true
+
+func get_cognitive_context() -> Dictionary:
+	var profile: NpcProfile = get_npc_profile()
+	var current: Dictionary = {"location": profile.home if profile != null else "",
+		"activity": "conversation" if _dialog_locked else String(state_machine.get_current_state_name()),
+		"physical_state": "injured" if health < max_health else "well",
+		"sensory_cues": []}
+	current.merge(life_context.duplicate(true), true)
+	current.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
+	if is_inside_tree():
+		if profile != null:
+			current.recent_ambient = get_node("/root/NpcCognition").ambient.recent(String(profile.npc_id))
+		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
+		if not players.is_empty() and players[0] is BasePlayer:
+			current.player_identity = players[0].get_social_identity()
+	if daily_routine != null:
+		current.merge(daily_routine.context(global_position), true)
+		if _dialog_locked:
+			current.activity = "conversation (interrupted " + daily_routine.activity + ")"
+	current.world_space = String(world_space)
+	current.location = world_space_label
+	current.sleeping = _sleeping
+	var awake_minutes: float = float(current.get("world_minute", 0)) - _woke_world_minute
+	current.recently_awakened = not _sleeping and world_space == _woke_space \
+		and awake_minutes >= 0 and awake_minutes < 5 and Time.get_ticks_msec() - _woke_at < 30000
+	current.wake_reason = _wake_reason if current.recently_awakened else ""
+	return current
+
+func can_follow_routine() -> bool:
+	return health > 0 and not _dialog_locked and state_machine.get_current_state_name() in [&"idle", &"walk", &"run", &"sleep"]
+
+func sleep_at(center: Vector2) -> void:
+	_sleep_center = center - global_position
+	state_machine.transition_to(&"sleep", {}, true)
+
+func show_sleep_pose(sleeping: bool) -> void:
+	_sleeping = sleeping
+	var indicator: Label = get_node_or_null("SleepIndicator")
+	if indicator != null:
+		indicator.visible = sleeping
+	if sleeping:
+		_wake_reason = ""
+		_awake_sprite_position = animated_sprite.position
+		_awake_sprite_z = animated_sprite.z_index
+		_awake_interaction_position = interaction_area.position
+		_awake_hurt_position = hurt_box.position
+		# The bed supplies solid collision; interaction and damage follow the visible sleeper.
+		body_collision_shape.set_deferred("disabled", true)
+		interaction_area.position = _sleep_center + Vector2(0, 4)
+		hurt_box.position = _sleep_center
+		play_animation(&"idle", true, 1.0)
+		animated_sprite.pause()
+		animated_sprite.rotation = -PI / 2
+		var frame: Texture2D = animated_sprite.sprite_frames.get_frame_texture(animated_sprite.animation, 0)
+		var visible_pixels: Rect2i = frame.get_image().get_used_rect()
+		var center: Vector2 = Vector2(visible_pixels.position) + Vector2(visible_pixels.size) * 0.5 - frame.get_size() * 0.5
+		if animated_sprite.flip_h:
+			center.x = -center.x
+		animated_sprite.position = (_sleep_center - center.rotated(animated_sprite.rotation)).round()
+		animated_sprite.z_index = 1
+		if indicator != null:
+			indicator.position = (_sleep_center + Vector2(5, -14)).round()
+	else:
+		_woke_at = Time.get_ticks_msec()
+		_woke_world_minute = float(life_context.get("world_minute", 0))
+		_woke_space = world_space
+		body_collision_shape.set_deferred("disabled", health <= 0)
+		interaction_area.position = _awake_interaction_position
+		hurt_box.position = _awake_hurt_position
+		animated_sprite.rotation = 0
+		animated_sprite.position = _awake_sprite_position
+		animated_sprite.z_index = _awake_sprite_z
+
+func is_sleeping() -> bool:
+	return _sleeping
+
+func wake_from_noise(reason: String = "noise") -> void:
+	if _sleeping:
+		_wake_reason = reason
+		life_revision += 1
+		state_machine.transition_to(&"idle", {}, true)
+
 func is_able_to_chat() -> bool:
 	return npc_data != null and npc_data.able_to_chat
 
@@ -85,6 +227,12 @@ func enter_dialog() -> void:
 		return
 
 	_dialog_locked = true
+	if _sleeping:
+		_wake_reason = "conversation"
+	life_revision += 1
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble != null:
+		bubble.hide()
 	set_hitbox_enabled(false)
 	clear_hit_reaction()
 	state_machine.transition_to(&"interaction", {}, true)
@@ -114,10 +262,15 @@ func request_attack() -> void:
 	state_machine.transition_to(&"attack", {}, true)
 
 func take_damage(amount: int = 1, source: Area2D = null) -> void:
-	if state_machine.is_in_state(&"dead"):
+	if health <= 0 or state_machine.is_in_state(&"dead"):
 		return
 
+	if amount > 0:
+		wake_from_noise("injury")
 	set_health(health - maxi(amount, 0))
+	if amount > 0:
+		life_revision += 1
+		report_damage_event(source)
 	apply_hit_reaction(source)
 	set_hitbox_enabled(false)
 	if health <= 0:
@@ -135,6 +288,9 @@ func die() -> void:
 		return
 
 	_pending_death = false
+	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
+	if bubble != null:
+		bubble.hide()
 	_spawn_drops()
 	set_hitbox_enabled(false)
 	clear_hit_reaction()
@@ -276,11 +432,15 @@ func can_see_target(target: Node2D) -> bool:
 # -- Movement & patrol --------------------------------------------------------
 
 func choose_idle_duration() -> float:
+	if daily_routine != null:
+		return 0.2
 	var minimum := minf(npc_data.idle_duration_range.x, npc_data.idle_duration_range.y)
 	var maximum := maxf(npc_data.idle_duration_range.x, npc_data.idle_duration_range.y)
 	return _rng.randf_range(minimum, maximum)
 
 func choose_roam_state() -> StringName:
+	if daily_routine != null:
+		return &"walk"
 	if npc_data.roam_radius <= 0.0 and npc_data.patrol_points.is_empty():
 		return &"idle"
 
@@ -290,6 +450,8 @@ func choose_roam_state() -> StringName:
 	return &"walk"
 
 func choose_next_patrol_target() -> bool:
+	if daily_routine != null:
+		return daily_routine.has_route(global_position)
 	if not npc_data.patrol_points.is_empty():
 		patrol_target = to_global(npc_data.patrol_points[_patrol_index % npc_data.patrol_points.size()])
 		_patrol_index += 1
@@ -306,6 +468,11 @@ func choose_next_patrol_target() -> bool:
 	return true
 
 func get_move_direction_to_target() -> Vector2:
+	if daily_routine != null:
+		current_move_direction = daily_routine.direction(global_position)
+		if current_move_direction != Vector2.ZERO:
+			set_facing_from_direction(current_move_direction)
+		return current_move_direction
 	var offset := patrol_target - global_position
 	if offset.length() <= npc_data.arrival_distance:
 		current_move_direction = Vector2.ZERO
@@ -316,6 +483,8 @@ func get_move_direction_to_target() -> Vector2:
 	return current_move_direction
 
 func has_reached_patrol_target() -> bool:
+	if daily_routine != null:
+		return not daily_routine.has_route(global_position)
 	return global_position.distance_to(patrol_target) <= npc_data.arrival_distance
 
 func current_walk_speed() -> float:
@@ -353,6 +522,56 @@ func resolve_animation_name(animation_name: StringName) -> StringName:
 	return &""
 
 # -- Private helpers ----------------------------------------------------------
+
+## Runtime-only properties, polled by the Remote Inspector without mutating the save.
+func _get_property_list() -> Array[Dictionary]:
+	if Engine.is_editor_hint() or not OS.is_debug_build():
+		return []
+	var properties: Array[Dictionary] = [{"name": "Runtime Memory", "type": TYPE_NIL,
+		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_memory_"}]
+	for field: String in MEMORY_DEBUG_PROPERTIES:
+		properties.append({"name": "runtime_memory_" + field,
+			"type": MEMORY_DEBUG_PROPERTIES[field],
+			"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
+	properties.append({"name": "Town Life", "type": TYPE_NIL,
+		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_life"})
+	properties.append({"name": "runtime_life", "type": TYPE_DICTIONARY,
+		"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
+	return properties
+
+func _get(property: StringName) -> Variant:
+	if property == &"runtime_life":
+		var snapshot: Dictionary = life_context.duplicate(true)
+		if daily_routine != null:
+			snapshot.merge(daily_routine.context(global_position), true)
+			snapshot.position = global_position
+			snapshot.destination_position = daily_routine.destination
+		return snapshot
+	if not String(property).begins_with("runtime_memory_"):
+		return null
+	var field: String = String(property).trim_prefix("runtime_memory_")
+	if not MEMORY_DEBUG_PROPERTIES.has(field):
+		return null
+	var profile: NpcProfile = get_npc_profile()
+	var id: String = String(profile.npc_id) if profile != null else ""
+	var cognition: Node = get_node_or_null("/root/NpcCognition") if is_inside_tree() else null
+	var store: NpcMemoryStore = cognition.store if cognition != null else null
+	var state: Dictionary = store.snapshot(id) if store != null and not id.is_empty() else {}
+	match field:
+		"npc_id":
+			return id
+		"status":
+			if id.is_empty():
+				return "No NPC profile or stable ID."
+			if store == null:
+				return "Memory store unavailable."
+			return "Not initialized yet." if state.is_empty() else "Live memory state."
+		"turn":
+			return store.turn if store != null else 0
+		"relationship":
+			return state.get(field, {})
+		_:
+			return state.get(field, [])
 
 func _configure_blood_particles() -> void:
 	blood_particles.amount = npc_data.blood_particle_count
@@ -395,6 +614,7 @@ func _emit_blood_particles(direction: Vector2) -> void:
 	if npc_data.blood_particle_count <= 0:
 		return
 	blood_particles.global_position = global_position + Vector2(0.0, -1.0)
+	blood_particles.reset_physics_interpolation()
 	blood_particles.direction = direction
 	blood_particles.emitting = false
 	blood_particles.restart()
@@ -494,6 +714,7 @@ func _spawn_drops() -> void:
 		else:
 			get_tree().current_scene.add_child(drop)
 		drop.global_position = global_position + Vector2.RIGHT.rotated(angle) * distance
+		drop.reset_physics_interpolation()
 
 # -- Signal callbacks ---------------------------------------------------------
 

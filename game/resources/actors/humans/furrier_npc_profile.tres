@@ -2,8 +2,28 @@
 
 [ext_resource type="Script" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
 
+[ext_resource type="Script" path="res://game/resources/actors/npc_cognition_profile.gd" id="cognition_script"]
+[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="knowledge_script"]
+[ext_resource type="Resource" path="res://game/resources/actors/knowledge/rekala_common.tres" id="town"]
+
+[sub_resource type="Resource" id="Cognition"]
+script = ExtResource("cognition_script")
+factual_recall = 0.7
+social_recall = 0.6
+name_recall = 0.5
+
+[sub_resource type="Resource" id="TradeKnowledge"]
+script = ExtResource("knowledge_script")
+knowledge_id = &"furrier"
+title = "Furrier expertise"
+knowledge = "Fur preparation, winter clothing, seasonal trade and practical survival."
+limitations = "Distant news is hearsay unless supported by a credible source."
+
 [resource]
 script = ExtResource("1_profile_script")
+npc_id = &"tovan_reed"
+cognition = SubResource("Cognition")
+knowledge_packs = Array[ExtResource("knowledge_script")]([ExtResource("town"), SubResource("TradeKnowledge")])
 profile_name = "Tovan Reed"
 age = 47
 sex = "Male"

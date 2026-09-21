@@ -2,6 +2,8 @@ class_name PlayerData
 extends Resource
 
 ## Tunable player data consumed by BasePlayer.
+@export var display_name: String = "Den"
+@export_enum("Male", "Female", "Non-binary") var sex: String = "Male"
 
 ## Base walking speed in pixels per second.
 @export var move_speed: float = 72.0
@@ -25,3 +27,6 @@ extends Resource
 @export_enum("Left", "Right") var starting_facing: int = 1
 ## SpriteFrames resource used by the player's AnimatedSprite2D.
 @export var sprite_frames: SpriteFrames
+
+func social_identity() -> Dictionary:
+	return {"id": "player", "name": display_name, "sex": sex}

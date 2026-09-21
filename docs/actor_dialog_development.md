@@ -164,6 +164,14 @@ It owns dialog session flow:
 
 Helper classes:
 
+- `NpcConversation`: Jev decisions, context construction and successful exchange commits
+- `NpcCognition`: shared cognition service, independent of dialogue presentation
+- `NpcEventProcessor`: bounded background assessment and separate speech generation
+- `WorldEvents` / `NpcPerceptionRouter`: world facts and extensible perception adapters
+- `NpcWorldSave`: atomic named-NPC deaths and memory persistence
+- `NpcPerception`: sight, hearing and self-injury evidence for NPC observers
+- `NpcMemoryStore`: save-owned memory, relationships, recent dialogue and observed events
+- `NpcMemoryRetriever`: relevant memory selection and filtered recall
 - `DialogBackendClient`: HTTP request and response parsing
 - `DialogPaginator`: text pagination
 - `DialogTypewriter`: text reveal timing
@@ -171,11 +179,16 @@ Helper classes:
 
 Dialog source contract:
 
-- `get_backend_profile() -> Dictionary`
+- `get_npc_profile() -> NpcProfile`
+- `get_cognitive_context() -> Dictionary`
+- `get_backend_profile() -> Dictionary` (identity/knowledge only)
 - `get_dialog_text() -> String`
 - `is_able_to_chat() -> bool`
 
 `BaseNpc` implements this contract from `NpcData` and `NpcProfile`.
+
+See [NPC memory](npc_memory.md) for memory authoring, belief boundaries and persistence.
+See [NPC perception](npc_perception.md) for combat observations, relationship effects and speech bubbles.
 
 When adding dialog features:
 

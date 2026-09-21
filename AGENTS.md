@@ -1,12 +1,12 @@
 # Project Agent Guide
 
-This Godot project targets Godot 4.6. Use typed GDScript for gameplay and UI work.
+This Godot project targets Godot 4.7.1. Use typed GDScript for gameplay and UI work.
 
 ## Required Skill
 
-When working with OpenAI Codex, always use the `godot-4-6-best-practices` skill before planning, implementing, refactoring, reviewing, documenting, or validating Godot project files.
+When working with OpenAI Codex, always use the local `.github/skills/godot-gdscript/SKILL.md` skill before planning, implementing, refactoring, reviewing, documenting, or validating Godot project files.
 
-For tools that do not support Codex skills, follow the same Godot 4.6 rules from this file and prefer the local skill reference at `.agents/skills/godot-4-6-best-practices/SKILL.md` when available.
+For tools that do not support Codex skills, follow the same Godot 4.7.1 rules from this file and prefer the local skill reference at `.github/skills/godot-gdscript/SKILL.md` when available.
 
 ## Validation
 

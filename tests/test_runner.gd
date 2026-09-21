@@ -17,6 +17,14 @@ func _process(_delta: float) -> bool:
 	return false
 
 func _run_tests() -> void:
+	# Exercise the real application boundary without touching the player's save or providers.
+	var cognition: Node = root.get_node("NpcCognition")
+	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-tests-%s.json" % OS.get_process_id())
+	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
+	cognition.save_game.dead_npcs.clear()
+	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
+	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
+	cognition.backend.life_endpoint = "http://127.0.0.1:1/life"
 	var test_files := _discover_tests(TEST_ROOT)
 	test_files.sort()
 
@@ -26,8 +34,9 @@ func _run_tests() -> void:
 		return
 
 	for test_file: String in test_files:
-		_run_test_file(test_file)
+		await _run_test_file(test_file)
 
+	DirAccess.remove_absolute(cognition.save_game.path)
 	print("")
 	if _failure_count == 0:
 		print("Godot tests passed: %d" % _test_count)
@@ -79,7 +88,7 @@ func _run_test_file(test_file: String) -> void:
 
 	print("Running %s" % test_file)
 	for method_name: StringName in test_methods:
-		_run_test_method(test_file, test_case, method_name)
+		await _run_test_method(test_file, test_case, method_name)
 
 func _is_valid_test_case(test_case: Variant) -> bool:
 	return (
@@ -103,7 +112,7 @@ func _run_test_method(test_file: String, test_case: Object, method_name: StringN
 	_test_count += 1
 	test_case.clear_failures()
 	test_case.before_each()
-	test_case.call(method_name)
+	await test_case.call(method_name)
 	test_case.after_each()
 
 	var failures: Array = test_case.get_failures()

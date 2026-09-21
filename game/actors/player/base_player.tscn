@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://c22fi8t3oskwr"]
+[gd_scene load_steps=19 format=3 uid="uid://c22fi8t3oskwr"]
 
 [ext_resource type="Script" uid="uid://dmc0papp8brfr" path="res://game/actors/player/base_player.gd" id="1_qli6e"]
 [ext_resource type="Resource" path="res://game/resources/actors/player_data.tres" id="2_player_data"]
@@ -14,6 +14,7 @@
 [ext_resource type="Script" uid="uid://dqp2lw34d0e8r" path="res://game/actors/player/states/hurt.gd" id="11_5qh19"]
 [ext_resource type="Script" uid="uid://fe2gg2u4nwqc" path="res://game/actors/player/states/dead.gd" id="12_j20ve"]
 [ext_resource type="Script" path="res://game/actors/player/states/interaction.gd" id="13_interaction"]
+[ext_resource type="Script" path="res://game/actors/player/pixel_camera.gd" id="14_camera"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_jaia2"]
 
@@ -68,6 +69,8 @@ collision_mask = 32
 shape = SubResource("CircleShape2D_pickup")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1280228381]
+process_callback = 0
+script = ExtResource("14_camera")
 
 [node name="StateMachine" type="Node" parent="." unique_id=841993317]
 script = ExtResource("3_1x0cf")

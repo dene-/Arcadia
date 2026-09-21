@@ -74,6 +74,16 @@ const DropTableResource = preload("res://game/items/drops/drop_table.gd")
 @export var line_of_sight_target_offset: Vector2 = Vector2(0.0, -4.0)
 ## Loot table rolled once when this NPC dies.
 @export var drop_table: DropTableResource
+@export_category("Perception")
+## Enables observations for NPCs with a profile, independently of enemy AI.
+@export var perception_enabled: bool = true
+## Radial sight distance in pixels; solid geometry blocks vision.
+@export_range(0.0, 1024.0, 1.0) var vision_radius: float = 128.0
+## Distance in pixels at which combat can be heard, without identifying unseen actors.
+@export_range(0.0, 1024.0, 1.0) var hearing_radius: float = 192.0
+@export_flags_2d_physics var vision_collision_mask: int = 1
+## Minimum seconds between unprompted spoken reactions.
+@export_range(1.0, 60.0, 0.5) var reaction_cooldown: float = 8.0
 @export_category("Interaction")
 ## Enables the interaction area and dialog entry point for this NPC.
 @export var interaction_enabled: bool = true

@@ -1,0 +1,38 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/ui/dialog/npc_reaction_bubble.gd" id="script"]
+[ext_resource type="Theme" path="res://assets/art/ui/theme.tres" id="theme"]
+
+[sub_resource type="StyleBoxFlat" id="panel"]
+bg_color = Color(0.12, 0.10, 0.09, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.7, 0.6, 0.4, 1)
+content_margin_left = 5.0
+content_margin_top = 4.0
+content_margin_right = 5.0
+content_margin_bottom = 4.0
+
+[node name="ReactionBubble" type="Node2D"]
+visible = false
+position = Vector2(0, -12)
+z_index = 20
+z_as_relative = false
+script = ExtResource("script")
+
+[node name="Panel" type="PanelContainer" parent="."]
+mouse_filter = 2
+theme = ExtResource("theme")
+theme_override_styles/panel = SubResource("panel")
+
+[node name="Text" type="Label" parent="Panel"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.96, 0.91, 0.78, 1)
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="Timer" type="Timer" parent="."]
+one_shot = true

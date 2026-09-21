@@ -2,11 +2,11 @@
 applyTo: "**/*.gd,**/*.tscn,**/*.tres,**/*.res,project.godot,.gitignore,.gitattributes,AGENTS.md"
 ---
 
-# Godot 4.6 Instructions
+# Godot 4.7.1 Instructions
 
-Always treat this as a Godot 4.6 project.
+Always treat this as a Godot 4.7.1 project.
 
-When using OpenAI Codex, use the `godot-4-6-best-practices` skill for any Godot implementation, refactor, review, documentation, validation, or project-organization work. When using GitHub Copilot or another tool that cannot load Codex skills, follow the equivalent rules from `.agents/skills/godot-4-6-best-practices/SKILL.md` and the root `AGENTS.md`.
+When using OpenAI Codex, use the local `.github/skills/godot-gdscript/SKILL.md` skill for any Godot implementation, refactor, review, documentation, validation, or project-organization work. When using GitHub Copilot or another tool that cannot load Codex skills, follow the equivalent rules from `.github/skills/godot-gdscript/SKILL.md` and the root `AGENTS.md`.
 
 Use typed GDScript for gameplay and UI work. Do not introduce Godot 3.x APIs.
 

@@ -7,3 +7,5 @@ Use this folder for architecture notes, feature guides, development recipes, and
 Current docs:
 
 - `actor_dialog_development.md`: actor, NPC, player, combat, and dialog extension guide.
+- `npc_memory.md`: NPC cognition, Jev decisions, recall, persistence and backend setup.
+- `npc_perception.md`: sight, hearing, combat observations, relationship effects and spontaneous speech.

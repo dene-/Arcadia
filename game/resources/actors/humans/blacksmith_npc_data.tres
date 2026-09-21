@@ -28,5 +28,6 @@ blood_particle_spread_degrees = 21.0
 blood_particle_lifetime = 0.4
 combat_layers = ExtResource("1_brdxm")
 drop_table = SubResource("Resource_k3ndw")
+able_to_chat = true
 profile = ExtResource("3_profile")
 sprite_frames = ExtResource("2_frames")

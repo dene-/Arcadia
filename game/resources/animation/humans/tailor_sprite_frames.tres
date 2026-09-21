@@ -18,7 +18,7 @@ source_row = 1
 [sub_resource type="Resource" id="Resource_attack"]
 script = ExtResource("2_clip")
 animation_name = &"attack"
-sprite_path = "res://assets/art/characters/npc/Tailor/Minifantasy_NPCsTailorWorking.png"
+sprite_path = "res://assets/art/characters/npc/Tailor/Minifantasy_NPCsTailorIdle.png"
 frame_duration = 0.1
 source_row = 1
 loop = false

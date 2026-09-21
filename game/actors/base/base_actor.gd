@@ -17,6 +17,9 @@ enum Facing {
 var facing: Facing = Facing.RIGHT
 var max_health: int = 1
 var health: int = 1
+## Rooms share a running simulation but remain separate sensory and interaction spaces.
+var world_space: StringName = &"outdoors"
+var world_space_label: String = "Rekala"
 
 var _attack_hitbox_enabled: bool = false
 var _current_attack_damage: int = 1
@@ -81,6 +84,18 @@ func set_health(next_health: int) -> void:
 
 	health = clamped_health
 	_emit_health_changed()
+
+func get_perceived_name() -> String:
+	return "the player" if is_in_group("players") else "someone"
+
+## Deliver successful damage once, while the participants still exist in the world.
+func report_damage_event(source: Area2D) -> void:
+	var attacker: BaseActor
+	if is_instance_valid(source):
+		var source_owner: Variant = source.get_meta("owner", null)
+		if is_instance_valid(source_owner):
+			attacker = source_owner as BaseActor
+	get_node("/root/WorldEvents").publish(WorldEvent.damage(self, attacker))
 
 func play_animation(animation_name: StringName, restart: bool = false, speed_scale: float = 1.0) -> void:
 	var resolved_animation := resolve_animation_name(animation_name)
