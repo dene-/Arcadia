@@ -212,19 +212,23 @@ func test_speech_generation_has_a_global_limit_without_blocking_assessment() -> 
 	assert_eq(backend.payloads.size(), 3)
 	assert_eq(backend.reaction_calls, 2)
 	assert_eq(processor.store.turn, 3)
-	assert_eq(processor.store.snapshot("speaker_2").observations[0].diagnostics.speech_result, "speech_capacity")
+	assert_eq(processor.store.snapshot("speaker_2").observations[0].diagnostics.speech_result, "selected")
+	backend.release_reaction.emit()
+	await tree.process_frame
+	assert_eq(backend.reaction_calls, 3)
 	backend.release_reaction.emit()
 	for index: int in range(3):
 		await processor.flush("speaker_%s" % index)
+		assert_eq(sources[index].spoken, ["Keep away!"])
 	processor.queue_free()
 	await tree.process_frame
 	for source: BaseNpc in sources:
 		source.free()
 	backend.free()
 
-func test_reactions_generated_before_a_new_perception_or_move_are_discarded() -> void:
+func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_move() -> void:
 	var tree: SceneTree = Engine.get_main_loop()
-	for change: String in ["perception", "injury", "space"]:
+	for change: String in ["perception", "injury", "space", "routine"]:
 		var processor := NpcEventProcessor.new()
 		processor.persist = false
 		processor.store = NpcMemoryStore.new()
@@ -245,14 +249,21 @@ func test_reactions_generated_before_a_new_perception_or_move_are_discarded() ->
 				await tree.process_frame
 				await processor.wait_for_assessment("test_observer")
 			"injury":
-				npc.life_revision += 1
+				npc.health -= 1
 			"space":
 				npc.world_space = &"home:test"
+			"routine":
+				npc.life_revision += 1
 		backend.release_reaction.emit()
 		await processor.flush("test_observer")
-		assert_true(npc.spoken.is_empty(), change + " should invalidate the old response")
-		assert_eq(processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
-			"context_changed")
+		if change == "routine":
+			assert_eq(npc.spoken, ["Keep away!"])
+			assert_eq(processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
+				"displayed")
+		else:
+			assert_true(npc.spoken.is_empty(), change + " should invalidate the old response")
+			assert_eq(processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
+				"context_changed")
 		processor.queue_free()
 		await tree.process_frame
 		backend.free()

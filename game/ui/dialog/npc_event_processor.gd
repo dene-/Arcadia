@@ -17,6 +17,7 @@ var save_callback: Callable
 var _queued: Dictionary = {}
 var _active: Dictionary = {}
 var _speaking: Dictionary = {}
+var _active_speech: int = 0
 
 func observe(profile: NpcProfile, current: Dictionary, event: Dictionary,
 		source: BaseNpc = null) -> void:
@@ -108,18 +109,22 @@ func _process_npc(id: String, job: Dictionary) -> void:
 
 func _deliver_speech(job: Dictionary, payload: Dictionary, judgment: Dictionary,
 		diagnostic: Dictionary) -> void:
-	diagnostic.speech_result = await _speak(job, payload, judgment)
+	while _active_speech >= MAX_SPEECH_WORKERS and _is_recent(payload.event):
+		await progressed
+	if not _is_recent(payload.event):
+		diagnostic.speech_result = "expired_before_generation"
+	else:
+		_active_speech += 1
+		diagnostic.speech_result = await _speak(job, payload, judgment)
+		_active_speech -= 1
 	store.annotate_observation(payload.npc.id, int(payload.event.id), diagnostic)
 	_save()
 	_speaking.erase(payload.npc.id)
 	progressed.emit()
 
 func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> String:
-	# This job is already reserved. Capacity can change while its assessment is in flight.
-	if _speaking.size() > MAX_SPEECH_WORKERS:
-		return "speech_capacity"
 	var source: BaseNpc = _source(job)
-	var blocked: String = _speech_block(source, payload.event, false)
+	var blocked: String = _speech_block(source, payload.event)
 	if not blocked.is_empty():
 		return blocked
 	if not source.reserve_spoken_reaction():
@@ -131,14 +136,14 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary) -> Strin
 		payload.event.text, payload.context.current, job.profile.get_cognition(), store.world_minute)
 	payload.answers = judgment.get("answers", {})
 	var revision: int = store.revision(payload.npc.id)
-	var life_revision: int = source.life_revision
+	var health: int = source.health
 	var space: StringName = source.world_space
 	var result: Dictionary = await backend.request_reaction(payload)
 	source = _source(job)
 	var text: Variant = result.get("response")
 	if source == null:
 		return "source_gone"
-	if store.revision(payload.npc.id) != revision or source.life_revision != life_revision \
+	if store.revision(payload.npc.id) != revision or source.health != health \
 		or source.world_space != space:
 		return "context_changed"
 	if not _is_recent(payload.event):
@@ -162,13 +167,11 @@ static func _repeats_recent_speech(current: Dictionary, text: String) -> bool:
 			return true
 	return false
 
-func _speech_block(source: BaseNpc, event: Dictionary, check_capacity: bool = true) -> String:
+func _speech_block(source: BaseNpc, event: Dictionary) -> String:
 	if source == null:
 		return "source_gone"
 	if not _is_recent(event):
 		return "expired_before_assessment"
-	if check_capacity and _speaking.size() >= MAX_SPEECH_WORKERS:
-		return "speech_capacity"
 	if not source.can_speak_reaction():
 		return "dead_dialogue_or_cooldown"
 	return ""

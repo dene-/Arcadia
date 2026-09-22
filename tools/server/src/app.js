@@ -17,6 +17,10 @@ import {
 } from "./dialogue.js";
 import { groundMemories } from "./memory-grounding.js";
 import { voiceInstructions } from "./npc-voice.js";
+function reportProviderFailure(service, error) {
+  const status = Number.isInteger(error?.status) ? ` (HTTP ${error.status})` : "";
+  console.error(`${service} failed${status}: ${error?.name || "Unknown error"}`);
+}
 function validateRequest(body) {
   if (
     body?.protocol_version !== 1 ||
@@ -99,7 +103,8 @@ export function createApp({ decide, generate }) {
         answers: result.answers,
         policy: decisionPolicy(result.answers),
       });
-    } catch {
+    } catch (error) {
+      reportProviderFailure("NPC decision service", error);
       res.status(503).json({ error: "NPC decision service unavailable." });
     }
   });
@@ -124,7 +129,8 @@ export function createApp({ decide, generate }) {
           request.npc.profile.cognition,
         ),
       });
-    } catch {
+    } catch (error) {
+      reportProviderFailure("NPC observation service", error);
       res.status(503).json({ error: "NPC observation service unavailable." });
     }
   });
@@ -162,7 +168,8 @@ export function createApp({ decide, generate }) {
       if (response.status && response.status !== "completed")
         throw new Error("Incomplete reaction");
       res.json(parseReaction(response.output_text));
-    } catch {
+    } catch (error) {
+      reportProviderFailure("NPC reaction service", error);
       res.status(503).json({ error: "NPC reaction service unavailable." });
     }
   });
@@ -197,7 +204,8 @@ export function createApp({ decide, generate }) {
       const result = parseDialogue(response.output_text, request, policy);
       result.memory_writes = await groundMemories(result.memory_writes, request, result.response, decide);
       res.json(result);
-    } catch {
+    } catch (error) {
+      reportProviderFailure("NPC dialogue service", error);
       res.status(503).json({ error: "NPC dialogue service unavailable." });
     }
   });
