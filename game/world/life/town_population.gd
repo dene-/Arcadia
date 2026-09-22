@@ -127,7 +127,6 @@ func profile_for(id: String) -> NpcProfile:
 		profile.background = "A longtime member of Rekala's small community."
 		profile.values = "Keeping promises to family and making a place in the community."
 		profile.goals = "Learn, play and spend time with family." if person.age < 16 else "Care for the household and fulfill daily obligations."
-		profile.speech_style = "Speak in direct, everyday language appropriate to your age and experience."
 		profile.knowledge_packs.append(preload("res://game/resources/actors/knowledge/rekala_common.tres"))
 		if person.job == "guard":
 			profile.values = "Protect neighbors; warn first when possible; stop violence and accept surrender."

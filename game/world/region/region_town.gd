@@ -7,6 +7,7 @@ const TILES: TileSet = preload("res://game/resources/world/town_tileset.tres")
 const COTTAGE_WALLS: TileMapPattern = preload("res://game/resources/world/cottage_walls_pattern.tres")
 const COTTAGE_ROOF: TileMapPattern = preload("res://game/resources/world/cottage_roof_pattern.tres")
 const NPC: PackedScene = preload("res://game/actors/npcs/base_npc.tscn")
+const PROCEDURAL_PROFILE: GDScript = preload("res://game/world/life/npc_procedural_profile.gd")
 var art := RegionArt.new()
 
 func build(parent: Node2D, spawn_actors: bool) -> void:
@@ -45,7 +46,10 @@ func build(parent: Node2D, spawn_actors: bool) -> void:
 			if spawn_actors:
 				if save.is_dead(StringName(id)):
 					continue
-				NpcTemperament.apply(data.profile, save.life.personality_for(id, save.get_npc_seed()))
+				var temperament: Dictionary = save.life.personality_for(id, save.get_npc_seed())
+				NpcTemperament.apply(data.profile, temperament)
+				if not TownPopulation.FOUNDERS.values().has(id):
+					PROCEDURAL_PROFILE.apply(data.profile, person, temperament)
 				var npc: BaseNpc = NPC.instantiate()
 				npc.name = id.to_pascal_case()
 				npc.npc_data = data
