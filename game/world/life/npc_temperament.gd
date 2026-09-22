@@ -60,8 +60,10 @@ static func ensure_voice(temperament: Dictionary, seed_value: int, id: String) -
 		voice.directness.to_lower(), voice.humor.to_lower(), voice.disclosure.to_lower().capitalize()]
 
 static func apply(profile: NpcProfile, temperament: Dictionary) -> void:
-	profile.personality = temperament.personality
-	profile.speech_style = temperament.speech_style
+	if profile.personality.is_empty():
+		profile.personality = temperament.personality
+	if profile.speech_style.is_empty():
+		profile.speech_style = temperament.speech_style
 	profile.voice = temperament.get("voice", {}).duplicate(true)
 	profile.social_traits = temperament.traits.duplicate(true)
 	profile.cognition = profile.get_cognition().duplicate()

@@ -60,3 +60,18 @@ func test_runtime_profile_exposes_voice_without_mutating_saved_personality() -> 
 	assert_eq(profile.voice.cadence, identity.voice.cadence)
 	profile.voice.cadence = "changed in inspector"
 	assert_eq(state.personality_for("a", 42).voice, identity.voice)
+
+func test_authored_personality_survives_town_temperament_in_backend_profile() -> void:
+	var population := TownPopulation.new()
+	population.ensure_population(42)
+	var profile: NpcProfile = population.profile_for("garrin_holt")
+	var authored_personality: String = profile.personality
+	var identity: Dictionary = TownLifeState.new().personality_for("garrin_holt", 42)
+	assert_ne(authored_personality, identity.personality)
+	NpcTemperament.apply(profile, identity)
+	var payload: Dictionary = profile.to_backend_profile()
+	assert_eq(payload.personality, authored_personality)
+	assert_eq(payload.age, "44")
+	assert_eq(payload.job, "Village blacksmith")
+	assert_eq(payload.voice, identity.voice)
+	assert_eq(payload.speech_style, identity.speech_style)
