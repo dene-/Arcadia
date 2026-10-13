@@ -10,6 +10,7 @@ func test_old_personalities_gain_a_stable_voice_without_rerolling_town_state() -
 	data.personalities.a.erase("voice")
 	data.personalities.a.speech_style = "Quiet and thoughtful."
 	var loaded := TownLifeState.new()
+	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(state.minds.to_data()))))
 	assert_true(loaded.from_data(JSON.parse_string(JSON.stringify(data))))
 	var upgraded: Dictionary = loaded.personality_for("a", 42)
 	assert_eq(upgraded.personality, original.personality)

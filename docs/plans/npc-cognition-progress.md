@@ -24,9 +24,9 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 
 | Milestone | Status | Commit |
 | --- | --- | --- |
-| M0 | in progress | |
-| M1 | pending | |
-| M2 | pending | |
+| M0 | done: simulation fixture, fake decision service, four audit-probe characterizations, 11 synthetic legacy fixtures | `5c89f4d` |
+| M1 | done: `NpcMindStore`/`NpcMindState`/`NpcRelationshipGraph`/`NpcCommitments`; v2 save with load resolution v2 → v1 world → memory-only → new; `NpcSaveMigration` revision 1; reset tooling on v2; relationships single-owned with receipts | see git log |
+| M2 | in progress | |
 | M3 | pending | |
 | M4 | pending | |
 | M5 | pending | |
@@ -36,10 +36,15 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M9 | pending | |
 | M10 | pending | |
 
+### M1 evidence
+
+- Unit 281 passed; every integration above plus `npc_reset_world_test` (fixed) and `npc_cognition_scenarios_test` passed; backend 32 passed.
+- Review checkpoint: a copy of the real `npc_world.json` (33 people, 10 dead, 221 memories, 1056 ties) migrated with zero relationship/tie mismatches; seeds (`region_seed` 828248366, `npc_seed` 508309546), personalities, population, economy, justice, deaths and rumors semantically equal; no v2 file written by loading; the real save's checksum unchanged.
+
 ## Remaining migration adapters
 
-None yet.
+- `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
 
 ## Next step
 
-M0: simulation fixture, fake decision service, audit-probe regressions and synthetic legacy fixtures.
+M2 integration: perception produces `NpcObservation` records into each mind's `NpcEvidenceInbox`; the event processor claims from the inbox; knowledge bootstrap and sightings; migration revision 2.

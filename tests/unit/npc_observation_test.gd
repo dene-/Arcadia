@@ -68,22 +68,27 @@ func test_hearing_does_not_change_player_relationship_and_evicted_events_cannot_
 	assert_eq(store.snapshot("test_observer").observations.size(), 8)
 	assert_false(store.commit_observation("test_observer", 2, _policy()))
 
-func test_observation_saves_round_trip_and_older_saves_gain_empty_observations() -> void:
+func test_observation_saves_round_trip_and_incomplete_saves_are_rejected() -> void:
 	var store := NpcMemoryStore.new()
 	store.record_observation(_profile(), _event())
 	store.commit_observation("test_observer", 1, _policy())
 	var saved: Dictionary = store.to_save_data()
 	var restored := NpcMemoryStore.new()
 	var persisted: Dictionary = JSON.parse_string(JSON.stringify(saved))
+	assert_true(restored.minds.from_data(JSON.parse_string(JSON.stringify(store.minds.to_data()))))
 	assert_true(restored.from_save_data(persisted))
-	assert_eq(restored.snapshot("test_observer"), persisted.npcs.test_observer)
+	var restored_state: Dictionary = restored.snapshot("test_observer")
+	assert_eq(restored_state.relationship.trust, -0.08)
+	restored_state.erase("relationship")
+	assert_eq(restored_state, persisted.npcs.test_observer)
 	saved.npcs.test_observer.observations[0].status = "invalid"
 	assert_false(restored.from_save_data(saved))
+	saved.npcs.test_observer.observations[0].status = "classified"
 	saved.npcs.test_observer.erase("observations")
 	saved.npcs.test_observer.erase("next_observation_id")
-	assert_true(restored.from_save_data(saved))
+	assert_false(restored.from_save_data(saved))
 	assert_eq(restored.snapshot("test_observer").memories.size(), 1)
-	assert_true(restored.snapshot("test_observer").observations.is_empty())
+	assert_eq(restored.snapshot("test_observer").observations.size(), 1)
 
 func test_background_processing_commits_without_conversation_and_keeps_new_arrivals() -> void:
 	var tree: SceneTree = Engine.get_main_loop()

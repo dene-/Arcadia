@@ -1,8 +1,14 @@
 extends "res://tests/test_case.gd"
 
+## Points all three save paths at private temp files so the player's saves are never read.
+func _isolate(save: NpcWorldSave, filename: String) -> void:
+	save.path = OS.get_temp_dir().path_join(filename)
+	save.legacy_world_path = save.path + ".legacy-world"
+	save.legacy_memory_path = save.path + ".legacy-memory"
+
 func test_deaths_and_memories_round_trip_atomically_and_reset_together() -> void:
 	var save := NpcWorldSave.new()
-	save.path = OS.get_temp_dir().path_join("arcadia-world-save-test.json")
+	_isolate(save, "arcadia-world-save-test.json")
 	save.region_seed = 274415
 	var profile := NpcProfile.new()
 	profile.npc_id = &"test_named_victim"
@@ -10,7 +16,7 @@ func test_deaths_and_memories_round_trip_atomically_and_reset_together() -> void
 	save.mark_dead(profile.npc_id)
 	assert_eq(save.save_file(), OK)
 	var loaded := NpcWorldSave.new()
-	loaded.path = save.path
+	_isolate(loaded, "arcadia-world-save-test.json")
 	assert_eq(loaded.load_file(), OK)
 	assert_eq(loaded.region_seed, 274415)
 	assert_true(loaded.is_dead(profile.npc_id))
@@ -26,7 +32,7 @@ func test_deaths_and_memories_round_trip_atomically_and_reset_together() -> void
 	assert_true(loaded.memory.snapshot(String(profile.npc_id)).is_empty())
 	assert_eq(loaded.reset(), OK)
 	var restarted := NpcWorldSave.new()
-	restarted.path = save.path
+	_isolate(restarted, "arcadia-world-save-test.json")
 	assert_eq(restarted.load_file(), OK)
 	assert_eq(restarted.region_seed, 0)
 	assert_false(restarted.is_dead(profile.npc_id))
@@ -37,27 +43,30 @@ func test_deaths_and_memories_round_trip_atomically_and_reset_together() -> void
 			DirAccess.remove_absolute(OS.get_temp_dir().path_join(name))
 
 func test_legacy_import_preserves_memories_without_inventing_past_deaths() -> void:
-	var legacy := NpcMemoryStore.new()
-	var profile := NpcProfile.new()
-	profile.npc_id = &"legacy_person"
-	legacy.record_event(profile, "I saw someone die.")
-	var path: String = OS.get_temp_dir().path_join("arcadia-legacy-test.json")
-	assert_eq(legacy.save_file(path), OK)
 	var save := NpcWorldSave.new()
-	save.path = path + ".new"
-	assert_eq(save.load_file(path), OK)
+	_isolate(save, "arcadia-legacy-test.json")
+	var legacy: Dictionary = {"version": 1, "turn": 1, "world_minute": 480.0, "next_memory_id": 1,
+		"npcs": {"legacy_person": {"recent_dialogue": [], "memories": [],
+			"recent_events": ["I saw someone die."], "relationship": NpcRelationshipState.initial()}}}
+	var text: String = JSON.stringify(legacy)
+	var file := FileAccess.open(save.legacy_memory_path, FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
+	assert_eq(save.load_file(), OK)
 	assert_true(save.dead_npcs.is_empty())
 	assert_eq(save.memory.snapshot("legacy_person").recent_events, ["I saw someone die."])
-	var file := FileAccess.open(save.path, FileAccess.WRITE)
+	assert_eq(save.memory.snapshot("legacy_person").relationship, NpcRelationshipState.initial())
+	file = FileAccess.open(save.path, FileAccess.WRITE)
 	file.store_string("broken")
 	file.close()
-	assert_eq(save.load_file(path), ERR_FILE_CORRUPT)
+	assert_eq(save.load_file(), ERR_FILE_CORRUPT)
 	assert_eq(save.save_file(), ERR_FILE_CORRUPT)
 	assert_eq(FileAccess.get_file_as_string(save.path), "broken")
-	DirAccess.remove_absolute(path)
+	assert_eq(FileAccess.get_file_as_string(save.legacy_memory_path), text)
+	DirAccess.remove_absolute(save.legacy_memory_path)
 	DirAccess.remove_absolute(save.path)
 
-func test_region_seed_survives_reload_and_old_saves_upgrade_without_losing_memories() -> void:
+func test_region_seed_survives_reload_and_only_v1_saves_may_omit_it() -> void:
 	var save := NpcWorldSave.new()
 	save.region_seed = 731
 	save.mark_dead(&"named_victim")
@@ -65,21 +74,30 @@ func test_region_seed_survives_reload_and_old_saves_upgrade_without_losing_memor
 	assert_true(loaded.from_data(save.to_data()))
 	assert_eq(loaded.region_seed, 731)
 	assert_true(loaded.is_dead(&"named_victim"))
-	var old: Dictionary = save.to_data()
+	var incomplete: Dictionary = save.to_data()
+	incomplete.world.erase("region_seed")
+	assert_false(loaded.from_data(incomplete), "Defaults for missing keys are the migration's job.")
+	assert_eq(loaded.region_seed, 731)
+	var old: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://tests/fixtures/cognition/v1_deaths.json"))
 	old.world.erase("region_seed")
-	assert_true(loaded.from_data(old))
+	var upgraded: Dictionary = NpcSaveMigration.upgrade(old)
+	assert_true(upgraded.ok)
+	assert_true(loaded.from_data(upgraded.data))
 	assert_eq(loaded.region_seed, 0)
-	assert_true(loaded.is_dead(&"named_victim"))
+	assert_eq(loaded.dead_npcs, old.world.dead_npcs)
+	loaded.region_seed = 731
 	for invalid: Variant in ["bad", -1, 2.5, 2147483647]:
 		var data: Dictionary = save.to_data()
 		data.world.region_seed = invalid
+		data.world.dead_npcs = ["someone_else"]
 		assert_false(loaded.from_data(data))
-		assert_eq(loaded.region_seed, 0)
-		assert_true(loaded.is_dead(&"named_victim"))
+		assert_eq(loaded.region_seed, 731)
+		assert_eq(loaded.dead_npcs, old.world.dead_npcs)
 
 func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state() -> void:
 	var save := NpcWorldSave.new()
-	save.path = OS.get_temp_dir().path_join("arcadia-npc-reroll-test.json")
+	_isolate(save, "arcadia-npc-reroll-test.json")
 	save.region_seed = 731
 	save.population.ensure_population(save.region_seed)
 	var profile: NpcProfile = save.population.profile_for("garrin_holt")
@@ -106,9 +124,10 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	assert_true(save.justice.reports.is_empty())
 	assert_true(save.memory.snapshot(ids[0]).is_empty())
 	assert_eq(save.life.to_data(), TownLifeState.new().to_data())
+	assert_true(save.minds.ids().is_empty(), "Reset drops every mind with the old lives.")
 	assert_eq(save.economy.to_data(), TownEconomy.new().to_data())
 	var loaded := NpcWorldSave.new()
-	loaded.path = save.path
+	_isolate(loaded, "arcadia-npc-reroll-test.json")
 	assert_eq(loaded.load_file(), OK)
 	assert_eq(loaded.npc_seed, save.npc_seed)
 	loaded.population.ensure_population(loaded.region_seed)
@@ -119,7 +138,7 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	assert_ne(loaded.life.get_person(ids[0]).ties, before_ties)
 	assert_eq(loaded.save_file(), OK)
 	var restarted := NpcWorldSave.new()
-	restarted.path = save.path
+	_isolate(restarted, "arcadia-npc-reroll-test.json")
 	assert_eq(restarted.load_file(), OK)
 	assert_eq(restarted.life.personality_for(ids[0], restarted.get_npc_seed()).personality,
 		after_personality.personality)
@@ -138,12 +157,13 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	assert_eq(backups, 1)
 	DirAccess.remove_absolute(save.path)
 
-func test_npc_seed_migrates_old_saves_and_invalid_seeds_do_not_mutate_state() -> void:
+func test_v2_requires_npc_seed_and_invalid_seeds_do_not_mutate_state() -> void:
 	var save := NpcWorldSave.new()
 	save.region_seed = 731
-	var old: Dictionary = save.to_data()
-	old.world.erase("npc_seed")
-	assert_true(save.from_data(old))
+	assert_true(save.from_data(save.to_data()))
+	var incomplete: Dictionary = save.to_data()
+	incomplete.world.erase("npc_seed")
+	assert_false(save.from_data(incomplete))
 	assert_eq(save.get_npc_seed(), 731)
 	save.npc_seed = 92
 	for invalid: Variant in ["bad", -1, 1.5, 2147483647, INF, NAN]:

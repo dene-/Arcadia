@@ -40,6 +40,70 @@ func test_daily_plans_change_by_person_and_day_and_local_knowledge_is_asymmetric
 	assert_ne(person.plan, state.get_person("a").plan)
 	assert_eq(person.ties, state.get_person("a").ties)
 
+func test_seeded_ties_reproduce_the_same_numbers_and_family_overrides_residents() -> void:
+	var state := TownLifeState.new()
+	state.ensure_person("a", 123, ["a", "b", "c"], ["square"])
+	var random := NpcRoutinePlan.random_for(123, "a:social")
+	var ties: Dictionary = state.get_person("a").ties
+	assert_eq(ties.keys(), ["b", "c"])
+	assert_eq(ties.b.familiarity, random.randf_range(0.45, 0.95))
+	assert_eq(ties.b.trust, random.randf_range(-0.25, 0.65))
+	assert_eq(ties.b.affection, random.randf_range(-0.4, 0.7))
+	assert_eq(ties.c.familiarity, random.randf_range(0.45, 0.95))
+	state.ensure_person("a", 123, ["a", "b", "c", "d"], ["square"])
+	var late: Dictionary = state.get_person("a").ties
+	assert_eq(late.b, ties.b)
+	var late_random := NpcRoutinePlan.random_for(123, "a:tie:d")
+	assert_eq(late.d.familiarity, late_random.randf_range(0.45, 0.95))
+	var graph: NpcRelationshipGraph = state.minds.get_mind("a").relationships
+	assert_true(graph.seed_relationship("b", {"familiarity": 1.0, "trust": 0.5, "affection": 0.5}, true))
+	assert_eq(state.get_person("a").ties.b, {"familiarity": 1.0, "trust": 0.5, "affection": 0.5})
+	assert_false(state.get_person("a").ties.has("player"))
+
+func test_social_exchange_changes_known_ties_once_per_receipt_and_survives_save() -> void:
+	var state := TownLifeState.new()
+	state.ensure_person("a", 123, ["a", "b"], ["square"])
+	var before: Dictionary = state.get_person("a").ties.b
+	state.remember_exchange("a", "b", "Hello", 0.5)
+	var after: Dictionary = state.get_person("a").ties.b
+	assert_true(is_equal_approx(after.familiarity, minf(1.0, before.familiarity + 0.02)))
+	assert_true(is_equal_approx(after.affection, clampf(before.affection + 0.04, -1.0, 1.0)))
+	assert_eq(after.trust, before.trust)
+	state.remember_exchange("a", "stranger", "Hello")
+	assert_false(state.get_person("a").ties.has("stranger"))
+	state.remember_exchange("a", "b", "Again", -0.5)
+	var data: Dictionary = JSON.parse_string(JSON.stringify(state.to_data()))
+	assert_eq(data.version, 2)
+	assert_eq(int(data.next_social_receipt), 4)
+	assert_false(data.people.a.has("ties"))
+	var loaded := TownLifeState.new()
+	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(state.minds.to_data()))))
+	assert_true(loaded.from_data(data))
+	for key: String in ["familiarity", "trust", "affection"]:
+		assert_true(is_equal_approx(loaded.get_person("a").ties.b[key], state.get_person("a").ties.b[key]))
+	loaded.remember_exchange("a", "b", "Third")
+	var receipts: Array = loaded.minds.get_mind("a").relationships.to_data().receipts
+	assert_eq(receipts, ["social:a:b:1", "social:a:b:3", "social:a:b:4"])
+
+func test_life_data_rejects_v1_shapes() -> void:
+	var state := TownLifeState.new()
+	state.ensure_person("a", 123, ["a", "b"], ["square"])
+	var data: Dictionary = state.to_data()
+	var restored := TownLifeState.new()
+	var broken: Dictionary = data.duplicate(true)
+	broken.version = 1
+	assert_false(restored.from_data(broken))
+	broken = data.duplicate(true)
+	broken.people.a.ties = {}
+	assert_false(restored.from_data(broken))
+	broken = data.duplicate(true)
+	broken.people.a.erase("safety")
+	assert_false(restored.from_data(broken))
+	broken = data.duplicate(true)
+	broken.erase("next_social_receipt")
+	assert_false(restored.from_data(broken))
+	assert_true(restored.from_data(data))
+
 func _event(id: String = "event:1") -> Dictionary:
 	return {"origin_id": id, "text": "I saw Den hurt Garrin.", "sense": "sight", "player_involved": true}
 
@@ -81,7 +145,7 @@ func test_transient_news_expires_and_eyewitness_perception_can_replace_hearsay()
 	assert_eq(rumors.get_known("b", 681)[0].hops, 0)
 	assert_eq(rumors.get_known("b", 681)[0].originator, "b")
 
-func test_world_save_migrates_old_life_and_rejects_corruption_atomically() -> void:
+func test_world_save_round_trips_life_and_rejects_corruption_atomically() -> void:
 	var save := NpcWorldSave.new()
 	save.region_seed = 42
 	save.life.ensure_person("a", 42, ["a", "b"], ["square"])
@@ -102,8 +166,8 @@ func test_world_save_migrates_old_life_and_rejects_corruption_atomically() -> vo
 	assert_true(loaded.is_dead(&"b"))
 	data = save.to_data()
 	data.world.erase("life")
-	assert_true(loaded.from_data(data))
-	assert_true(loaded.life.get_person("a").is_empty())
+	assert_false(loaded.from_data(data))
+	assert_eq(loaded.life.get_person("a").space, "home:a")
 	assert_true(loaded.is_dead(&"b"))
 
 func test_hearsay_enters_memory_with_source_and_player_identity_is_explicit() -> void:
@@ -138,6 +202,7 @@ func test_forgotten_hearsay_cannot_repeat_its_trust_penalty_after_save() -> void
 	assert_true(memory.snapshot("listener").memories.is_empty())
 	assert_eq(memory.snapshot("listener").relationship.trust, -0.03)
 	var loaded := NpcMemoryStore.new()
+	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(memory.minds.to_data()))))
 	assert_true(loaded.from_save_data(JSON.parse_string(JSON.stringify(memory.to_save_data()))))
 	loaded.record_hearsay(profile, account, policy)
 	assert_eq(loaded.snapshot("listener").relationship.trust, -0.03)

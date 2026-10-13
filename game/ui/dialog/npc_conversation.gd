@@ -58,9 +58,12 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 	if not store.commit_exchange(id, message, result, policy, recalled, state.recent_events):
 		return {}
 	if persist:
-		var error: Error = save_callback.call() if save_callback.is_valid() else store.save_file()
-		if error != OK:
-			push_warning("NPC memory could not be saved: %s" % error)
+		if not save_callback.is_valid():
+			push_error("NPC conversation cannot persist without a save callback.")
+		else:
+			var error: Error = save_callback.call()
+			if error != OK:
+				push_warning("NPC memory could not be saved: %s" % error)
 	# Only the assessed policy can end a completed exchange, never generated dialogue metadata.
 	result["end_conversation"] = policy.get("end_conversation", false)
 	result["surrender"] = policy.get("interaction_intent", "OTHER") == "SURRENDER"

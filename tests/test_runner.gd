@@ -19,7 +19,10 @@ func _process(_delta: float) -> bool:
 func _run_tests() -> void:
 	# Exercise the real application boundary without touching the player's save or providers.
 	var cognition: Node = root.get_node("NpcCognition")
-	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-tests-%s.json" % OS.get_process_id())
+	var temp_base: String = OS.get_temp_dir().path_join("arcadia-tests-%s" % OS.get_process_id())
+	cognition.save_game.path = temp_base + ".json"
+	cognition.save_game.legacy_world_path = temp_base + "-legacy-world.json"
+	cognition.save_game.legacy_memory_path = temp_base + "-legacy-memory.json"
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
 	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"

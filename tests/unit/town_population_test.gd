@@ -31,17 +31,23 @@ func test_population_is_seeded_and_families_are_reciprocal() -> void:
 	different.ensure_population(17)
 	assert_ne(town.to_data(), different.to_data())
 
-func test_old_save_expands_without_erasing_history_or_old_ties() -> void:
+func test_migrated_v1_save_without_population_expands_without_erasing_history_or_old_ties() -> void:
 	var save := NpcWorldSave.new()
-	save.region_seed = 123
-	save.mark_dead(&"garrin_holt")
 	save.life.ensure_person("mirelle_voss", 123, ["mirelle_voss", "cassian_vale"], ["square"])
 	var old_tie: Dictionary = save.life.get_person("mirelle_voss").ties.cassian_vale
-	var old: Dictionary = save.to_data()
-	old.world.erase("population")
-	old.world.erase("economy")
-	old.world.erase("justice")
-	assert_true(save.from_data(old))
+	# A v1 world from before population, economy and justice existed: ties lived on the person.
+	var life: Dictionary = save.life.to_data()
+	life.people.mirelle_voss.ties = save.life.get_person("mirelle_voss").ties
+	var old: Dictionary = {"version": 1,
+		"world": {"dead_npcs": ["garrin_holt"], "region_seed": 123,
+			"life": {"version": 1, "minute": life.minute, "next_event": life.next_event,
+				"people": life.people, "rumors": life.rumors.known, "personalities": life.personalities}},
+		"memory": {"version": 1, "turn": 0, "world_minute": 480.0, "next_memory_id": 1, "npcs": {}}}
+	var upgraded: Dictionary = NpcSaveMigration.upgrade(old)
+	assert_true(upgraded.ok)
+	save = NpcWorldSave.new()
+	assert_true(save.from_data(upgraded.data))
+	assert_true(save.population.people.is_empty())
 	save.population.ensure_population(save.region_seed)
 	var ids: Array[String] = []
 	ids.assign(save.population.people.keys())

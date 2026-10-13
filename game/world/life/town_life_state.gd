@@ -4,6 +4,8 @@ extends RefCounted
 ## Save-owned daily life. No scene nodes or provider clients are serialized.
 signal time_changed(minute: float)
 
+const VERSION: int = 2
+
 var minute: float = 480.0:
 	set(value):
 		minute = value
@@ -12,6 +14,9 @@ var rumors := TownRumors.new()
 var _people: Dictionary = {}
 var _next_event: int = 1
 var _personalities: Dictionary = {}
+var _next_social_receipt: int = 1
+## Owner of directed relationships; NpcWorldSave shares one instance with NpcMemoryStore.
+var minds: NpcMindStore = NpcMindStore.new()
 
 func personality_for(id: String, seed_value: int) -> Dictionary:
 	if not _personalities.has(id):
@@ -35,32 +40,32 @@ func issue_event_id() -> String:
 
 func ensure_person(id: String, seed_value: int, residents: Array[String], places: Array[String],
 		population: TownPopulation = null) -> void:
+	var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
 	if not _people.has(id):
 		var random := NpcRoutinePlan.random_for(seed_value, id + ":social")
-		var ties: Dictionary = {}
 		var sorted: Array[String] = residents.duplicate()
 		sorted.sort()
 		for other: String in sorted:
 			if other != id:
-				ties[other] = {"familiarity": random.randf_range(0.45, 0.95),
-					"trust": random.randf_range(-0.25, 0.65), "affection": random.randf_range(-0.4, 0.7)}
-		_people[id] = {"plan_day": -1, "plan": [], "ties": ties,
+				relationships.seed_relationship(other, {"familiarity": random.randf_range(0.45, 0.95),
+					"trust": random.randf_range(-0.25, 0.65), "affection": random.randf_range(-0.4, 0.7)})
+		_people[id] = {"plan_day": -1, "plan": [],
 			"activity": "rest", "place": "home:" + id, "until": minute,
 			"social_after": minute + random.randf_range(1, 12), "encounters": 0,
 			"position": [], "recent_social": [], "decision": {}, "safety": {}}
 	var person: Dictionary = _people[id]
-	# A pre-expansion save already contains its original ties. Add only missing neighbors.
+	# An existing save already contains its original relationships. Add only missing neighbors.
 	for other: String in residents:
-		if other == id or person.ties.has(other):
+		if other == id or relationships.has_subject(other):
 			continue
 		var random := NpcRoutinePlan.random_for(seed_value, id + ":tie:" + other)
-		person.ties[other] = {"familiarity": random.randf_range(0.45, 0.95),
-			"trust": random.randf_range(-0.25, 0.65), "affection": random.randf_range(-0.4, 0.7)}
+		relationships.seed_relationship(other, {"familiarity": random.randf_range(0.45, 0.95),
+			"trust": random.randf_range(-0.25, 0.65), "affection": random.randf_range(-0.4, 0.7)})
 	if population != null and not person.get("family_initialized", false):
 		for relative: String in population.people[id].kin:
 			var random := NpcRoutinePlan.random_for(seed_value, id + ":family:" + relative)
-			person.ties[relative] = {"familiarity": 1.0, "trust": random.randf_range(0.25, 0.9),
-				"affection": random.randf_range(0.25, 0.95)}
+			relationships.seed_relationship(relative, {"familiarity": 1.0,
+				"trust": random.randf_range(0.25, 0.9), "affection": random.randf_range(0.25, 0.95)}, true)
 		person.family_initialized = true
 	if person.plan_day != day() or person.get("plan_revision", 0) != NpcRoutinePlan.REVISION:
 		person.plan = NpcRoutinePlan.generate(seed_value, id, day(), places) if population == null \
@@ -70,8 +75,21 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 		if not NpcSafetyState.sheltering(person.safety, minute):
 			person.until = minute
 
+## Temporary read adapter over the mind store: resident subjects only, three dimensions.
 func get_person(id: String) -> Dictionary:
-	return _people.get(id, {}).duplicate(true)
+	if not _people.has(id):
+		return {}
+	var person: Dictionary = _people[id].duplicate(true)
+	var ties: Dictionary = {}
+	if minds.has_mind(id):
+		var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
+		for other: String in relationships.subjects():
+			if other == "player":
+				continue
+			var tie: Dictionary = relationships.get_relationship(other)
+			ties[other] = {"familiarity": tie.familiarity, "trust": tie.trust, "affection": tie.affection}
+	person.ties = ties
+	return person
 
 func select_activity(id: String, activity: Dictionary, duration: float, diagnostic: Dictionary) -> void:
 	if not _people.has(id):
@@ -119,20 +137,26 @@ func remember_exchange(id: String, other: String, text: String, disposition: flo
 	person.recent_social.append({"with": other, "text": text.substr(0, 500), "minute": minute})
 	while person.recent_social.size() > 6:
 		person.recent_social.pop_front()
-	if person.ties.has(other):
-		person.ties[other].familiarity = minf(1, person.ties[other].familiarity + 0.02)
-		person.ties[other].affection = clampf(person.ties[other].affection + clampf(disposition, -0.04, 0.04), -1, 1)
+	var receipt: String = "social:%s:%s:%d" % [id, other, _next_social_receipt]
+	_next_social_receipt += 1
+	var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
+	if relationships.has_subject(other):
+		relationships.apply_delta(other, {"familiarity": 0.02,
+			"affection": clampf(disposition, -0.04, 0.04)}, receipt)
 
 func to_data() -> Dictionary:
-	return {"version": 1, "minute": minute, "next_event": _next_event,
+	return {"version": VERSION, "minute": minute, "next_event": _next_event,
+		"next_social_receipt": _next_social_receipt,
 		"people": _people.duplicate(true), "rumors": rumors.to_data(),
 		"personalities": _personalities.duplicate(true)}
 
 func from_data(data: Variant) -> bool:
-	if not data is Dictionary or data.get("version") != 1:
+	if not data is Dictionary or not NpcMemory.is_integer(data.get("version")) \
+		or int(data.version) != VERSION:
 		return false
 	if not _number(data.get("minute")) or data.minute < 0 \
-		or not NpcMemory.is_integer(data.get("next_event")) or data.next_event < 1:
+		or not NpcMemory.is_integer(data.get("next_event")) or data.next_event < 1 \
+		or not NpcMemory.is_integer(data.get("next_social_receipt")) or data.next_social_receipt < 1:
 		return false
 	if not data.get("people") is Dictionary or data.people.size() > 512:
 		return false
@@ -150,10 +174,8 @@ func from_data(data: Variant) -> bool:
 			return false
 	minute = float(data.minute)
 	_next_event = int(data.next_event)
+	_next_social_receipt = int(data.next_social_receipt)
 	_people = data.people.duplicate(true)
-	for person: Dictionary in _people.values():
-		if not person.has("safety"):
-			person.safety = {}
 	_personalities = personalities.duplicate(true)
 	rumors.from_data(validated.to_data())
 	return true
@@ -166,7 +188,8 @@ static func _valid_person(person: Variant) -> bool:
 		return false
 	if person.has("family_initialized") and not person.family_initialized is bool:
 		return false
-	if not NpcSafetyState.is_valid(person.get("safety", {})):
+	if person.has("ties") or not person.get("safety") is Dictionary \
+		or not NpcSafetyState.is_valid(person.safety):
 		return false
 	if not person.get("space", "outdoors") is String or person.get("space", "outdoors").length() > 200:
 		return false
@@ -187,15 +210,6 @@ static func _valid_person(person: Variant) -> bool:
 			or slot.minute >= 1440 or not slot.get("kind") is String or not slot.get("place") is String:
 			return false
 		previous = slot.minute
-	if not person.get("ties") is Dictionary or person.ties.size() > 512:
-		return false
-	for other: Variant in person.ties:
-		var tie: Variant = person.ties[other]
-		if not other is String or not tie is Dictionary or not NpcMemory.is_unit(tie.get("familiarity")):
-			return false
-		for key: String in ["trust", "affection"]:
-			if not _number(tie.get(key)) or absf(tie[key]) > 1:
-				return false
 	if not person.get("position") is Array or not person.position.size() in [0, 2]:
 		return false
 	for coordinate: Variant in person.position:

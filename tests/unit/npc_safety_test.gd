@@ -40,7 +40,7 @@ func test_old_assessments_noise_and_day_boundaries_cannot_overwrite_a_retreat() 
 	state.assess_perception("a", _event("world:3"), {"safety_response": "SHELTER"})
 	assert_false(NpcSafetyState.sheltering(state.get_person("a").safety, state.minute))
 
-func test_safety_concerns_round_trip_and_invalid_or_legacy_saves_are_handled_atomically() -> void:
+func test_safety_concerns_round_trip_and_invalid_saves_are_rejected_atomically() -> void:
 	var state := TownLifeState.new()
 	state.ensure_person("a", 42, ["a"], ["market"])
 	state.notice_perception("a", _event(), "home:a")
@@ -51,9 +51,10 @@ func test_safety_concerns_round_trip_and_invalid_or_legacy_saves_are_handled_ato
 	saved.people.a.safety.until = NAN
 	assert_false(loaded.from_data(saved))
 	assert_true(NpcSafetyState.sheltering(loaded.get_person("a").safety, loaded.minute))
+	# Older saves gain an empty concern during migration; a current save must carry one.
 	saved.people.a.erase("safety")
-	assert_true(loaded.from_data(saved))
-	assert_true(loaded.get_person("a").safety.is_empty())
+	assert_false(loaded.from_data(saved))
+	assert_true(NpcSafetyState.sheltering(loaded.get_person("a").safety, loaded.minute))
 
 func test_unrelated_events_do_not_create_safety_concerns() -> void:
 	var event: Dictionary = _event()

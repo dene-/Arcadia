@@ -1,9 +1,9 @@
 extends "res://tests/test_case.gd"
 
-## Characterizes the v1 NpcWorldSave format with synthetic saves generated from the v1 code.
+## File-level migration acceptance for the synthetic v1 saves generated from the v1 code.
 const DIR: String = "res://tests/fixtures/cognition/"
-const ROUND_TRIP: Array[String] = ["v1_empty", "v1_town", "v1_town_rerolled", "v1_deaths",
-	"v1_observations", "v1_rumors", "v1_prospective"]
+const V1: Array[String] = ["v1_empty", "v1_town", "v1_town_rerolled", "v1_deaths",
+	"v1_observations", "v1_rumors", "v1_prospective", "v1_missing_optional"]
 
 func _text(name: String) -> String:
 	return FileAccess.get_file_as_string(DIR + name + ".json")
@@ -11,9 +11,12 @@ func _text(name: String) -> String:
 func _fixture(name: String) -> Dictionary:
 	return JSON.parse_string(_text(name)) as Dictionary
 
+## Loads a v1 fixture through the migration, exactly as load_file does for a legacy file.
 func _load(name: String) -> NpcWorldSave:
 	var save := NpcWorldSave.new()
-	assert_true(save.from_data(_fixture(name)), name + " must load")
+	var upgraded: Dictionary = NpcSaveMigration.upgrade(_fixture(name))
+	assert_true(upgraded.ok, name + " must migrate")
+	assert_true(save.from_data(upgraded.data), name + " must load")
 	return save
 
 func _normalized(data: Dictionary) -> Dictionary:
@@ -26,6 +29,22 @@ func _write_text(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(text)
 	file.close()
+
+## A save whose three paths are private temp files; none exist until a test writes them.
+func _isolated(name: String) -> NpcWorldSave:
+	var save := NpcWorldSave.new()
+	save.path = _temp(name + "-v2")
+	save.legacy_world_path = _temp(name + "-world")
+	save.legacy_memory_path = _temp(name + "-memory")
+	_remove(save)
+	return save
+
+func _remove(save: NpcWorldSave) -> void:
+	for path: String in [save.path, save.legacy_world_path, save.legacy_memory_path, save.path + ".tmp"]:
+		DirAccess.remove_absolute(path)
+	for name: String in DirAccess.get_files_at(OS.get_temp_dir()):
+		if name.begins_with(save.path.get_file() + ".reset-"):
+			DirAccess.remove_absolute(OS.get_temp_dir().path_join(name))
 
 func _profile(id: String) -> NpcProfile:
 	var profile := NpcProfile.new()
@@ -41,19 +60,113 @@ func _count_source(save: NpcWorldSave, id: String, source: String) -> int:
 		count += int(memory.source == source)
 	return count
 
-func test_valid_v1_fixtures_reserialize_unchanged_from_data_and_from_disk() -> void:
-	for name: String in ROUND_TRIP:
-		var data: Dictionary = _fixture(name)
-		var save := NpcWorldSave.new()
-		assert_true(save.from_data(data), name + " must load")
-		assert_eq(_normalized(save.to_data()), data, name + " changed on re-serialization")
-		var path: String = _temp(name)
-		_write_text(path, _text(name))
-		var from_disk := NpcWorldSave.new()
-		from_disk.path = path
-		assert_eq(from_disk.load_file(_temp("absent-legacy")), OK, name)
-		assert_eq(_normalized(from_disk.to_data()), data, name + " changed through load_file")
-		DirAccess.remove_absolute(path)
+func test_v1_world_file_migrates_on_load_and_only_save_writes_v2() -> void:
+	for name: String in V1:
+		var save: NpcWorldSave = _isolated(name)
+		_write_text(save.legacy_world_path, _text(name))
+		assert_eq(save.load_file(), OK, name)
+		assert_false(FileAccess.file_exists(save.path), name + " wrote v2 during load")
+		assert_eq(FileAccess.get_file_as_string(save.legacy_world_path), _text(name), name)
+		var expected: Dictionary = NpcSaveMigration.upgrade(_fixture(name)).data
+		expected.migration.source_digest = NpcSaveMigration.digest(_text(name))
+		assert_eq(_normalized(save.to_data()), _normalized(expected), name)
+		assert_eq(save.save_file(), OK, name)
+		assert_eq(FileAccess.get_file_as_string(save.legacy_world_path), _text(name), name + " touched v1")
+		assert_false(FileAccess.file_exists(save.legacy_memory_path), name)
+		var reloaded := NpcWorldSave.new()
+		reloaded.path = save.path
+		reloaded.legacy_world_path = _temp("absent-world")
+		reloaded.legacy_memory_path = _temp("absent-memory")
+		assert_eq(reloaded.load_file(), OK, name)
+		assert_eq(_normalized(reloaded.to_data()), _normalized(save.to_data()), name + " changed through v2")
+		assert_eq(reloaded.migration.source_version, NpcSaveMigration.SOURCE_WORLD_V1, name)
+		_remove(save)
+
+func test_memory_only_legacy_file_loads_when_the_world_file_is_missing_and_migrates_on_save() -> void:
+	var save: NpcWorldSave = _isolated("memory-only")
+	var text: String = _text("memory_only_legacy")
+	_write_text(save.legacy_memory_path, text)
+	assert_eq(save.load_file(), OK)
+	assert_false(FileAccess.file_exists(save.path))
+	assert_eq(save.life.minute, 1234.0)
+	assert_eq(save.memory.world_minute, 1234.0)
+	var source: Dictionary = _fixture("memory_only_legacy")
+	for id: String in source.npcs:
+		assert_eq(save.memory.snapshot(id).relationship, source.npcs[id].relationship, id)
+		assert_eq(save.memory.snapshot(id).memories, source.npcs[id].memories, id)
+	assert_true(save.dead_npcs.is_empty())
+	assert_true(save.population.people.is_empty())
+	assert_true(save.deaths.records.is_empty())
+	assert_eq(save.region_seed, 0)
+	assert_eq(save.migration, {"source_version": NpcSaveMigration.SOURCE_MEMORY_ONLY,
+		"source_digest": NpcSaveMigration.digest(text), "revision": NpcSaveMigration.REVISION})
+	assert_eq(save.save_file(), OK)
+	assert_eq(FileAccess.get_file_as_string(save.legacy_memory_path), text)
+	assert_false(FileAccess.file_exists(save.legacy_world_path))
+	var migrated := NpcWorldSave.new()
+	migrated.path = save.path
+	migrated.legacy_world_path = _temp("absent-world")
+	migrated.legacy_memory_path = _temp("absent-memory")
+	assert_eq(migrated.load_file(), OK)
+	assert_eq(migrated.life.minute, 1234.0)
+	assert_eq(_normalized(migrated.memory.to_save_data()), _normalized(save.memory.to_save_data()))
+	_remove(save)
+
+func test_invalid_and_future_v1_files_are_corrupt_and_never_create_v2() -> void:
+	for name: String in ["invalid_schema", "future_version"]:
+		for legacy_memory: bool in [false, true]:
+			var save: NpcWorldSave = _isolated(name)
+			assert_true(save.from_data(_load("v1_town").to_data()))
+			var before: Dictionary = save.to_data()
+			var source: String = save.legacy_memory_path if legacy_memory else save.legacy_world_path
+			_write_text(source, _text(name))
+			assert_eq(save.load_file(), ERR_FILE_CORRUPT, name)
+			assert_eq(save.to_data(), before, name + " mutated a loaded save")
+			assert_eq(save.save_file(), ERR_FILE_CORRUPT, name + " must not be replaced")
+			assert_false(FileAccess.file_exists(save.path), name + " created v2")
+			assert_eq(FileAccess.get_file_as_string(source), _text(name))
+			_remove(save)
+
+func test_existing_v2_wins_over_legacy_files() -> void:
+	var save: NpcWorldSave = _isolated("v2-wins")
+	assert_true(save.from_data(_load("v1_deaths").to_data()))
+	assert_eq(save.save_file(), OK)
+	_write_text(save.legacy_world_path, _text("v1_town"))
+	_write_text(save.legacy_memory_path, _text("memory_only_legacy"))
+	var loaded := NpcWorldSave.new()
+	loaded.path = save.path
+	loaded.legacy_world_path = save.legacy_world_path
+	loaded.legacy_memory_path = save.legacy_memory_path
+	assert_eq(loaded.load_file(), OK)
+	assert_eq(loaded.to_data(), save.to_data())
+	assert_eq(loaded.deaths.records.size(), 6)
+	var broken: String = FileAccess.get_file_as_string(save.path).replace("\"version\":2", "\"version\":7")
+	_write_text(save.path, broken)
+	assert_eq(loaded.load_file(), ERR_FILE_CORRUPT, "A bad v2 never falls back to legacy files.")
+	assert_eq(loaded.save_file(), ERR_FILE_CORRUPT)
+	_remove(save)
+
+func test_reset_writes_only_v2_and_backs_up_the_previous_v2() -> void:
+	var save: NpcWorldSave = _isolated("reset")
+	_write_text(save.legacy_world_path, _text("v1_town"))
+	assert_eq(save.load_file(), OK)
+	assert_eq(save.save_file(), OK)
+	var previous: String = FileAccess.get_file_as_string(save.path)
+	assert_eq(save.reset(true), OK)
+	assert_eq(save.region_seed, 274415)
+	assert_eq(FileAccess.get_file_as_string(save.legacy_world_path), _text("v1_town"))
+	assert_false(FileAccess.file_exists(save.legacy_memory_path))
+	var backups: Array[String] = []
+	for name: String in DirAccess.get_files_at(OS.get_temp_dir()):
+		if name.begins_with(save.path.get_file() + ".reset-") and name.ends_with(".bak"):
+			backups.append(OS.get_temp_dir().path_join(name))
+	assert_eq(backups.size(), 1)
+	assert_eq(FileAccess.get_file_as_string(backups[0]), previous)
+	var written: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(save.path))
+	assert_eq(int(written.version), NpcWorldSave.SAVE_VERSION)
+	assert_eq(int(written.migration.source_version), NpcSaveMigration.SOURCE_NEW_WORLD)
+	assert_true(written.memory.npcs.is_empty())
+	_remove(save)
 
 func test_town_fixture_holds_population_economy_justice_safety_and_two_memory_states() -> void:
 	var save: NpcWorldSave = _load("v1_town")
@@ -65,9 +178,9 @@ func test_town_fixture_holds_population_economy_justice_safety_and_two_memory_st
 	var life: Dictionary = save.life.to_data()
 	assert_eq(life.people.size(), 33)
 	assert_eq(life.personalities.size(), 33)
-	assert_eq(life.people.garrin_holt.ties.size(), 32)
-	assert_eq(life.people.garrin_holt.ties.holt_partner.familiarity, 1.0, "Kin ties are initialized.")
-	assert_true(life.rumors.is_empty())
+	assert_eq(save.life.get_person("garrin_holt").ties.size(), 32)
+	assert_eq(save.life.get_person("garrin_holt").ties.holt_partner.familiarity, 1.0, "Kin ties are initialized.")
+	assert_true(life.rumors.known.is_empty())
 	var total: int = save.economy.treasury
 	var changed: int = 0
 	for coins: int in save.economy.accounts.values():
@@ -238,69 +351,3 @@ func test_prospective_fixture_has_one_completed_and_one_open_intention() -> void
 	assert_eq(_memories(save, "garrin_holt").filter(
 		func(memory: Dictionary) -> bool: return memory.completed).size(), 2)
 	assert_false(save.memory.complete_intention("garrin_holt", "mem:9999"))
-
-func test_missing_optional_keys_are_defaulted_on_load() -> void:
-	var data: Dictionary = _fixture("v1_missing_optional")
-	assert_false(data.world.has("npc_seed"))
-	assert_false(data.world.life.has("personalities"))
-	for person: Dictionary in data.world.life.people.values():
-		assert_false(person.has("safety"))
-	for state: Dictionary in data.memory.npcs.values():
-		assert_false(state.has("observations") or state.has("next_observation_id") or state.has("heard_origins"))
-	var save := NpcWorldSave.new()
-	assert_true(save.from_data(data))
-	var expected: Dictionary = _fixture("v1_town")
-	expected.world.npc_seed = 0
-	expected.world.life.personalities = {}
-	for person: Dictionary in expected.world.life.people.values():
-		person.safety = {}
-	for state: Dictionary in expected.memory.npcs.values():
-		state.observations = []
-		state.next_observation_id = 1
-		state.heard_origins = {}
-	assert_eq(_normalized(save.to_data()), _normalized(expected))
-	assert_eq(save.npc_seed, 0)
-	assert_true(save.life.to_data().personalities.is_empty())
-	assert_true(save.life.get_person("rowan_sibling_b").safety.is_empty())
-	var restored: Dictionary = save.life.personality_for("sella_rowan", save.get_npc_seed())
-	var original: Dictionary = _load("v1_town").life.personality_for("sella_rowan", 274415)
-	assert_eq(restored.voice, original.voice, "Missing personalities regenerate deterministically.")
-
-func test_memory_only_legacy_file_loads_when_the_world_file_is_missing_and_migrates_on_save() -> void:
-	var legacy: String = _temp("legacy-memory")
-	_write_text(legacy, _text("memory_only_legacy"))
-	var save := NpcWorldSave.new()
-	save.path = _temp("world-missing")
-	DirAccess.remove_absolute(save.path)
-	assert_eq(save.load_file(legacy), OK)
-	assert_eq(save.life.minute, 1234.0)
-	assert_eq(save.memory.world_minute, 1234.0)
-	assert_eq(_normalized(save.memory.to_save_data()), _fixture("memory_only_legacy"))
-	assert_true(save.dead_npcs.is_empty())
-	assert_true(save.population.people.is_empty())
-	assert_true(save.deaths.records.is_empty())
-	assert_eq(save.region_seed, 0)
-	assert_eq(save.save_file(), OK)
-	var migrated := NpcWorldSave.new()
-	migrated.path = save.path
-	assert_eq(migrated.load_file(_temp("absent-legacy")), OK)
-	assert_eq(migrated.life.minute, 1234.0)
-	assert_eq(_normalized(migrated.memory.to_save_data()), _fixture("memory_only_legacy"))
-	DirAccess.remove_absolute(legacy)
-	DirAccess.remove_absolute(save.path)
-
-func test_invalid_and_future_fixtures_are_rejected_and_leave_loaded_state_unchanged() -> void:
-	for name: String in ["invalid_schema", "future_version"]:
-		var save: NpcWorldSave = _load("v1_town")
-		var before: Dictionary = save.to_data()
-		assert_false(save.from_data(_fixture(name)), name)
-		assert_eq(save.to_data(), before, name + " mutated a loaded save")
-		var path: String = _temp(name)
-		_write_text(path, _text(name))
-		var from_disk: NpcWorldSave = _load("v1_town")
-		from_disk.path = path
-		assert_eq(from_disk.load_file(_temp("absent-legacy")), ERR_FILE_CORRUPT, name)
-		assert_eq(from_disk.to_data(), before)
-		assert_eq(from_disk.save_file(), ERR_FILE_CORRUPT, name + " must not be overwritten")
-		assert_eq(FileAccess.get_file_as_string(path), _text(name))
-		DirAccess.remove_absolute(path)

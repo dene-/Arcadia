@@ -34,6 +34,8 @@ func _initialize() -> void:
 func _run() -> void:
 	var cognition: Node = root.get_node("NpcCognition")
 	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-town-test-%d.json" % OS.get_process_id())
+	cognition.save_game.legacy_world_path = cognition.save_game.path + ".legacy-world"
+	cognition.save_game.legacy_memory_path = cognition.save_game.path + ".legacy-memory"
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
 	var backend := MockLifeBackend.new()
@@ -124,6 +126,8 @@ func _run() -> void:
 	await process_frame
 	var restored := NpcWorldSave.new()
 	restored.path = cognition.save_game.path
+	restored.legacy_world_path = cognition.save_game.legacy_world_path
+	restored.legacy_memory_path = cognition.save_game.legacy_memory_path
 	if restored.load_file() != OK:
 		failures.append("Town save did not reload")
 	DirAccess.remove_absolute(cognition.save_game.path)

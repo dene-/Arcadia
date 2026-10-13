@@ -38,10 +38,11 @@ func setup(scene_tree: SceneTree) -> void:
 	save_path = OS.get_temp_dir().path_join("arcadia-sim-%d-%d.json" % [OS.get_process_id(), _counter])
 	var save: NpcWorldSave = _cognition.save_game
 	save.path = save_path
+	save.legacy_world_path = save_path + ".legacy-world"
+	save.legacy_memory_path = save_path + ".legacy-memory"
 	save.from_data(NpcWorldSave.new().to_data())
-	# The temp path does not exist, so this only clears the read-only latch left by a real save.
-	var legacy_path: String = save_path + ".legacy"
-	var error: Error = save.load_file(legacy_path)
+	# No temp file exists, so this only clears the read-only latch left by a real save.
+	var error: Error = save.load_file()
 	if error != OK:
 		_fail("Could not initialize the temporary save: %s" % error)
 	save.region_seed = region_seed
@@ -172,8 +173,10 @@ func reload_save() -> Dictionary:
 	var effects_before: Dictionary = _normalize(save_effects(save))
 	var reloaded := NpcWorldSave.new()
 	reloaded.path = save.path
+	reloaded.legacy_world_path = save.legacy_world_path
+	reloaded.legacy_memory_path = save.legacy_memory_path
 	if error == OK:
-		error = reloaded.load_file(save.path + ".legacy")
+		error = reloaded.load_file()
 	return {"error": error, "before": before, "after": _normalize(reloaded.to_data()),
 		"effects_before": effects_before, "effects_after": _normalize(save_effects(reloaded))}
 

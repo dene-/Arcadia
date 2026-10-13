@@ -17,15 +17,19 @@ func transition(id: String, stage: String, minute: float) -> void:
 	records[id].since = minute
 
 func to_data() -> Dictionary:
-	return records.duplicate(true)
+	return {"version": 1, "records": records.duplicate(true)}
 
 func from_data(data: Variant) -> bool:
-	if not data is Dictionary or data.size() > 512:
+	if not data is Dictionary or data.size() != 2 or not NpcMemory.is_integer(data.get("version")) \
+		or int(data.version) != 1:
 		return false
-	for id: Variant in data:
+	var saved: Variant = data.get("records")
+	if not saved is Dictionary or saved.size() > 512:
+		return false
+	for id: Variant in saved:
 		if not id is String or id.is_empty() or id.length() > 100:
 			return false
-		var entry: Variant = data[id]
+		var entry: Variant = saved[id]
 		if not entry is Dictionary or not entry.get("stage") in STAGES:
 			return false
 		for key: String in ["space", "reporter", "guard"]:
@@ -41,7 +45,7 @@ func from_data(data: Variant) -> bool:
 		for key: String in ["known_by", "burial_known_by"]:
 			if not NpcMemory.is_text_list(entry.get(key), 512):
 				return false
-	records = data.duplicate(true)
+	records = saved.duplicate(true)
 	return true
 
 static func _number(value: Variant) -> bool:

@@ -184,7 +184,11 @@ func _is_recent(event: Dictionary) -> bool:
 	return Time.get_unix_time_from_system() - float(event.created_at) <= REACTION_MAX_AGE
 
 func _save() -> void:
-	if persist:
-		var error: Error = save_callback.call() if save_callback.is_valid() else store.save_file()
-		if error != OK:
-			push_warning("NPC observation could not be saved: %s" % error)
+	if not persist:
+		return
+	if not save_callback.is_valid():
+		push_error("NPC event processor cannot persist without a save callback.")
+		return
+	var error: Error = save_callback.call()
+	if error != OK:
+		push_warning("NPC observation could not be saved: %s" % error)

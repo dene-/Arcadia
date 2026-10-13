@@ -28,16 +28,27 @@ func test_death_stages_round_trip_atomically_without_resurrecting_legacy_deaths(
 		assert_true(restored.from_data(save.to_data()))
 		assert_eq(restored.deaths.records.victim, save.deaths.records.victim)
 	var corrupt: Dictionary = save.to_data()
-	corrupt.world.deaths.victim.position[0] = "invalid"
+	corrupt.world.deaths.records.victim.position[0] = "invalid"
 	assert_false(save.from_data(corrupt))
 	assert_eq(save.deaths.records.victim.stage, "buried")
 	corrupt = save.to_data()
 	corrupt.world.dead_npcs.clear()
 	assert_false(save.from_data(corrupt))
-	var legacy: Dictionary = save.to_data()
+	var unversioned: Dictionary = save.to_data()
+	unversioned.world.deaths = unversioned.world.deaths.records
+	assert_false(save.from_data(unversioned), "Deaths must use the versioned shape.")
+	var incomplete: Dictionary = save.to_data()
+	incomplete.world.erase("deaths")
+	assert_false(save.from_data(incomplete), "Defaults for missing deaths are the migration's job.")
+	assert_eq(save.deaths.records.victim.stage, "buried")
+	var legacy: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://tests/fixtures/cognition/v1_deaths.json"))
 	legacy.world.erase("deaths")
-	assert_true(save.from_data(legacy))
-	assert_true(save.is_dead(&"victim"))
+	var upgraded: Dictionary = NpcSaveMigration.upgrade(legacy)
+	assert_true(upgraded.ok)
+	assert_true(save.from_data(upgraded.data))
+	assert_eq(save.dead_npcs.size(), legacy.world.dead_npcs.size())
+	assert_false(save.dead_npcs.is_empty())
 	assert_true(save.deaths.records.is_empty())
 
 func test_noise_has_distinct_waking_and_orientation_beats_without_timer_starvation() -> void:

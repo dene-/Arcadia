@@ -8,11 +8,13 @@ class InspectorNpc extends BaseNpc:
 var _npc: BaseNpc
 var _store: NpcMemoryStore
 var _saved_state: Dictionary
+var _saved_minds: Dictionary
 
 func before_each() -> void:
 	var tree: SceneTree = Engine.get_main_loop()
 	_store = tree.root.get_node("DialogManager").get_memory_store()
 	_saved_state = _store.to_save_data()
+	_saved_minds = _store.minds.to_data()
 	var scene: PackedScene = load("res://game/actors/npcs/base_npc.tscn")
 	_npc = scene.instantiate()
 	var data: NpcData = _npc.npc_data.duplicate()
@@ -30,6 +32,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	_npc.free()
+	_store.minds.from_data(_saved_minds)
 	_store.from_save_data(_saved_state)
 
 func test_inspection_does_not_initialize_or_serialize_runtime_state() -> void:

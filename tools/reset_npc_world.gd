@@ -3,7 +3,7 @@ extends SceneTree
 ## Stop the game, then run this script with -- --confirm to start a fresh NPC world.
 func _initialize() -> void:
 	if not "--confirm" in OS.get_cmdline_user_args():
-		print("No changes made. Stop the game and pass -- --confirm to reset NPC deaths and memories.")
+		print("No changes made. Stop the game and pass -- --confirm to reset NPC deaths and memories in npc_world_v2.json.")
 		quit(1)
 		return
 	var save := NpcWorldSave.new()
@@ -18,9 +18,11 @@ func _initialize() -> void:
 		push_error("NPC world reset failed: %s" % error)
 		quit(1)
 		return
-	print("NPC deaths and memories reset. Existing combined save backed up beside npc_world.json.")
-	if keep_region:
+	print("NPC deaths and memories reset. Existing npc_world_v2.json backed up beside it; legacy saves untouched.")
+	if keep_region and save.region_seed != 0:
 		print("Saved region seed preserved.")
+	elif keep_region:
+		print("No saved region existed, so no region was preserved; a new region is generated on next play.")
 	if reroll_npcs:
 		print("New NPC seed saved. Personalities, relationships and routines regenerate on next play.")
 	quit()

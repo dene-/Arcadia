@@ -46,6 +46,8 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	assert_true(cognition.save_game.is_dead(&"flow_test"))
 	var restored := NpcWorldSave.new()
 	restored.path = cognition.save_game.path
+	restored.legacy_world_path = cognition.save_game.legacy_world_path
+	restored.legacy_memory_path = cognition.save_game.legacy_memory_path
 	assert_eq(restored.load_file(), OK)
 	assert_true(restored.is_dead(&"flow_test"))
 	var respawn: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()

@@ -151,30 +151,36 @@ func test_save_round_trip_is_independent_and_invalid_load_is_atomic() -> void:
 	store.ensure_npc(_profile())
 	store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
 	var data: Variant = JSON.parse_string(JSON.stringify(store.to_save_data()))
+	assert_false(data.npcs.test_npc.has("relationship"))
 	var restored := NpcMemoryStore.new()
+	assert_true(restored.minds.from_data(JSON.parse_string(JSON.stringify(store.minds.to_data()))))
 	assert_true(restored.from_save_data(data))
 	assert_eq(restored.snapshot("test_npc").memories[0].gist, "The player threatened my forge.")
+	assert_eq(restored.snapshot("test_npc").relationship, store.snapshot("test_npc").relationship)
+	assert_eq(restored.snapshot("test_npc").relationship.trust, -0.08)
 	data.npcs.test_npc.memories[0].confidence = 10
 	var before: Dictionary = restored.to_save_data()
 	assert_false(restored.from_save_data(data))
 	assert_eq(restored.to_save_data(), before)
 	assert_eq(store.snapshot("test_npc").memories[0].confidence, 0.6)
 
-func test_corrupt_save_is_preserved_and_valid_file_round_trips() -> void:
-	var path: String = "/tmp/arcadia-memory-test-%d.json" % Time.get_ticks_usec()
+func test_save_shape_requires_version_two_without_relationship() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
-	assert_eq(store.save_file(path), OK)
+	var data: Dictionary = store.to_save_data()
+	assert_eq(data.version, 2)
 	var restored := NpcMemoryStore.new()
-	assert_eq(restored.load_file(path), OK)
-	assert_false(restored.snapshot("test_npc").is_empty())
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	file.store_string("corrupt fixture")
-	file.close()
-	assert_eq(restored.load_file(path), ERR_FILE_CORRUPT)
-	assert_eq(restored.save_file(path), ERR_FILE_CORRUPT)
-	assert_eq(FileAccess.get_file_as_string(path), "corrupt fixture")
-	DirAccess.remove_absolute(path)
+	for key: String in ["recent_dialogue", "memories", "recent_events", "observations",
+			"next_observation_id", "heard_origins"]:
+		var broken: Dictionary = data.duplicate(true)
+		broken.npcs.test_npc.erase(key)
+		assert_false(restored.from_save_data(broken), key)
+	var legacy: Dictionary = data.duplicate(true)
+	legacy.npcs.test_npc.relationship = NpcRelationshipState.initial()
+	assert_false(restored.from_save_data(legacy))
+	legacy = data.duplicate(true)
+	legacy.version = 1
+	assert_false(restored.from_save_data(legacy))
 
 func test_all_authored_profiles_have_unique_ids_and_valid_memories() -> void:
 	var ids: Array[StringName] = []

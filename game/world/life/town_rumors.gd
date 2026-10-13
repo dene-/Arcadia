@@ -85,20 +85,24 @@ func _put(id: String, account: Dictionary, minute: float) -> void:
 	_known[id] = known
 
 func to_data() -> Dictionary:
-	return _known.duplicate(true)
+	return {"version": 1, "known": _known.duplicate(true)}
 
 func from_data(data: Variant) -> bool:
-	if not data is Dictionary or data.size() > 512:
+	if not data is Dictionary or data.size() != 2 or not NpcMemory.is_integer(data.get("version")) \
+		or int(data.version) != 1:
 		return false
-	for id: Variant in data:
-		if not id is String or id.is_empty() or not data[id] is Array or data[id].size() > MAX_KNOWN:
+	var known: Variant = data.get("known")
+	if not known is Dictionary or known.size() > 512:
+		return false
+	for id: Variant in known:
+		if not id is String or id.is_empty() or not known[id] is Array or known[id].size() > MAX_KNOWN:
 			return false
 		var seen: Array[String] = []
-		for item: Variant in data[id]:
+		for item: Variant in known[id]:
 			if not is_valid_account(item) or item.origin_id in seen:
 				return false
 			seen.append(item.origin_id)
-	_known = data.duplicate(true)
+	_known = known.duplicate(true)
 	return true
 
 static func is_valid_account(item: Variant) -> bool:

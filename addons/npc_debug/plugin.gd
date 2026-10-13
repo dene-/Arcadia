@@ -68,7 +68,7 @@ func _reset_npcs() -> void:
 		return
 	_show_message("NPC reset complete", "Press Play to start with everyone alive and fresh NPC lives.\n" \
 		+ "Previous save backed up beside:\n" \
-		+ ProjectSettings.globalize_path("user://npc_world.json"))
+		+ ProjectSettings.globalize_path("user://npc_world_v2.json"))
 
 func _show_message(title: String, message: String) -> void:
 	_message.title = title

@@ -4,16 +4,18 @@ extends RefCounted
 signal memories_admitted(npc_id: String, memories: Array)
 
 ## Save-owned cognition. Profiles are copied on first encounter, never mutated.
-const SAVE_VERSION: int = 1
+const SAVE_VERSION: int = 2
 const MAX_HISTORY: int = 12
-const SAVE_PATH: String = "user://npc_memory.json"
+const _STATE_KEYS: Array[String] = ["recent_dialogue", "memories", "recent_events",
+	"observations", "next_observation_id", "heard_origins"]
 
 var turn: int = 0
 var world_minute: float = 480.0
 var _states: Dictionary = {}
 var _next_memory_id: int = 1
-var _save_allowed: bool = true
 var _revisions: Dictionary[String, int] = {}
+## Owner of directed relationships; NpcWorldSave shares one instance with TownLifeState.
+var minds: NpcMindStore = NpcMindStore.new()
 
 func ensure_npc(profile: NpcProfile) -> void:
 	var id: String = String(profile.npc_id)
@@ -36,13 +38,17 @@ func ensure_npc(profile: NpcProfile) -> void:
 			memories.append(legacy)
 	for memory: Dictionary in memories:
 		NpcMemory.anchor_legacy(memory, world_minute, 0)
-	_states[id] = {"recent_dialogue": [], "memories": memories,
-		"relationship": NpcRelationshipState.initial(), "recent_events": [],
+	_states[id] = {"recent_dialogue": [], "memories": memories, "recent_events": [],
 		"observations": [], "next_observation_id": 1, "heard_origins": {}}
 	_changed(id)
 
+## Relationship is a read adapter over the mind store; it is never stored in memory state.
 func snapshot(npc_id: String) -> Dictionary:
-	return _states.get(npc_id, {}).duplicate(true)
+	if not _states.has(npc_id):
+		return {}
+	var state: Dictionary = _states[npc_id].duplicate(true)
+	state["relationship"] = minds.get_mind(npc_id).relationships.get_relationship("player")
+	return state
 
 ## Runtime invalidation token. Diagnostics and other NPCs cannot invalidate a response.
 func revision(npc_id: String) -> int:
@@ -65,8 +71,9 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 	state.heard_origins[account.origin_id] = true
 	_changed(String(profile.npc_id))
 	if account.player_involved and account.confidence >= 0.7:
-		state.relationship.trust = clampf(state.relationship.trust
-			+ clampf(policy.trust_player, -0.03, 0.03), -1, 1)
+		minds.get_mind(String(profile.npc_id)).relationships.apply_delta("player",
+			{"trust": clampf(policy.trust_player, -0.03, 0.03)},
+			"hearsay:%s:%s" % [profile.npc_id, account.origin_id])
 	if not policy.remember:
 		return
 	var gist: String = "%s told me that %s reported: %s" % [account.source_name,
@@ -143,7 +150,8 @@ func commit_observation(npc_id: String, observation_id: int, policy: Dictionary)
 		advance_time()
 		# Hearing noise alone cannot identify or change feelings toward the player.
 		if observation.player_involved and observation.sense != "hearing":
-			state.relationship = NpcRelationshipState.changed(state.relationship, policy.relationship_delta)
+			minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
+				"observation:%s:%d" % [npc_id, observation_id])
 		if policy.remember:
 			_admit(state.memories, {"type": "episodic", "source": "observed_event",
 				"gist": observation.text, "topics": observation.get("topics", ["combat"]),
@@ -178,7 +186,8 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 	var state: Dictionary = _states[npc_id]
 	_changed(npc_id)
 	advance_time()
-	state.relationship = NpcRelationshipState.changed(state.relationship, policy.relationship_delta)
+	minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
+		"exchange:%s:%d" % [npc_id, turn])
 	var history: Array = state.recent_dialogue
 	if not message.is_empty():
 		history.append({"speaker": "player", "text": message})
@@ -226,14 +235,17 @@ func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 		if not id is String or id.is_empty():
 			return false
 		var state: Variant = data.npcs[id]
-		if not state is Dictionary or not NpcRelationshipState.is_valid(state.get("relationship")):
+		if not state is Dictionary or state.size() != _STATE_KEYS.size():
 			return false
+		for key: String in _STATE_KEYS:
+			if not state.has(key):
+				return false
 		if not _valid_history(state.get("recent_dialogue")) \
 			or not state.get("memories") is Array or not _valid_events(state.get("recent_events")):
 			return false
-		if not _valid_observations(state.get("observations", []), state.get("next_observation_id", 1)):
+		if not _valid_observations(state.get("observations"), state.get("next_observation_id")):
 			return false
-		var origins: Variant = state.get("heard_origins", {})
+		var origins: Variant = state.get("heard_origins")
 		if not origins is Dictionary:
 			return false
 		for origin: Variant in origins:
@@ -250,50 +262,14 @@ func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 	_states = data.npcs.duplicate(true)
 	for id: String in _revisions.keys():
 		_changed(id)
-	# Existing version-1 saves gain the optional observation fields without losing memories.
+	# Memory shapes are strict: saves from older versions are upgraded by NpcSaveMigration.
 	for state: Dictionary in _states.values():
-		if not state.has("observations"):
-			state.observations = []
-		if not state.has("next_observation_id"):
-			state.next_observation_id = 1
-		if not state.has("heard_origins"):
-			state.heard_origins = {}
 		for memory: Dictionary in state.memories:
 			NpcMemory.anchor_legacy(memory, load_minute, int(data.turn))
 	turn = int(data.turn)
 	world_minute = load_minute
 	_next_memory_id = int(data.next_memory_id)
 	return true
-
-func load_file(path: String = SAVE_PATH) -> Error:
-	if not FileAccess.file_exists(path):
-		return OK
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		_save_allowed = false
-		return FileAccess.get_open_error()
-	var parser := JSON.new()
-	if parser.parse(file.get_as_text()) != OK or not from_save_data(parser.data):
-		_save_allowed = false
-		return ERR_FILE_CORRUPT
-	_save_allowed = true
-	return OK
-
-func save_file(path: String = SAVE_PATH) -> Error:
-	# An unreadable/unsupported save must not be replaced by an empty new save.
-	if not _save_allowed:
-		return ERR_FILE_CORRUPT
-	var temporary: String = path + ".tmp"
-	var file := FileAccess.open(temporary, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(to_save_data()))
-	file.flush()
-	var error: Error = file.get_error()
-	file.close()
-	if error != OK:
-		return error
-	return DirAccess.rename_absolute(temporary, path)
 
 static func is_valid_policy(policy: Variant) -> bool:
 	if not policy is Dictionary:
