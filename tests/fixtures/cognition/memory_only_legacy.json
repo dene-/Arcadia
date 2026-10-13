@@ -1,0 +1,110 @@
+{
+	"next_memory_id": 2,
+	"npcs": {
+		"legacy_fisher": {
+			"heard_origins": {},
+			"memories": [],
+			"next_observation_id": 1,
+			"observations": [],
+			"recent_dialogue": [
+				{
+					"speaker": "player",
+					"text": "Any luck today?"
+				},
+				{
+					"speaker": "npc",
+					"text": "A few trout."
+				}
+			],
+			"recent_events": [],
+			"relationship": {
+				"affection": 0.0,
+				"familiarity": 0.02,
+				"fear": 0.0,
+				"respect": 0.0,
+				"suspicion": 0.0,
+				"trust": 0.01
+			}
+		},
+		"legacy_miller": {
+			"heard_origins": {},
+			"memories": [
+				{
+					"age_anchor_minute": 1234.0,
+					"age_at_anchor": 0,
+					"completed": false,
+					"confidence": 0.5,
+					"created_turn": 0,
+					"emotional_intensity": 0.0,
+					"gist": "Synthetic legacy note: the mill wheel was repaired last autumn.",
+					"id": "legacy:0",
+					"importance": 0.5,
+					"important_details": [],
+					"known_gaps": [],
+					"last_recalled_turn": -1,
+					"people": [],
+					"places": [],
+					"recall_count": 0,
+					"sensory_cues": [],
+					"source": "authored",
+					"topics": [],
+					"type": "episodic",
+					"vividness": 0.5,
+					"weak_details": []
+				},
+				{
+					"completed": false,
+					"confidence": 0.9,
+					"created_minute": 1234.0,
+					"created_turn": 1,
+					"emotional_intensity": 0.1,
+					"gist": "The visitor asked about the river level.",
+					"id": "mem:1",
+					"importance": 0.5,
+					"important_details": [],
+					"known_gaps": [],
+					"last_recalled_turn": -1,
+					"people": [
+						"player"
+					],
+					"places": [],
+					"recall_count": 0,
+					"sensory_cues": [],
+					"source": "observed_event",
+					"topics": [
+						"river"
+					],
+					"type": "episodic",
+					"vividness": 0.53,
+					"weak_details": []
+				}
+			],
+			"next_observation_id": 1,
+			"observations": [],
+			"recent_dialogue": [
+				{
+					"speaker": "player",
+					"text": "How is the river?"
+				},
+				{
+					"speaker": "npc",
+					"text": "Running high."
+				}
+			],
+			"recent_events": [
+				"Synthetic: the visitor asked about the river."
+			],
+			"relationship": {
+				"affection": 0.0,
+				"familiarity": 0.04,
+				"fear": 0.0,
+				"respect": 0.0,
+				"suspicion": 0.0,
+				"trust": 0.0
+			}
+		}
+	},
+	"turn": 2,
+	"version": 1,
+	"world_minute": 1234.0
+}

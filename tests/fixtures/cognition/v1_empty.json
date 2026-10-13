@@ -1,0 +1,42 @@
+{
+	"memory": {
+		"next_memory_id": 1,
+		"npcs": {},
+		"turn": 0,
+		"version": 1,
+		"world_minute": 480.0
+	},
+	"version": 1,
+	"world": {
+		"dead_npcs": [],
+		"deaths": {},
+		"economy": {
+			"accounts": {},
+			"ledger": [],
+			"settled_day": -1,
+			"shortages": {},
+			"stock": {},
+			"treasury": 6000,
+			"version": 1,
+			"work_minutes": {}
+		},
+		"justice": {
+			"reports": {},
+			"version": 1
+		},
+		"life": {
+			"minute": 480.0,
+			"next_event": 1,
+			"people": {},
+			"personalities": {},
+			"rumors": {},
+			"version": 1
+		},
+		"npc_seed": 0,
+		"population": {
+			"people": {},
+			"version": 1
+		},
+		"region_seed": 0
+	}
+}
