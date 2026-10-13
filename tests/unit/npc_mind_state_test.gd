@@ -313,16 +313,14 @@ func test_sections_require_json_safe_values_and_bump_only_their_version() -> voi
 	assert_true(mind.set_condition({"energy": 0.5, "tags": ["tired"]}))
 	assert_eq(int(mind.versions().condition), int(before.condition) + 1)
 	assert_eq(int(mind.versions().knowledge), int(before.knowledge))
-	assert_false(mind.set_knowledge({"obj": RefCounted.new()}))
-	assert_false(mind.set_knowledge({"nested": {"bad": INF}}))
-	assert_false(mind.set_knowledge({5: "int key"}))
+	assert_eq(int(mind.versions().evidence), int(before.evidence))
 	var wide: Dictionary = {}
 	for index: int in 257:
 		wide["k%d" % index] = index
 	assert_false(mind.set_condition(wide))
 	assert_eq(mind.condition, {"energy": 0.5, "tags": ["tired"]})
 	assert_eq(mind.versions(), {"relationships": 0, "commitments": 0, "task": 0,
-		"condition": 1, "knowledge": 0})
+		"condition": 1, "knowledge": 0, "evidence": 0})
 
 func test_decision_sequence_increments_and_persists() -> void:
 	var mind := NpcMindState.new("vale")
@@ -341,7 +339,7 @@ func test_mind_state_survives_json_round_trip_with_canonical_types() -> void:
 	checkpoint.suspended = _checkpoint("routine:1")
 	mind.set_task_checkpoint(checkpoint)
 	mind.set_condition({"energy": 0.25})
-	mind.set_knowledge({"facts": ["a"]})
+	mind.knowledge.record_sighting("tess", "market", Vector2(4, 5), 12.0, "ev:1")
 	mind.next_decision()
 	var restored := NpcMindState.new("vale")
 	assert_true(restored.from_data(_round_trip(mind.to_data())))
@@ -355,6 +353,8 @@ func test_mind_state_survives_json_round_trip_with_canonical_types() -> void:
 	assert_eq(restored.condition.energy, 0.25)
 	assert_eq(restored.decision_sequence, 1)
 	assert_eq(typeof(restored.decision_sequence), TYPE_INT)
+	assert_eq(restored.knowledge.to_data(), mind.knowledge.to_data())
+	assert_eq(restored.knowledge.known_locations("tess").size(), 1)
 	assert_true(NpcMindState.is_valid_data(restored.to_data(), "vale"))
 	assert_false(NpcMindState.is_valid_data(restored.to_data(), "holt"))
 
@@ -366,7 +366,11 @@ func test_malformed_mind_data_changes_nothing() -> void:
 	var good: Dictionary = NpcMindState.new("vale").to_data()
 	var bad_cases: Array[Dictionary] = []
 	for mutate: Callable in [
-		func(d: Dictionary) -> void: d.version = 2,
+		func(d: Dictionary) -> void: d.version = 1,
+		func(d: Dictionary) -> void: d.erase("knowledge"),
+		func(d: Dictionary) -> void: d.erase("evidence"),
+		func(d: Dictionary) -> void: d.knowledge = {"next_id": 1, "facts": [5]},
+		func(d: Dictionary) -> void: d.evidence = {"items": []},
 		func(d: Dictionary) -> void: d.erase("task"),
 		func(d: Dictionary) -> void: d["extra"] = 1,
 		func(d: Dictionary) -> void: d.decision_sequence = -1,

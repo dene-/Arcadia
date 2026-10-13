@@ -74,7 +74,8 @@ func advance(delta: float) -> void:
 			if NpcPerception.can_see_point(npc, StringName(entry.space), _point(entry)):
 				if not npc_id in entry.known_by:
 					entry.known_by.append(npc_id)
-				_observe(npc, id, "body_found", "I found %s's body here." % _name(id), "sight")
+				_observe(npc, id, "body_found", "I found %s's body here." % _name(id), "sight",
+					_point(entry))
 				if entry.stage == "fallen":
 					entry.reporter = npc_id
 					_change(id, "discovered")
@@ -135,7 +136,7 @@ func _report(npc: BaseNpc, npc_id: String, id: String, entry: Dictionary) -> boo
 		if not entry.guard in entry.known_by:
 			entry.known_by.append(entry.guard)
 		_observe(guard, id, "body_reported", "%s told me they found %s dead. The cause is unconfirmed." % [
-			npc.get_npc_profile().profile_name, _name(id)], "hearing")
+			npc.get_npc_profile().profile_name, _name(id)], "hearing", null, npc)
 		npc.show_spoken_reaction("%s is dead. Please, come with me." % _name(id).get_slice(" ", 0))
 		_change(id, "reported")
 		_resume(npc, npc_id)
@@ -160,7 +161,8 @@ func _recover(guard: BaseNpc, guard_id: String, id: String, entry: Dictionary) -
 			var observer: BaseNpc = _actor(observer_id)
 			if observer != null and NpcPerception.can_see_point(observer, &"outdoors", plot):
 				entry.burial_known_by.append(observer_id)
-				_observe(observer, id, "body_buried", "I saw %s laid to rest in the town cemetery." % _name(id), "sight")
+				_observe(observer, id, "body_buried", "I saw %s laid to rest in the town cemetery." % _name(id),
+					"sight", cemetery.plot_for(id))
 		guard.show_spoken_reaction("Rest easy.")
 		_resume(guard, guard_id)
 		life.save_game.save_file()
@@ -271,12 +273,20 @@ func _refresh_visual(id: String) -> void:
 	_bodies[id].global_position = _point(entry)
 	_bodies[id].set_carried(entry.stage == "carried")
 
-func _observe(observer: BaseNpc, id: String, kind: String, text: String, sense: String) -> void:
+func _observe(observer: BaseNpc, id: String, kind: String, text: String, sense: String,
+		point: Variant = null, reporter: BaseNpc = null) -> void:
 	var event := WorldEvent.new()
 	event.kind = StringName(kind)
 	event.subject = observer
+	var relationship: String = life.save_game.population.people[String(observer.get_npc_profile().npc_id)].kin.get(id, "neighbor")
+	var participants: Array[Dictionary] = [{"id": id, "name": _name(id), "role": "deceased",
+		"relationship": relationship}]
+	if reporter != null:
+		participants.append({"id": String(reporter.get_npc_profile().npc_id),
+			"name": reporter.get_npc_profile().profile_name, "role": "reporter"})
 	event.facts = {"kind": kind, "text": text, "sense": sense, "player_involved": false,
 		"danger_possible": false, "directly_affected": false, "topics": ["death", "town"],
-		"participants": [{"id": id, "name": _name(id), "role": "deceased",
-			"relationship": life.save_game.population.people[String(observer.get_npc_profile().npc_id)].kin.get(id, "neighbor")} ]}
+		"participants": participants}
+	if point is Vector2:
+		event.facts["position"] = [(point as Vector2).x, (point as Vector2).y]
 	get_node("/root/WorldEvents").publish(event)

@@ -1,8 +1,12 @@
 extends SceneTree
 
 const Simulation = preload("res://tests/fixtures/npc_simulation_fixture.gd")
-const REAL_SAVES: Array[String] = ["user://npc_world.json", "user://npc_memory.json"]
+const REAL_SAVES: Array[String] = ["user://npc_world_v2.json", "user://npc_world.json", "user://npc_memory.json"]
 const SYNTHETIC_TEXT: String = "I saw a stranger ring a copper bell at the old well."
+## Measured at 164 KB minds / 221 KB file on load and 237 KB / 303 KB after 2 game hours.
+const MAX_MIND_BYTES: int = 500000
+const MAX_FILE_BYTES: int = 600000
+const MAX_GROWTH_BYTES: int = 150000
 var failures: Array[String] = []
 
 func _initialize() -> void:
@@ -16,6 +20,7 @@ func _run() -> void:
 	await _scenario_isolation()
 	await _scenario_reload_stability()
 	await _scenario_no_information_without_evidence()
+	await _scenario_personal_knowledge()
 	for failure: String in failures:
 		push_error(failure)
 	print("NPC cognition scenarios: ", "PASS" if failures.is_empty() else "FAIL")
@@ -87,7 +92,11 @@ func _scenario_no_information_without_evidence() -> void:
 		"player_involved": false, "danger_possible": false, "directly_affected": false,
 		"topics": ["town"]}
 	var events: NpcEventProcessor = root.get_node("NpcCognition").events
-	events.observe(witness.get_npc_profile(), {"world_minute": sim.save_game().life.minute}, event, witness)
+	var minute: float = sim.save_game().life.minute
+	var observation: NpcObservation = NpcObservation.from_perception(witness_id, "synthetic:1", minute,
+		witness.world_space, event, witness.global_position)
+	_check(observation != null, "Synthetic observation was not valid")
+	events.observe(witness.get_npc_profile(), {"world_minute": minute}, observation, witness)
 	await events.flush(witness_id)
 	await sim.advance(3.0)
 	var memory: NpcMemoryStore = sim.save_game().memory
@@ -124,3 +133,113 @@ func _first_difference(before: Variant, after: Variant, path: String = "") -> St
 				return "%s/%s missing before" % [path, key]
 		return ""
 	return "" if before == after else "%s: %s != %s" % [path, str(before).left(80), str(after).left(80)]
+
+func _knowledge_of(sim: Simulation, id: String) -> NpcKnowledge:
+	return sim.save_game().minds.get_mind(id).knowledge
+
+func _guard_ids(sim: Simulation) -> Array[String]:
+	var guards: Array[String] = []
+	for id: String in sim.save_game().population.people:
+		if sim.save_game().population.people[id].job == "guard":
+			guards.append(id)
+	guards.sort()
+	return guards
+
+## Residents hold public knowledge from the start and learn everything else by being near it.
+func _scenario_personal_knowledge() -> void:
+	var sim: Simulation = await _start()
+	var guards: Array[String] = _guard_ids(sim)
+	_check(guards.size() >= 2, "Fixture town has fewer than two guards")
+	var ids: Array[String] = sim.resident_ids()
+	for id: String in ids:
+		var places: Array[String] = []
+		for fact: Dictionary in _knowledge_of(sim, id).known_help_places():
+			places.append(String(fact.value.place))
+		for guard_id: String in guards:
+			_check("home:" + guard_id in places, "%s does not know the home of guard %s" % [id, guard_id])
+		for index: int in 4:
+			_check("patrol:%d" % index in places, "%s does not know patrol point %d" % [id, index])
+		for other: String in ids:
+			_check(_knowledge_of(sim, id).known_locations(other).is_empty(),
+				"%s knows where %s is before seeing it" % [id, other])
+	var before: Dictionary = _size_report(sim)
+	var spaces: Dictionary = {}
+	var positions: Dictionary = {}
+	for id: String in ids:
+		spaces[id] = sim.resident(id).world_space
+		positions[id] = sim.resident(id).global_position
+	# One life tick: nobody can have seen a guard that stayed in another space or far away.
+	await sim.advance(1.1)
+	var checked: int = 0
+	for id: String in ids:
+		for guard_id: String in guards:
+			var observer: BaseNpc = sim.resident(id)
+			var guard: BaseNpc = sim.resident(guard_id)
+			if id == guard_id or observer == null or guard == null or NpcPerception.can_see(observer, guard):
+				continue
+			if observer.world_space != spaces[id] or guard.world_space != spaces[guard_id]:
+				continue
+			var separate: bool = spaces[id] != spaces[guard_id]
+			var far: bool = spaces[id] == spaces[guard_id] and (positions[id] as Vector2).distance_to(
+				positions[guard_id]) > observer.npc_data.vision_radius + 300.0 and observer.global_position.distance_to(
+				guard.global_position) > observer.npc_data.vision_radius + 300.0
+			if not separate and not far:
+				continue
+			checked += 1
+			_check(_knowledge_of(sim, id).known_locations(guard_id).is_empty(),
+				"%s knows the location of guard %s it never saw" % [id, guard_id])
+	_check(checked > 0, "No resident/guard pair out of sight was found")
+	await sim.advance_minutes(30.0)
+	await _scenario_adjacent_sighting(sim)
+	await sim.advance_minutes(90.0)
+	var after: Dictionary = _size_report(sim)
+	print("NPC knowledge sizes (bytes) at start: ", before, " after 2 game hours: ", after)
+	_check(int(after.minds) < MAX_MIND_BYTES, "Mind section grew to %d bytes" % int(after.minds))
+	_check(int(after.minds) - int(before.minds) < MAX_GROWTH_BYTES,
+		"Minds grew by %d bytes in 2 game hours" % (int(after.minds) - int(before.minds)))
+	_check(int(after.file) < MAX_FILE_BYTES, "Save file grew to %d bytes" % int(after.file))
+	_check(int(after.max_facts) < NpcKnowledge.MAX_FACTS, "A resident reached the knowledge capacity")
+	var reload: Dictionary = sim.reload_save()
+	_check(reload.error == OK, "Reload failed: %s" % reload.error)
+	var with_facts: int = 0
+	for id: String in ids:
+		var saved: Dictionary = reload.before.minds.minds[id].knowledge
+		_check(reload.after.minds.minds[id].knowledge == saved, "%s lost knowledge across reload" % id)
+		if not (saved.facts as Array).is_empty():
+			with_facts += 1
+	# Public facts are re-derived on load; only personal evidence (sightings, reports) is saved.
+	_check(with_facts > 0, "No resident saved any personal knowledge after 2 game hours")
+	await sim.teardown()
+
+func _scenario_adjacent_sighting(sim: Simulation) -> void:
+	var outdoors: Array[BaseNpc] = []
+	for id: String in sim.resident_ids():
+		var npc: BaseNpc = sim.resident(id)
+		if npc.world_space == &"outdoors" and not npc.is_sleeping():
+			outdoors.append(npc)
+	_check(outdoors.size() >= 2, "Fewer than two awake residents are outdoors")
+	if outdoors.size() < 2:
+		return
+	var observer: BaseNpc = outdoors[0]
+	var target: BaseNpc = outdoors[1]
+	var observer_id: String = String(observer.get_npc_profile().npc_id)
+	var target_id: String = String(target.get_npc_profile().npc_id)
+	target.global_position = observer.global_position + Vector2(12.0, 0.0)
+	await sim.advance(1.1)
+	var sightings: Array[Dictionary] = _knowledge_of(sim, observer_id).known_locations(target_id)
+	_check(not sightings.is_empty(), "%s standing next to %s has no sighting" % [observer_id, target_id])
+	if not sightings.is_empty():
+		_check(sightings[0].status == "OBSERVED" and sightings[0].source_id == NpcKnowledge.SELF_SOURCE,
+			"A sighting must be first-hand")
+		_check(sightings[0].value.space == "outdoors", "Sighting space was not recorded")
+		_check(absf(float(sightings[0].observed_minute) - sim.save_game().life.minute) < 2.0,
+			"Sighting is not recent")
+
+func _size_report(sim: Simulation) -> Dictionary:
+	var save: NpcWorldSave = sim.save_game()
+	var minds: int = JSON.stringify(save.minds.to_data()).length()
+	var max_facts: int = 0
+	for id: String in sim.resident_ids():
+		max_facts = maxi(max_facts, (_knowledge_of(sim, id).to_data().facts as Array).size())
+	_check(save.save_file() == OK, "Save failed")
+	return {"minds": minds, "file": FileAccess.get_file_as_bytes(sim.save_path).size(), "max_facts": max_facts}

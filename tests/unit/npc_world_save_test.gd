@@ -173,3 +173,33 @@ func test_v2_requires_npc_seed_and_invalid_seeds_do_not_mutate_state() -> void:
 		assert_false(save.from_data(data))
 		assert_eq(save.get_npc_seed(), 92)
 		assert_eq(save.region_seed, 731)
+
+func test_knowledge_and_evidence_round_trip_and_a_revision_one_root_migrates_on_load() -> void:
+	var save := NpcWorldSave.new()
+	_isolate(save, "arcadia-world-save-knowledge-test.json")
+	save.region_seed = 274415
+	var mind: NpcMindState = save.minds.get_mind("test_witness")
+	mind.knowledge.record_sighting("test_guard", "outdoors", Vector2(5, 6), 480.0, "sighting:1")
+	var observation: NpcObservation = NpcObservation.from_perception("test_witness", "world:1", 480.0,
+		&"outdoors", {"kind": "stranger_seen", "sense": "sight", "text": "A stranger passed."})
+	assert_true(mind.evidence.enqueue(observation))
+	assert_eq(save.save_file(), OK)
+	var loaded := NpcWorldSave.new()
+	_isolate(loaded, "arcadia-world-save-knowledge-test.json")
+	assert_eq(loaded.load_file(), OK)
+	var restored: NpcMindState = loaded.minds.get_mind("test_witness")
+	assert_eq(restored.knowledge.to_data(), mind.knowledge.to_data())
+	assert_eq(restored.knowledge.known_locations("test_guard").size(), 1)
+	assert_true(restored.evidence.contains_pending(observation.observation_id))
+	var r1: Dictionary = save.to_data()
+	r1.migration.revision = 1
+	for state: Dictionary in r1.minds.minds.values():
+		state.version = 1
+		state.knowledge = {}
+		state.erase("evidence")
+	assert_false(loaded.from_data(r1), "A revision-1 root only loads through the migration.")
+	assert_true(restored.evidence.contains_pending(observation.observation_id), "A rejected root changes nothing.")
+	var upgraded: Dictionary = NpcSaveMigration.upgrade(r1)
+	assert_true(upgraded.ok, str(upgraded.get("error", "")))
+	assert_true(loaded.from_data(upgraded.data))
+	assert_true(loaded.minds.get_mind("test_witness").knowledge.to_data().facts.is_empty())

@@ -192,12 +192,13 @@ func test_other_npc_and_diagnostics_do_not_cancel_valid_exchange() -> void:
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	conversation.store.record_observation(_profile(), {
-		"text": "A noise.", "sense": "hearing", "player_involved": false})
+		"text": "A noise.", "sense": "hearing", "player_involved": false,
+		"observation_id": "test_npc:noise"})
 	_start(conversation, backend)
 	var other: NpcProfile = _profile()
 	other.npc_id = &"other"
 	conversation.store.record_event(other, "A bell rang.")
-	conversation.store.annotate_observation("test_npc", 1, {"assessment_ms": 300})
+	conversation.store.annotate_observation("test_npc", "test_npc:noise", {"assessment_ms": 300})
 	backend.dialogue_ready.emit()
 	assert_eq(_result.response, "Leave my forge.")
 	assert_eq(conversation.store.turn, 1)

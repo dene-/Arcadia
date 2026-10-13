@@ -23,6 +23,11 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	tree.root.add_child(player)
 	npc.take_damage(1, player.hit_box)
 	await cognition.events.flush("flow_test")
+	var sightings: Array[Dictionary] = cognition.save_game.minds.get_mind("flow_test") \
+		.knowledge.known_locations("player")
+	assert_eq(sightings.size(), 1, "The victim saw the attacker, so it knows where the player was")
+	assert_eq(sightings[0].value.x, 5010.0)
+	assert_eq(sightings[0].status, "OBSERVED")
 	assert_eq(backend.payloads.size(), 1)
 	assert_true(backend.payloads[0].event.directly_affected)
 	assert_ne(backend.payloads[0].context.current.activity, "conversation")

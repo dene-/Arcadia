@@ -42,36 +42,72 @@ func _policy(remember: bool = true) -> Dictionary:
 		"relationship_delta": {"familiarity": 0.01, "trust": -0.08, "respect": 0.0,
 			"affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
 
+var _serial: int = 0
+
+func _observation(sense: String = "sight", observer: String = "test_observer") -> NpcObservation:
+	_serial += 1
+	return NpcObservation.from_perception(observer, "event:%d" % _serial, 500.0, &"outdoors",
+		_event(sense))
+
+## Mirrors the processor's inbox handshake: display entry, claim, commit, complete.
+func _record(store: NpcMemoryStore, observation: NpcObservation, minute: float = 500.0) -> bool:
+	var inbox: NpcEvidenceInbox = store.minds.get_mind(observation.observer_id).evidence
+	if not inbox.enqueue(observation):
+		return false
+	store.record_observation(_profile(), observation.to_event(), minute)
+	return true
+
+func _commit(store: NpcMemoryStore, observation: NpcObservation, policy: Dictionary) -> bool:
+	var inbox: NpcEvidenceInbox = store.minds.get_mind(observation.observer_id).evidence
+	var claimed: NpcObservation = inbox.claim(observation.observation_id, 500.0)
+	if claimed == null:
+		return false
+	if not store.commit_evidence(observation.observer_id, claimed, policy):
+		inbox.fail(observation.observation_id, "invalid_policy", 500.0)
+		return false
+	return inbox.complete(observation.observation_id)
+
 func test_observations_are_short_term_then_optionally_durable_and_applied_once() -> void:
 	var store := NpcMemoryStore.new()
-	store.record_observation(_profile(), _event())
+	var first: NpcObservation = _observation()
+	assert_true(_record(store, first))
 	assert_eq(store.snapshot("test_observer").observations.size(), 1)
+	assert_eq(store.snapshot("test_observer").observations[0].observation_id, first.observation_id)
 	assert_eq(store.snapshot("test_observer").memories.size(), 0)
-	assert_true(store.commit_observation("test_observer", 1, _policy(false)))
+	assert_true(_commit(store, first, _policy(false)))
 	assert_eq(store.snapshot("test_observer").memories.size(), 0)
 	assert_eq(store.snapshot("test_observer").relationship.trust, -0.08)
-	assert_false(store.commit_observation("test_observer", 1, _policy()))
+	assert_eq(store.snapshot("test_observer").observations[0].status, "classified")
+	assert_false(_record(store, first), "A processed observation id is never accepted again")
+	assert_false(_commit(store, first, _policy()))
 	assert_eq(store.snapshot("test_observer").relationship.trust, -0.08)
-	store.record_observation(_profile(), _event())
-	assert_true(store.commit_observation("test_observer", 2, _policy()))
+	var second: NpcObservation = _observation()
+	assert_true(_record(store, second))
+	assert_true(_commit(store, second, _policy()))
 	assert_eq(store.snapshot("test_observer").memories[0].source, "observed_event")
 	assert_eq(store.snapshot("test_observer").memories[0].gist, _event().text)
 	assert_eq(store.snapshot("test_observer").recent_dialogue.size(), 0)
 
-func test_hearing_does_not_change_player_relationship_and_evicted_events_cannot_commit() -> void:
+func test_hearing_does_not_change_player_relationship_and_evicted_display_entries_still_commit() -> void:
 	var store := NpcMemoryStore.new()
-	store.record_observation(_profile(), _event("hearing"))
-	store.commit_observation("test_observer", 1, _policy())
+	var heard: NpcObservation = _observation("hearing")
+	assert_true(_record(store, heard))
+	assert_true(_commit(store, heard, _policy()))
 	assert_eq(store.snapshot("test_observer").relationship, NpcRelationshipState.initial())
+	var evicted: NpcObservation = _observation()
+	assert_true(_record(store, evicted))
 	for index: int in range(10):
-		store.record_observation(_profile(), _event())
+		assert_true(_record(store, _observation()))
 	assert_eq(store.snapshot("test_observer").observations.size(), 8)
-	assert_false(store.commit_observation("test_observer", 2, _policy()))
+	assert_true(_commit(store, evicted, _policy()),
+		"Evidence lives in the inbox, so working-memory eviction cannot lose it")
+	assert_eq(store.snapshot("test_observer").relationship.trust, -0.08)
 
 func test_observation_saves_round_trip_and_incomplete_saves_are_rejected() -> void:
 	var store := NpcMemoryStore.new()
-	store.record_observation(_profile(), _event())
-	store.commit_observation("test_observer", 1, _policy())
+	var observation: NpcObservation = _observation()
+	_record(store, observation)
+	_commit(store, observation, _policy())
 	var saved: Dictionary = store.to_save_data()
 	var restored := NpcMemoryStore.new()
 	var persisted: Dictionary = JSON.parse_string(JSON.stringify(saved))
@@ -83,7 +119,12 @@ func test_observation_saves_round_trip_and_incomplete_saves_are_rejected() -> vo
 	assert_eq(restored_state, persisted.npcs.test_observer)
 	saved.npcs.test_observer.observations[0].status = "invalid"
 	assert_false(restored.from_save_data(saved))
+	saved.npcs.test_observer.observations[0].status = "unavailable"
+	assert_false(restored.from_save_data(saved), "Unavailable is no longer a display status")
 	saved.npcs.test_observer.observations[0].status = "classified"
+	saved.npcs.test_observer.observations[0].modality = "TELEPATHY"
+	assert_false(restored.from_save_data(saved))
+	saved.npcs.test_observer.observations[0].modality = "SIGHT"
 	saved.npcs.test_observer.erase("observations")
 	saved.npcs.test_observer.erase("next_observation_id")
 	assert_false(restored.from_save_data(saved))
@@ -100,11 +141,11 @@ func test_background_processing_commits_without_conversation_and_keeps_new_arriv
 	backend.hold = true
 	processor.backend = backend
 	tree.root.add_child(processor)
-	processor.observe(_profile(), {}, _event())
+	processor.observe(_profile(), {}, _observation())
 	await tree.process_frame
 	assert_eq(backend.payloads.size(), 1)
 	assert_eq(processor.store.turn, 0)
-	processor.observe(_profile(), {}, _event("touch"))
+	processor.observe(_profile(), {}, _observation("touch"))
 	backend.hold = false
 	backend.release.emit()
 	await processor.flush("test_observer")
@@ -128,10 +169,14 @@ func test_classifier_failure_preserves_short_term_observation_without_relationsh
 	backend.fail = true
 	processor.backend = backend
 	tree.root.add_child(processor)
-	processor.observe(_profile(), {}, _event())
+	var failed: NpcObservation = _observation()
+	processor.observe(_profile(), {}, failed)
 	await processor.flush("test_observer")
 	var state: Dictionary = processor.store.snapshot("test_observer")
-	assert_eq(state.observations[0].status, "unavailable")
+	assert_eq(state.observations[0].status, "pending", "The display entry stays unassessed context")
+	var item: Dictionary = processor.store.minds.get_mind("test_observer").evidence.item(
+		failed.observation_id)
+	assert_eq(item.status, "DEFERRED", "Failed evidence is kept for a later retry")
 	assert_eq(state.relationship, NpcRelationshipState.initial())
 	assert_true(state.memories.is_empty())
 	assert_eq(processor.store.turn, 0)
@@ -151,9 +196,9 @@ func test_cooldown_limits_reactions_without_impersonating_player_conversation() 
 	tree.root.add_child(processor)
 	var npc := SpeakingNpc.new()
 	npc.npc_data = NpcData.new()
-	processor.observe(_profile(), {}, _event(), npc)
+	processor.observe(_profile(), {}, _observation(), npc)
 	await processor.flush("test_observer")
-	processor.observe(_profile(), {}, _event("touch"), npc)
+	processor.observe(_profile(), {}, _observation("touch"), npc)
 	await processor.flush("test_observer")
 	assert_eq(backend.reaction_calls, 1)
 	assert_eq(npc.spoken, ["Keep away!"])
@@ -176,12 +221,12 @@ func test_late_reaction_cannot_speak_through_a_freed_npc() -> void:
 	tree.root.add_child(processor)
 	var npc := SpeakingNpc.new()
 	npc.npc_data = NpcData.new()
-	processor.observe(_profile(), {}, _event(), npc)
+	processor.observe(_profile(), {}, _observation(), npc)
 	await tree.process_frame
 	assert_eq(backend.reaction_calls, 1)
 	await processor.wait_for_assessment("test_observer")
 	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.08)
-	processor.observe(_profile(), {}, _event("touch"), npc)
+	processor.observe(_profile(), {}, _observation("touch"), npc)
 	await tree.process_frame
 	await processor.wait_for_assessment("test_observer")
 	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.16)
@@ -212,7 +257,7 @@ func test_speech_generation_has_a_global_limit_without_blocking_assessment() -> 
 		sources.append(npc)
 		var profile: NpcProfile = _profile()
 		profile.npc_id = StringName("speaker_%s" % index)
-		processor.observe(profile, {}, _event(), npc)
+		processor.observe(profile, {}, _observation("sight", String(profile.npc_id)), npc)
 	await tree.process_frame
 	assert_eq(backend.payloads.size(), 3)
 	assert_eq(backend.reaction_calls, 2)
@@ -245,12 +290,15 @@ func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_mov
 		tree.root.add_child(processor)
 		var npc := SpeakingNpc.new()
 		npc.npc_data = NpcData.new()
-		processor.observe(_profile(), {}, _event(), npc)
-		await tree.process_frame
+		processor.observe(_profile(), {}, _observation(), npc)
+		for _frame: int in range(5):
+			await tree.process_frame
+			if backend.reaction_calls > 0:
+				break
 		assert_eq(backend.reaction_calls, 1)
 		match change:
 			"perception":
-				processor.observe(_profile(), {}, _event("touch"), npc)
+				processor.observe(_profile(), {}, _observation("touch"), npc)
 				await tree.process_frame
 				await processor.wait_for_assessment("test_observer")
 			"injury":
@@ -276,10 +324,12 @@ func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_mov
 
 func test_working_memory_expires_in_game_time_without_erasing_diagnostics_or_archive() -> void:
 	var store := NpcMemoryStore.new()
-	store.record_observation(_profile(), _event(), 500.0)
-	store.commit_observation("test_observer", 1, _policy(false))
-	store.record_observation(_profile(), _event("touch"), 501.0)
-	store.commit_observation("test_observer", 2, _policy())
+	var early_log: NpcObservation = _observation()
+	_record(store, early_log, 500.0)
+	_commit(store, early_log, _policy(false))
+	var touched: NpcObservation = _observation("touch")
+	_record(store, touched, 501.0)
+	_commit(store, touched, _policy())
 	var state: Dictionary = store.snapshot("test_observer")
 	var early: Dictionary = NpcCognitiveContext.build(state, {"world_minute": 510.0})
 	assert_eq(early.past_observations.size(), 2)
@@ -298,7 +348,7 @@ func test_working_memory_expires_in_game_time_without_erasing_diagnostics_or_arc
 
 func test_game_time_observations_do_not_age_while_the_game_is_closed() -> void:
 	var store := NpcMemoryStore.new()
-	store.record_observation(_profile(), _event(), 500.0)
+	_record(store, _observation(), 500.0)
 	var saved: Dictionary = store.to_save_data()
 	saved.npcs.test_observer.observations[0].created_at -= 86400
 	var restored := NpcMemoryStore.new()

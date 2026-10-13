@@ -2,6 +2,13 @@ class_name TownLife
 extends Node
 
 ## Scene-owned application coordinator. Planning, movement, social sessions and saves have separate owners.
+
+## Seconds between retries of evidence whose appraisal was deferred.
+const RETRY_INTERVAL: float = 5.0
+## A repeat sighting of the same target is recorded only after it moved, changed space or this long.
+const SIGHTING_MOVE_PIXELS: float = 16.0
+const SIGHTING_REFRESH_MINUTES: float = 30.0
+
 @export_range(0.0, 10.0, 0.1) var minutes_per_second: float = 1.5
 @export_range(1, 12, 1) var max_decision_workers: int = 4
 var save_game: NpcWorldSave
@@ -18,6 +25,9 @@ var _pending: Dictionary = {}
 var _revisions: Dictionary = {}
 var _tick: float = 0.0
 var _save_elapsed: float = 0.0
+var _retry_elapsed: float = 0.0
+# (observer|target) -> {space, position, minute}: last sighting recorded, to throttle re-recording.
+var _sighted: Dictionary = {}
 var _initialized: bool = false
 var _light: CanvasModulate
 var _clock: Label
@@ -68,6 +78,7 @@ func _ready() -> void:
 		if _places.has(saved.place):
 			_travel(npc, id, {"place": saved.place, "kind": saved.activity})
 		_update_context(npc, id)
+	_bootstrap_knowledge(ids)
 	encounters = TownEncounters.new()
 	encounters.state = save_game.life
 	encounters.store = save_game.memory
@@ -112,6 +123,10 @@ func _process(delta: float) -> void:
 	save_game.economy.settle(save_game.life.minute, save_game.population, save_game.dead_npcs)
 	_tick += delta
 	_save_elapsed += delta
+	_retry_elapsed += delta
+	if _retry_elapsed >= RETRY_INTERVAL:
+		_retry_elapsed = 0.0
+		get_node("/root/NpcCognition").retry_deferred_evidence()
 	for id: String in _actors.keys():
 		if not is_instance_valid(_actors[id]):
 			navigation.release(id)
@@ -139,6 +154,7 @@ func _process(delta: float) -> void:
 	_tick = 0.0
 	var ids: Array[String] = _actors.keys()
 	ids.sort()
+	_record_sightings(ids)
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
 		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
@@ -186,6 +202,55 @@ func _exit_tree() -> void:
 	for id: String in _actors:
 		if is_instance_valid(_actors[id]):
 			_actors[id].daily_routine = null
+
+func _bootstrap_knowledge(ids: Array[String]) -> void:
+	var guards: Array[String] = []
+	for id: String in save_game.population.people:
+		if save_game.population.people[id].get("job") == "guard":
+			guards.append(id)
+	guards.sort()
+	for id: String in ids:
+		save_game.minds.get_mind(id).knowledge.bootstrap_public(id, save_game.population.people, _places, guards)
+
+# Residents learn where others are only by seeing them; every record is a first-hand sighting.
+func _record_sightings(ids: Array[String]) -> void:
+	var minute: float = save_game.life.minute
+	var targets: Array[BaseActor] = []
+	var target_ids: Array[String] = []
+	for id: String in ids:
+		targets.append(_actors[id])
+		target_ids.append(id)
+	for player: Node in get_tree().get_nodes_in_group(&"players"):
+		if player is BaseActor and (player as BaseActor).health > 0:
+			targets.append(player)
+			target_ids.append("player")
+	for id: String in ids:
+		var observer: BaseNpc = _actors[id]
+		if observer.health <= 0 or observer.is_sleeping():
+			continue
+		var knowledge: NpcKnowledge = save_game.minds.get_mind(id).knowledge
+		var radius: float = observer.npc_data.vision_radius
+		for index: int in targets.size():
+			var target: BaseActor = targets[index]
+			var target_id: String = target_ids[index]
+			if target == observer or not is_instance_valid(target) \
+					or observer.world_space != target.world_space \
+					or observer.global_position.distance_to(target.global_position) > radius \
+					or not _sighting_due(id, target_id, target, minute) \
+					or not NpcPerception.can_see(observer, target):
+				continue
+			if knowledge.record_sighting(target_id, String(target.world_space), target.global_position,
+					minute, "sighting:%s:%s:%d" % [id, target_id, int(minute * 10.0)]):
+				_sighted["%s|%s" % [id, target_id]] = {"space": target.world_space,
+					"position": target.global_position, "minute": minute}
+
+func _sighting_due(observer_id: String, target_id: String, target: BaseActor, minute: float) -> bool:
+	var last: Variant = _sighted.get("%s|%s" % [observer_id, target_id])
+	if not last is Dictionary:
+		return true
+	return last["space"] != target.world_space \
+		or minute - float(last["minute"]) >= SIGHTING_REFRESH_MINUTES \
+		or (last["position"] as Vector2).distance_to(target.global_position) > SIGHTING_MOVE_PIXELS
 
 func _build_places() -> void:
 	_places = {"square": {"label": "Rekala square", "position": Vector2(16, 48)},

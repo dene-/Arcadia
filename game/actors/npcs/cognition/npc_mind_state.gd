@@ -2,12 +2,12 @@ class_name NpcMindState
 extends RefCounted
 
 const TASK_STATUSES: Array[String] = ["CREATED", "RUNNING", "SUSPENDED", "COMPLETED", "CANCELLED", "FAILED"]
-const SCHEMA_VERSION: int = 1
+const SCHEMA_VERSION: int = 2
 const MAX_SECTION_KEYS: int = 256
 const MAX_LIST_ITEMS: int = 64
 const MAX_JSON_DEPTH: int = 16
 const _DATA_KEYS: Array[String] = ["version", "relationships", "commitments", "condition",
-	"knowledge", "task", "decision_sequence"]
+	"knowledge", "evidence", "task", "decision_sequence"]
 const _CHECKPOINT_KEYS: Array[String] = ["task_id", "kind", "phase", "status", "started_minute",
 	"deadline_minute", "generation", "evidence_ids", "commitment_ids", "claims", "params",
 	"progress", "suspended"]
@@ -16,13 +16,15 @@ var npc_id: String
 var relationships := NpcRelationshipGraph.new()
 var commitments := NpcCommitments.new()
 var condition: Dictionary = {}
-var knowledge: Dictionary = {}
+## Personal beliefs with provenance; never a copy of world truth.
+var knowledge := NpcKnowledge.new()
+## Evidence awaiting appraisal; survives provider outages and working-memory pressure.
+var evidence := NpcEvidenceInbox.new()
 var decision_sequence: int = 0
 
 var _task: Dictionary = {}
 var _task_version: int = 0
 var _condition_version: int = 0
-var _knowledge_version: int = 0
 
 func _init(id: String = "") -> void:
 	npc_id = id
@@ -45,25 +47,19 @@ func set_condition(value: Dictionary) -> bool:
 	_condition_version += 1
 	return true
 
-func set_knowledge(value: Dictionary) -> bool:
-	if not _is_valid_section(value):
-		return false
-	knowledge = value.duplicate(true)
-	_knowledge_version += 1
-	return true
-
 func next_decision() -> int:
 	decision_sequence += 1
 	return decision_sequence
 
 func versions() -> Dictionary:
 	return {"relationships": relationships.version, "commitments": commitments.version,
-		"task": _task_version, "condition": _condition_version, "knowledge": _knowledge_version}
+		"task": _task_version, "condition": _condition_version, "knowledge": knowledge.version,
+		"evidence": evidence.version}
 
 func to_data() -> Dictionary:
 	return {"version": SCHEMA_VERSION, "relationships": relationships.to_data(),
 		"commitments": commitments.to_data(), "condition": condition.duplicate(true),
-		"knowledge": knowledge.duplicate(true), "task": task_checkpoint(),
+		"knowledge": knowledge.to_data(), "evidence": evidence.to_data(), "task": task_checkpoint(),
 		"decision_sequence": decision_sequence}
 
 static func is_valid_data(data: Variant, npc_id: String) -> bool:
@@ -78,7 +74,8 @@ static func is_valid_data(data: Variant, npc_id: String) -> bool:
 	return _is_count(source["version"], SCHEMA_VERSION) and int(source["version"]) == SCHEMA_VERSION \
 		and NpcRelationshipGraph.is_valid_data(source["relationships"]) \
 		and NpcCommitments.is_valid_data(source["commitments"], npc_id) \
-		and _is_valid_section(source["condition"]) and _is_valid_section(source["knowledge"]) \
+		and _is_valid_section(source["condition"]) and NpcKnowledge.is_valid_data(source["knowledge"]) \
+		and NpcEvidenceInbox.is_valid_data(source["evidence"]) \
 		and (source["task"] is Dictionary and ((source["task"] as Dictionary).is_empty()
 			or is_valid_task_checkpoint(source["task"]))) \
 		and _is_count(source["decision_sequence"], 0)
@@ -90,12 +87,12 @@ func from_data(data: Variant) -> bool:
 	relationships.from_data(source["relationships"])
 	commitments.from_data(source["commitments"])
 	condition = (source["condition"] as Dictionary).duplicate(true)
-	knowledge = (source["knowledge"] as Dictionary).duplicate(true)
+	knowledge.from_data(source["knowledge"])
+	evidence.from_data(source["evidence"])
 	_task = _normalized_checkpoint(source["task"])
 	decision_sequence = int(source["decision_sequence"])
 	_task_version += 1
 	_condition_version += 1
-	_knowledge_version += 1
 	return true
 
 static func is_valid_task_checkpoint(value: Variant, allow_suspended: bool = true) -> bool:

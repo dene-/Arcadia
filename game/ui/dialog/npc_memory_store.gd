@@ -106,13 +106,14 @@ func record_event(profile: NpcProfile, event: String) -> void:
 		events.pop_front()
 	_changed(id)
 
-## Every perceived event enters short-term memory, independently of dialogue.
+## Every perceived event enters the short-term display window, independently of dialogue. The
+## window is context only: evidence awaiting appraisal lives in the mind's NpcEvidenceInbox.
 func record_observation(profile: NpcProfile, event: Dictionary, world_minute: float = -1.0) -> void:
 	if profile == null or profile.npc_id.is_empty():
 		return
 	if not event.get("text") is String or event.text.is_empty() or event.text.length() > 500 \
 		or not event.get("sense") in ["sight", "hearing", "touch"] \
-		or not event.get("player_involved") is bool:
+		or not event.get("player_involved") is bool or not _valid_evidence_fields(event):
 		return
 	ensure_npc(profile)
 	var state: Dictionary = _states[String(profile.npc_id)]
@@ -129,41 +130,42 @@ func record_observation(profile: NpcProfile, event: Dictionary, world_minute: fl
 		state.observations.pop_front()
 	_changed(String(profile.npc_id))
 
-func pending_observations(npc_id: String) -> Array[Dictionary]:
-	var pending: Array[Dictionary] = []
-	for observation: Dictionary in _states.get(npc_id, {}).get("observations", []):
-		if observation.status == "pending":
-			pending.append(observation.duplicate(true))
-	return pending
+## Appraises evidence the inbox has claimed. Returns false and changes nothing for an invalid
+## policy, so the caller can defer the evidence. The caller completes the inbox item; the
+## inbox receipt (not this method) prevents a second appraisal of the same observation.
+func commit_evidence(npc_id: String, observation: NpcObservation, policy: Dictionary) -> bool:
+	if observation == null or not _states.has(npc_id) or not is_valid_policy(policy):
+		return false
+	var state: Dictionary = _states[npc_id]
+	_changed(npc_id)
+	for entry: Dictionary in state.observations:
+		if entry.get("observation_id") == observation.observation_id:
+			entry.status = "classified"
+			entry.decision = policy.duplicate(true)
+	advance_time()
+	# Hearing noise alone cannot identify or change feelings toward the player.
+	if observation.facts.get("player_involved") == true \
+			and observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]:
+		minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
+			"observation:%s:%s" % [npc_id, observation.observation_id])
+	if policy.remember:
+		var people: Array[String] = observation.participant_ids()
+		if not observation.source_id.is_empty() and not observation.source_id in people:
+			people.append(observation.source_id)
+		var topics: Array[String] = observation.topics.slice(0, 8)
+		if topics.is_empty():
+			topics.append(String(observation.kind) if observation.kind != &"unknown" else "event")
+		_admit(state.memories, {"type": "episodic",
+			"source": "hearsay" if observation.modality == NpcObservation.Modality.SPOKEN_REPORT \
+				else "observed_event",
+			"gist": observation.text, "topics": topics, "people": people.slice(0, 8),
+			"sensory_cues": observation.cues.slice(0, 8)}, policy)
+	return true
 
-func commit_observation(npc_id: String, observation_id: int, policy: Dictionary) -> bool:
-	var state: Dictionary = _states.get(npc_id, {})
-	for observation: Dictionary in state.get("observations", []):
-		if observation.id != observation_id or observation.status != "pending":
-			continue
-		_changed(npc_id)
-		if not is_valid_policy(policy):
-			observation.status = "unavailable"
-			return false
-		observation.status = "classified"
-		observation.decision = policy.duplicate(true)
-		advance_time()
-		# Hearing noise alone cannot identify or change feelings toward the player.
-		if observation.player_involved and observation.sense != "hearing":
-			minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
-				"observation:%s:%d" % [npc_id, observation_id])
-		if policy.remember:
-			_admit(state.memories, {"type": "episodic", "source": "observed_event",
-				"gist": observation.text, "topics": observation.get("topics", ["combat"]),
-				"people": ["player"] if observation.player_involved else [],
-				"sensory_cues": ["sounds of fighting"] if observation.sense == "hearing" else []}, policy)
-		return true
-	return false
-
-## Diagnostics belong to the observation, never to model input or authored profiles.
-func annotate_observation(npc_id: String, id: int, diagnostics: Dictionary) -> void:
+## Diagnostics belong to the display entry, never to model input or authored profiles.
+func annotate_observation(npc_id: String, observation_id: String, diagnostics: Dictionary) -> void:
 	for record: Dictionary in _states.get(npc_id, {}).get("observations", []):
-		if record.id == id:
+		if record.get("observation_id") == observation_id:
 			record["diagnostics"] = diagnostics.duplicate(true)
 			return
 
@@ -368,7 +370,8 @@ func _valid_observations(value: Variant, next_id: Variant) -> bool:
 		if not observation.get("text") is String or observation.text.is_empty() \
 			or observation.text.length() > 500 or not observation.get("player_involved") is bool \
 			or not observation.get("sense") in ["sight", "hearing", "touch"] \
-			or not observation.get("status") in ["pending", "classified", "unavailable"]:
+			or not observation.get("status") in ["pending", "classified"] \
+			or not _valid_evidence_fields(observation):
 			return false
 		var timestamp: Variant = observation.get("created_at")
 		if not (timestamp is float or timestamp is int) or not is_finite(float(timestamp)):
@@ -380,4 +383,26 @@ func _valid_observations(value: Variant, next_id: Variant) -> bool:
 		if not observation.get("decision") is Dictionary or \
 			(observation.status == "classified" and not is_valid_policy(observation.decision)):
 			return false
+	return true
+
+## Optional links from a display entry to the evidence it was built from.
+static func _valid_evidence_fields(entry: Dictionary) -> bool:
+	if entry.has("observation_id") and (not entry["observation_id"] is String \
+			or (entry["observation_id"] as String).is_empty() \
+			or (entry["observation_id"] as String).length() > NpcObservation.MAX_OBSERVATION_ID_LENGTH):
+		return false
+	for key: String in ["source_id", "incident_id"]:
+		if entry.has(key) and (not entry[key] is String \
+				or (entry[key] as String).length() > NpcObservation.MAX_ID_LENGTH):
+			return false
+	if entry.has("modality") and (not entry["modality"] is String \
+			or not NpcObservation.Modality.has(entry["modality"])):
+		return false
+	if entry.has("cues"):
+		var cues: Variant = entry["cues"]
+		if not cues is Array or (cues as Array).size() > NpcObservation.MAX_TAGS:
+			return false
+		for cue: Variant in cues:
+			if not cue is String or (cue as String).length() > NpcObservation.MAX_TAG_LENGTH:
+				return false
 	return true

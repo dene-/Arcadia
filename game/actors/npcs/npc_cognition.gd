@@ -43,20 +43,115 @@ func _on_world_event(event: WorldEvent) -> void:
 			if event.subject.is_in_group(&"town_residents"):
 				save_game.deaths.record(String(profile.npc_id), String(event.subject.world_space),
 					event.subject.global_position, save_game.life.minute)
+	var snapshot: WorldEventSnapshot = WorldEventSnapshot.capture(event, origin_id, save_game.life.minute)
+	var positions: Dictionary = _known_positions(snapshot, event)
 	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
-		var observed: Dictionary = perception.perceive(observer, event)
-		if not observed.is_empty():
-			observed.origin_id = origin_id
-			observer.alert_response.notice(observer, observed)
-			save_game.life.notice_perception(String(observer.get_npc_profile().npc_id),
-				observed, String(observer.world_space))
-			var current: Dictionary = observer.get_cognitive_context()
-			current.world_minute = save_game.life.minute
-			events.observe(observer.get_npc_profile(), current,
-				observed, observer)
+		var perceived: Dictionary = perception.perceive(observer, event)
+		if perceived.is_empty():
+			continue
+		var observer_id: String = String(observer.get_npc_profile().npc_id)
+		var observation: NpcObservation = NpcObservation.from_perception(observer_id, origin_id,
+			snapshot.minute, observer.world_space, perceived, _evidence_position(snapshot, perceived))
+		if observation == null:
+			continue
+		# Reflexes and daily life still consume the legacy dictionary shape.
+		var legacy: Dictionary = observation.to_event()
+		observer.alert_response.notice(observer, legacy)
+		save_game.life.notice_perception(observer_id, legacy, String(observer.world_space))
+		# Knowledge is learned the moment evidence is perceived; no provider is involved.
+		learn(save_game.minds.get_mind(observer_id).knowledge, observation, positions)
+		var current: Dictionary = observer.get_cognitive_context()
+		current.world_minute = save_game.life.minute
+		events.observe(observer.get_npc_profile(), current, observation, observer)
 	var error: Error = save_game.save_file()
 	if error != OK:
 		push_warning("NPC world could not be saved: %s" % error)
+
+## Resumes residents whose deferred evidence is due again and who have no worker running.
+func retry_deferred_evidence() -> void:
+	var minute: float = save_game.life.minute
+	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
+		var profile: NpcProfile = observer.get_npc_profile()
+		if profile == null or profile.npc_id.is_empty() or events.is_busy(String(profile.npc_id)):
+			continue
+		if save_game.minds.get_mind(String(profile.npc_id)).evidence.ready_count(minute) > 0:
+			var current: Dictionary = observer.get_cognitive_context()
+			current.world_minute = minute
+			events.resume(profile, current, observer)
+
+## Where the event's people were, by identity. Only what the event itself establishes is listed:
+## the subject at the moment of publication, a live instigator, and a body's resting place.
+func _known_positions(snapshot: WorldEventSnapshot, event: WorldEvent) -> Dictionary:
+	var positions: Dictionary = {}
+	if snapshot.has_position and not snapshot.subject_id.is_empty():
+		positions[snapshot.subject_id] = snapshot.position
+	if not snapshot.instigator_id.is_empty() and event.instigator is Node2D \
+			and (event.instigator as Node2D).is_inside_tree():
+		positions[snapshot.instigator_id] = (event.instigator as Node2D).global_position
+	var point: Variant = _body_point(snapshot)
+	if point is Vector2:
+		for participant: Dictionary in snapshot.facts.get("participants", []):
+			if participant.get("role") == "deceased" and not String(participant.get("id", "")).is_empty():
+				positions[participant["id"]] = point
+	return positions
+
+## Position stored with the evidence: heard events carry none, so a noise never locates anyone.
+static func _evidence_position(snapshot: WorldEventSnapshot, perceived: Dictionary) -> Variant:
+	if perceived.get("sense") == "hearing":
+		return null
+	var point: Variant = _body_point(snapshot)
+	if point is Vector2:
+		return point
+	return snapshot.position if snapshot.has_position else null
+
+static func _body_point(snapshot: WorldEventSnapshot) -> Variant:
+	var raw: Variant = snapshot.facts.get("position")
+	if raw is Array and (raw as Array).size() == 2 and (raw[0] is float or raw[0] is int) \
+			and (raw[1] is float or raw[1] is int):
+		return Vector2(float(raw[0]), float(raw[1]))
+	return null
+
+## Personal knowledge from one observation. `positions` maps identity -> where the event placed
+## that person. Unseen or anonymous people are never located, and the observer is never "seen".
+static func learn(knowledge: NpcKnowledge, observation: NpcObservation, positions: Dictionary) -> void:
+	var seen: bool = observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]
+	var minute: float = observation.observed_minute
+	if seen:
+		for id: String in observation.participant_ids():
+			if id != observation.observer_id and positions.get(id) is Vector2:
+				knowledge.record_sighting(id, String(observation.space_id), positions[id], minute,
+					observation.observation_id)
+	var deceased: String = ""
+	match observation.kind:
+		&"actor_died":
+			if seen:
+				deceased = _participant_with_role(observation, "hurt_person")
+		&"body_found", &"body_reported", &"body_buried":
+			deceased = _participant_with_role(observation, "deceased")
+	# The player respawns; a resident never learns that "the player is dead".
+	if deceased.is_empty() or deceased == "player":
+		return
+	var evidence_id: String = observation.observation_id
+	match observation.kind:
+		&"actor_died", &"body_found":
+			knowledge.record(deceased, "status", "dead", NpcKnowledge.Status.OBSERVED,
+				NpcKnowledge.SELF_SOURCE, evidence_id, observation.origin_id, minute, 1.0)
+		&"body_reported":
+			knowledge.record_report(deceased, "status", "dead", observation.source_id,
+				observation.origin_id, evidence_id, minute, 0.8)
+		&"body_buried":
+			if observation.modality == NpcObservation.Modality.SPOKEN_REPORT:
+				knowledge.record_report(deceased, "burial", "buried", observation.source_id,
+					observation.origin_id, evidence_id, minute, 0.8)
+			else:
+				knowledge.record(deceased, "burial", "buried", NpcKnowledge.Status.OBSERVED,
+					NpcKnowledge.SELF_SOURCE, evidence_id, observation.origin_id, minute, 1.0)
+
+static func _participant_with_role(observation: NpcObservation, role: String) -> String:
+	for participant: Dictionary in observation.participants:
+		if participant.get("role") == role and not String(participant.get("id", "")).is_empty():
+			return participant["id"]
+	return ""
 
 func _on_perception_classified(id: String, event: Dictionary, policy: Dictionary) -> void:
 	save_game.life.assess_perception(id, event, policy)

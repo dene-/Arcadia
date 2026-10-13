@@ -2,13 +2,16 @@ class_name NpcSaveMigration
 extends RefCounted
 
 ## Pure conversion of older NPC saves into the current v2 world root. Never reads or writes files.
-const REVISION: int = 1
+## Revision 1 is the first v2 shape; revision 2 adds per-mind knowledge and the evidence inbox.
+const REVISION: int = 2
+const FIRST_REVISION: int = 1
 const SOURCE_NEW_WORLD: int = 0
 const SOURCE_WORLD_V1: int = 1
 const SOURCE_MEMORY_ONLY: int = 100
 const _MEMORY_STATE_KEYS: Array[String] = ["recent_dialogue", "memories", "recent_events",
 	"observations", "next_observation_id", "heard_origins"]
 const _OTHER_DIMENSIONS: Array[String] = ["respect", "fear", "suspicion"]
+const _LEGACY_UNAVAILABLE: String = "legacy_unavailable"
 
 ## Returns {"ok", "data", "error"}; data is a validated current-revision v2 root, or {} on failure.
 static func upgrade(source: Dictionary) -> Dictionary:
@@ -21,14 +24,15 @@ static func upgrade(source: Dictionary) -> Dictionary:
 		var revision: int = int(migration.revision)
 		if revision > REVISION:
 			return _failure("future_revision")
-		# Revision 1 is the first v2 shape; later milestones add their steps below it.
-		if revision != REVISION:
+		if revision < FIRST_REVISION:
 			return _failure("invalid_source")
 		candidate = source.duplicate(true)
+		if revision == 1:
+			candidate = _to_revision_2(candidate)
 	elif _is_int(version, 1) and source.has("world"):
-		candidate = _from_world_v1(source.duplicate(true), SOURCE_WORLD_V1)
+		candidate = _to_revision_2(_from_world_v1(source.duplicate(true), SOURCE_WORLD_V1))
 	elif _is_int(version, 1) and source.has("npcs"):
-		candidate = _from_memory_only(source.duplicate(true))
+		candidate = _to_revision_2(_from_memory_only(source.duplicate(true)))
 	else:
 		return _failure("unsupported_version")
 	if candidate.is_empty():
@@ -106,7 +110,7 @@ static func _from_world_v1(source: Dictionary, source_version: int) -> Dictionar
 			"next_observation_id": state.get("next_observation_id", 1),
 			"heard_origins": state.get("heard_origins", {})}
 	return {"version": 2,
-		"migration": {"source_version": source_version, "source_digest": "", "revision": REVISION},
+		"migration": {"source_version": source_version, "source_digest": "", "revision": FIRST_REVISION},
 		"world": {"dead_npcs": world.get("dead_npcs"),
 			"region_seed": _integer_or_raw(world.get("region_seed", 0)),
 			"npc_seed": _integer_or_raw(world.get("npc_seed", 0)),
@@ -138,3 +142,111 @@ static func _minds(subjects: Dictionary) -> Dictionary:
 			"commitments": {"next_id": 1, "items": []}, "condition": {}, "knowledge": {}, "task": {},
 			"decision_sequence": 0}
 	return minds
+
+# Revision 1 -> 2: every mind gains knowledge and an evidence inbox. Unappraised display entries
+# become inbox evidence, and fighting cues that only a misclassified report added are removed.
+# Returns {} when the root is not a revision-1 shape.
+static func _to_revision_2(root: Dictionary) -> Dictionary:
+	var migration: Variant = root.get("migration")
+	var mind_root: Variant = root.get("minds")
+	var memory: Variant = root.get("memory")
+	if not migration is Dictionary or not mind_root is Dictionary \
+			or not (mind_root as Dictionary).get("minds") is Dictionary \
+			or not memory is Dictionary or not (memory as Dictionary).get("npcs") is Dictionary:
+		return {}
+	var minds: Dictionary = (mind_root as Dictionary)["minds"]
+	var states: Dictionary = (memory as Dictionary)["npcs"]
+	var clock: Variant = (memory as Dictionary).get("world_minute", 480.0)
+	var people: Variant = {}
+	var world: Variant = root.get("world")
+	if world is Dictionary and (world as Dictionary).get("life") is Dictionary:
+		people = ((world as Dictionary)["life"] as Dictionary).get("people", {})
+	var inboxes: Dictionary = {}
+	var ids: Array = states.keys()
+	ids.sort()
+	for id: Variant in ids:
+		var state: Variant = states[id]
+		if not id is String or not state is Dictionary or not (state as Dictionary).get("observations") is Array:
+			return {}
+		var inbox: Variant = _evidence_from_display(id, state, clock, people)
+		if inbox == null:
+			return {}
+		inboxes[id] = inbox
+		_remove_misattributed_fighting_cue(state)
+	for id: Variant in minds:
+		if not minds[id] is Dictionary:
+			return {}
+	for id: Variant in ids:
+		if not minds.has(id) and not (inboxes[id] as Dictionary).items.is_empty():
+			minds[id] = NpcMindState.new(id).to_data()
+	for id: Variant in minds:
+		var mind: Dictionary = minds[id]
+		mind["version"] = NpcMindState.SCHEMA_VERSION
+		mind["knowledge"] = NpcKnowledge.new().to_data()
+		mind["evidence"] = inboxes.get(id, NpcEvidenceInbox.new().to_data())
+	(migration as Dictionary)["revision"] = REVISION
+	return root
+
+# Returns the inbox data for one resident and rewrites its pending/unavailable display entries
+# to reference their evidence; null when an entry cannot be turned into valid evidence.
+static func _evidence_from_display(id: String, state: Dictionary, clock: Variant,
+		people: Variant) -> Variant:
+	var inbox := NpcEvidenceInbox.new()
+	var space: StringName = _saved_space(people, id)
+	var unavailable: Array[String] = []
+	for entry: Variant in state["observations"]:
+		if not entry is Dictionary:
+			return null
+		var status: Variant = entry.get("status")
+		if status != "pending" and status != "unavailable":
+			continue
+		var origin: Variant = entry.get("origin_id")
+		if not origin is String or (origin as String).is_empty():
+			origin = "legacy:%s:%d" % [id, int(entry.get("id", 0))]
+		var minute: Variant = entry.get("world_minute", clock)
+		if not (minute is float or minute is int):
+			return null
+		var observation: NpcObservation = NpcObservation.from_perception(id, origin, float(minute), space, entry)
+		if observation == null:
+			return null
+		inbox.enqueue(observation)
+		entry["observation_id"] = observation.observation_id
+		entry["status"] = "pending"
+		if status == "unavailable":
+			unavailable.append(observation.observation_id)
+	var data: Dictionary = inbox.to_data()
+	for item: Dictionary in data["items"]:
+		if item["observation"]["observation_id"] in unavailable:
+			item["status"] = "DEFERRED"
+			item["attempts"] = 1
+			item["retry_after"] = 0.0
+			item["last_error"] = _LEGACY_UNAVAILABLE
+	return data
+
+static func _saved_space(people: Variant, id: String) -> StringName:
+	var person: Variant = (people as Dictionary).get(id) if people is Dictionary else null
+	var space: Variant = (person as Dictionary).get("space") if person is Dictionary else null
+	return StringName(space as String) if space is String and not (space as String).is_empty() \
+		else &"outdoors"
+
+# Only a combat noise carries the sounds-of-fighting cue; v1 added it to every heard report.
+static func _remove_misattributed_fighting_cue(state: Dictionary) -> void:
+	var noise_texts: Array[String] = []
+	var report_texts: Array[String] = []
+	for entry: Variant in state["observations"]:
+		if not entry is Dictionary or entry.get("status") != "classified" or entry.get("sense") != "hearing" \
+				or not entry.get("text") is String or not entry.get("kind") is String:
+			continue
+		if entry["kind"] == "combat_noise":
+			noise_texts.append(entry["text"])
+		elif not (entry["kind"] as String).is_empty():
+			report_texts.append(entry["text"])
+	var memories: Variant = state.get("memories")
+	if not memories is Array:
+		return
+	for memory: Variant in memories:
+		if not memory is Dictionary or not memory.get("gist") in report_texts \
+				or memory.get("gist") in noise_texts or not memory.get("sensory_cues") is Array:
+			continue
+		memory["sensory_cues"] = (memory["sensory_cues"] as Array).filter(
+			func(cue: Variant) -> bool: return cue != NpcObservation.COMBAT_NOISE_CUE)

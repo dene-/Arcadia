@@ -26,7 +26,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | --- | --- | --- |
 | M0 | done: simulation fixture, fake decision service, four audit-probe characterizations, 11 synthetic legacy fixtures | `5c89f4d` |
 | M1 | done: `NpcMindStore`/`NpcMindState`/`NpcRelationshipGraph`/`NpcCommitments`; v2 save with load resolution v2 → v1 world → memory-only → new; `NpcSaveMigration` revision 1; reset tooling on v2; relationships single-owned with receipts | see git log |
-| M2 | in progress | |
+| M2 | done: `NpcObservation` evidence per observer in a per-mind `NpcEvidenceInbox` (fair 32-item window, noise coalescing, protected evidence never dropped, deferred retry); `NpcKnowledge` with provenance/contradiction rules, public bootstrap (runtime-only, not saved), throttled first-hand sightings; `WorldEventSnapshot`; migration revision 2 | see git log |
 | M3 | pending | |
 | M4 | pending | |
 | M5 | pending | |
@@ -40,6 +40,12 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 
 - Unit 281 passed; every integration above plus `npc_reset_world_test` (fixed) and `npc_cognition_scenarios_test` passed; backend 32 passed.
 - Review checkpoint: a copy of the real `npc_world.json` (33 people, 10 dead, 221 memories, 1056 ties) migrated with zero relationship/tie mismatches; seeds (`region_seed` 828248366, `npc_seed` 508309546), personalities, population, economy, justice, deaths and rumors semantically equal; no v2 file written by loading; the real save's checksum unchanged.
+
+### M2 evidence
+
+- Unit 326 passed (includes the landed but not yet wired M3 core); all integrations above plus `npc_cognition_scenarios_test` passed; backend 32 passed.
+- Regression probes 1-3 flipped: death evidence survives 12 newer observations; a spoken body report becomes a hearsay memory naming the deceased and the reporter with no fighting cue; a provider failure defers evidence and a later attempt appraises it once.
+- Save size with knowledge: 221 KB on load, 303 KB after 2 game hours (public facts are re-derived at load; only personal facts are saved). Self-sighting history is not kept.
 
 ## Remaining migration adapters
 

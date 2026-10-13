@@ -283,20 +283,26 @@ func test_observation_fixture_holds_every_status_and_applies_relationship_change
 		statuses[int(observation.id)] = observation
 	assert_eq(statuses[1].status, "pending")
 	assert_eq(statuses[1].sense, "sight")
-	assert_eq(statuses[2].status, "unavailable")
+	assert_eq(statuses[2].status, "pending", "Unavailable legacy entries become unassessed context again.")
 	assert_true(statuses[2].decision.is_empty())
+	assert_eq(statuses[1].observation_id, "holt_partner:world:3")
+	assert_eq(statuses[2].observation_id, "holt_partner:world:4")
 	assert_eq(statuses[3].status, "classified")
 	assert_eq(statuses[3].sense, "hearing")
 	assert_eq(statuses[4].status, "classified")
 	assert_true(statuses[4].player_involved)
-	assert_eq(save.memory.pending_observations("holt_partner").size(), 1)
-	assert_eq(save.memory.pending_observations("holt_partner")[0].id, 1)
+	var pending_ids: Array = observations.filter(
+		func(observation: Dictionary) -> bool: return observation.status == "pending").map(
+			func(observation: Dictionary) -> int: return int(observation.id))
+	assert_eq(pending_ids, [1, 2])
+	var inbox: NpcEvidenceInbox = save.minds.get_mind("holt_partner").evidence
+	assert_eq(inbox.ready_count(save.life.minute), 2, "The inbox owns the retry of both entries.")
 	assert_eq(save.memory.to_save_data().npcs.holt_partner.next_observation_id, 5)
 	var heard: Array = _memories(save, "holt_partner").filter(
-		func(memory: Dictionary) -> bool: return "sounds of fighting" in memory.sensory_cues)
+		func(memory: Dictionary) -> bool: return memory.gist == statuses[3].text)
 	assert_eq(heard.size(), 1)
 	assert_eq(heard[0].source, "observed_event")
-	assert_eq(heard[0].gist, statuses[3].text)
+	assert_eq(heard[0].sensory_cues, [], "A heard body report is not the sound of fighting.")
 	var seen: Array = _memories(save, "holt_partner").filter(
 		func(memory: Dictionary) -> bool: return memory.gist == statuses[4].text)
 	assert_eq(seen.size(), 1)

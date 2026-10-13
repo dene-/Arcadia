@@ -229,9 +229,10 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 	var cognition := NpcCognitionProfile.new()
 	var before: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)
 	for index: int in range(100):
-		save.memory.record_observation(_profile(&"other"),
-			{"text": "I heard a noise.", "sense": "hearing", "player_involved": false})
-		save.memory.commit_observation("other", index + 1, _policy(false))
+		var noise: NpcObservation = NpcObservation.from_perception("other", "noise:%d" % index, 10.0,
+			&"outdoors", {"text": "I heard a noise.", "sense": "hearing", "player_involved": false})
+		save.memory.record_observation(_profile(&"other"), noise.to_event(), 10.0)
+		assert_true(save.memory.commit_evidence("other", noise, _policy(false)))
 	assert_eq(retriever.recall(memory, cognition, save.memory.world_minute), before)
 	save.life.advance(1440)
 	var later: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)
