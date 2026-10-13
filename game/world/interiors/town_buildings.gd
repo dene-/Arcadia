@@ -2,12 +2,15 @@ class_name TownBuildings
 extends Node2D
 
 ## Owns door transitions and multi-space journeys; actors and cognition remain alive across doors.
+## It is the brain's travel executor: each journey belongs to one task id, so a late cancel or
+## state query from an older task can never touch a newer journey.
 signal player_space_changed
 
 var seed_value: int
 var rooms: Dictionary[StringName, NpcInterior] = {}
 var outdoors: TownNavigation
 var _journeys: Dictionary = {}
+var _residents: Dictionary = {}
 var _player_camera_limits: Rect2i
 
 func _ready() -> void:
@@ -46,6 +49,7 @@ func navigation_for(space: StringName) -> TownNavigation:
 	return outdoors if space == &"outdoors" or not rooms.has(space) else rooms[space].navigation
 
 func restore(npc: BaseNpc, id: String, saved: Dictionary) -> void:
+	_residents[id] = weakref(npc)
 	var space := StringName(saved.get("space", "outdoors"))
 	if space != &"outdoors" and not rooms.has(space):
 		return
@@ -54,17 +58,43 @@ func restore(npc: BaseNpc, id: String, saved: Dictionary) -> void:
 		if navigation_for(space).is_clear(point):
 			_transfer(npc, id, space, point)
 
-func travel(npc: BaseNpc, id: String, space: StringName, point: Vector2,
-		activity: String, label: String) -> void:
-	if npc.state_machine.is_in_state(&"sleep"):
-		if activity == "rest" and npc.world_space == space:
-			return
-		npc.wake_from_noise("schedule")
-	_journeys[id] = {"space": space, "point": point, "activity": activity, "label": label}
-	_next_leg(npc, id)
+func begin_task_travel(npc: Object, npc_id: String, space: StringName, point: Vector2,
+		label: String, owner_task_id: String) -> bool:
+	if not npc is BaseNpc or owner_task_id.is_empty() \
+			or (space != &"outdoors" and not rooms.has(space)):
+		return false
+	_residents[npc_id] = weakref(npc)
+	_journeys[npc_id] = {"owner": owner_task_id, "npc": weakref(npc), "space": space,
+		"point": point, "label": label, "state": &"traveling"}
+	_next_leg(npc, npc_id)
+	return true
 
+func cancel_task_travel(npc_id: String, owner_task_id: String) -> bool:
+	var journey: Dictionary = _journeys.get(npc_id, {})
+	if journey.is_empty() or journey.owner != owner_task_id:
+		return false
+	_journeys.erase(npc_id)
+	var npc: BaseNpc = journey.npc.get_ref() as BaseNpc
+	if journey.state == &"traveling" and npc != null:
+		npc.daily_routine.stop()
+	return true
+
+func task_travel_state(npc_id: String, owner_task_id: String) -> StringName:
+	var journey: Dictionary = _journeys.get(npc_id, {})
+	if journey.is_empty() or journey.owner != owner_task_id:
+		return &"none"
+	return journey.state
+
+## The resident's own bed when it stands in a room it lives in; null anywhere else.
+func bed_for(npc_id: String) -> Variant:
+	var npc: BaseNpc = _residents[npc_id].get_ref() as BaseNpc if _residents.has(npc_id) else null
+	if npc == null or not rooms.has(npc.world_space) or not npc_id in rooms[npc.world_space].residents:
+		return null
+	return rooms[npc.world_space].bed_for(npc_id, true)
+
+## Progresses a journey through doors; arriving only marks the journey for its owning task.
 func advance(npc: BaseNpc, id: String) -> void:
-	if not _journeys.has(id) or not npc.can_follow_routine():
+	if not _journeys.has(id) or _journeys[id].state != &"traveling" or not npc.can_follow_routine():
 		return
 	var journey: Dictionary = _journeys[id]
 	# A family can queue at a doorway without every body reaching the same pixel.
@@ -75,9 +105,7 @@ func advance(npc: BaseNpc, id: String) -> void:
 			npc.global_position, npc.daily_routine.destination):
 		return
 	if npc.world_space == journey.space:
-		_journeys.erase(id)
-		if journey.activity == "rest" and rooms.has(npc.world_space) and id in rooms[npc.world_space].residents:
-			npc.sleep_at(rooms[npc.world_space].bed_for(id, true))
+		journey.state = &"arrived"
 		return
 	if npc.world_space != &"outdoors":
 		if not _transfer(npc, id, &"outdoors", rooms[npc.world_space].outside):
@@ -89,6 +117,7 @@ func advance(npc: BaseNpc, id: String) -> void:
 
 func release(npc: BaseNpc, id: String) -> void:
 	_journeys.erase(id)
+	_residents.erase(id)
 	navigation_for(npc.world_space).release(id)
 
 func move_player(player: BasePlayer, destination: StringName) -> void:
@@ -131,10 +160,11 @@ func _next_leg(npc: BaseNpc, id: String) -> void:
 	var navigation: TownNavigation = navigation_for(npc.world_space)
 	npc.daily_routine.navigation = navigation
 	# Door thresholds and the resident's bed are fixed anchors, not gathering spots.
-	var fixed_bed: bool = journey.activity == "rest" and rooms.has(npc.world_space) and id in rooms[npc.world_space].residents
+	var fixed_bed: bool = npc.daily_routine.activity == "rest" and rooms.has(npc.world_space) \
+		and id in rooms[npc.world_space].residents
 	var destination: Vector2 = navigation.reserve_destination(id, point) \
 		if npc.world_space == journey.space and not fixed_bed else navigation.nearest(point)
-	npc.daily_routine.travel(npc.global_position, destination, journey.activity, journey.label)
+	npc.daily_routine.travel(npc.global_position, destination, npc.daily_routine.activity, journey.label)
 	npc.state_time_remaining = 0
 
 func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) -> bool:

@@ -8,7 +8,7 @@ var activity: String = "rest"
 var place: String = "home"
 var destination: Vector2
 var _route := ActorRoute.new()
-var _held: bool = false
+var _traveling: bool = false
 
 func travel(from: Vector2, to: Vector2, kind: String, place_name: String) -> void:
 	activity = kind
@@ -17,12 +17,14 @@ func travel(from: Vector2, to: Vector2, kind: String, place_name: String) -> voi
 	_route.navigation = navigation
 	_route.id = npc_id
 	_route.travel(from, destination)
+	_traveling = true
 
-func hold(value: bool) -> void:
-	_held = value
+## Drops the current route so the actor idles where it stands until the next travel.
+func stop() -> void:
+	_traveling = false
 
 func has_route(position: Vector2) -> bool:
-	return not _held and _route.active(position)
+	return _traveling and _route.active(position)
 
 func direction(position: Vector2) -> Vector2:
 	return velocity_for(position, 28.0, 1.0 / 60.0) / 28.0
@@ -35,7 +37,8 @@ func velocity_for(position: Vector2, speed: float, delta: float) -> Vector2:
 	return navigation.steer(npc_id, position, desired, delta)
 
 func update(position: Vector2, delta: float, interrupted: bool) -> void:
-	_route.update(position, delta, interrupted or _held)
+	if _traveling:
+		_route.update(position, delta, interrupted)
 
 func context(position: Vector2) -> Dictionary:
 	return {"activity": activity, "location": place,

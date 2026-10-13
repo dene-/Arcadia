@@ -45,7 +45,7 @@ func _run() -> void:
 			continue # The late watch is working at 23:00; its daytime rest is checked below.
 		var home: Dictionary = {"kind": "rest", "place": "home:" + id}
 		life.save_game.life.select_activity(id, home, 120, {})
-		life._travel(npc, id, home)
+		life._request_routine(npc, id, home)
 	for frame: int in range(1800):
 		await physics_frame
 	for npc: BaseNpc in residents:
@@ -197,7 +197,7 @@ func _run() -> void:
 		var id: String = String(npc.get_npc_profile().npc_id)
 		var outing: Dictionary = {"kind": "walk", "place": "square"}
 		life.save_game.life.select_activity(id, outing, 120, {})
-		life._travel(npc, id, outing)
+		life._request_routine(npc, id, outing)
 	for frame: int in range(1800):
 		await physics_frame
 	for npc: BaseNpc in residents:

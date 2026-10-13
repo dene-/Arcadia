@@ -86,7 +86,7 @@ func _run() -> void:
 		var id: String = String(participant.get_npc_profile().npc_id)
 		var meeting: Dictionary = {"kind": "social", "place": "square"}
 		cognition.save_game.life.select_activity(id, meeting, 90, {})
-		life._travel(participant, id, meeting)
+		life._request_routine(participant, id, meeting)
 	var capture: String = OS.get_environment("ARCADIA_TOWN_CAPTURE")
 	var arrivals: Dictionary = {}
 	for frame: int in range(7200):

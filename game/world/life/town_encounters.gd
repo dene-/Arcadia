@@ -2,22 +2,30 @@ class_name TownEncounters
 extends Node
 
 ## Owns short social sessions; dialogue, injury or death invalidate every pending inference.
+## A session reserves both participants through their NpcBrain: a conversation claim plus a
+## hold task owned by "session:<id>". A cancelled hold or a revoked claim ends the session.
 const MAX_SESSIONS: int = 3
 const RANGE: float = 28.0
+const HOLD_REASON: String = "conversation"
 var state: TownLifeState
 var store: NpcMemoryStore
 var backend: DialogBackendClient
 var seed_value: int
 var save_callback: Callable
+## Returns the NpcBrain for a resident id (or null).
+var brains: Callable
+var tuning: NpcBehaviorTuning
 var _busy: Dictionary = {}
 var _sessions: Dictionary = {}
 var _serial: int = 0
 var _diagnostics: Dictionary = {}
+# Resident ids whose brain signals this node already listens to.
+var _listening: Dictionary = {}
 
 func _process(_delta: float) -> void:
 	for token: int in _sessions.keys():
-		var session: Dictionary = _sessions[token]
-		if not session.valid.call():
+		var session: Dictionary = _sessions.get(token, {})
+		if not session.is_empty() and not session.valid.call():
 			_release(session.a, session.b, token)
 
 func is_busy(id: String) -> bool:
@@ -45,16 +53,65 @@ func consider(first: BaseNpc, second: BaseNpc) -> void:
 		or not _near(first, second) or state.get_person(a).social_after > state.minute \
 		or state.get_person(b).social_after > state.minute:
 		return
+	var brain_a: NpcBrain = _brain(a)
+	var brain_b: NpcBrain = _brain(b)
+	if brain_a == null or brain_b == null:
+		return
+	var session_id: String = str(_serial + 1)
+	var holds: Dictionary = {}
+	# Reserve in stable ID order; a refusal releases whoever was already reserved.
+	for id: String in ([a, b] if a < b else [b, a]):
+		var brain: NpcBrain = brain_a if id == a else brain_b
+		var hold_id: String = _reserve(brain, session_id)
+		if hold_id.is_empty():
+			for reserved: String in holds:
+				_unreserve(brain_a if reserved == a else brain_b, session_id, holds[reserved])
+			return
+		holds[id] = hold_id
 	_serial += 1
 	_busy[a] = _serial
 	_busy[b] = _serial
+	_sessions[_serial] = {"a": a, "b": b, "id": session_id, "holds": holds,
+		"brains": {a: brain_a, b: brain_b}}
 	state.reserve_encounter(a, seed_value)
 	state.reserve_encounter(b, seed_value)
-	first.daily_routine.hold(true)
-	second.daily_routine.hold(true)
 	first.set_facing_from_direction(second.global_position - first.global_position)
 	second.set_facing_from_direction(first.global_position - second.global_position)
 	_run(first, second, a, b, first.life_revision, second.life_revision, _serial)
+
+# Returns the hold task id, or "" when the brain refused the conversation or the hold.
+func _reserve(brain: NpcBrain, session_id: String) -> String:
+	if not brain.request_conversation(session_id):
+		return ""
+	var hold := NpcHoldTask.create({"owner": "session:" + session_id, "reason": HOLD_REASON,
+		"priority": tuning.hold_priority})
+	if not brain.request_task(hold):
+		brain.finish_conversation(session_id)
+		return ""
+	return hold.task_id
+
+# Owner-checked and idempotent: a hold or claim already taken over by another task is untouched.
+func _unreserve(brain: Variant, session_id: String, hold_id: String) -> void:
+	if not is_instance_valid(brain):
+		return
+	(brain as NpcBrain).end_task(hold_id, &"session_ended")
+	(brain as NpcBrain).finish_conversation(session_id)
+
+func _brain(id: String) -> NpcBrain:
+	var brain: NpcBrain = brains.call(id) if brains.is_valid() else null
+	if brain != null and not _listening.has(id):
+		_listening[id] = true
+		brain.task_finished.connect(_on_task_finished.bind(id))
+		brain.controller.claim_revoked.connect(_on_claim_revoked.bind(id))
+	return brain
+
+func _on_task_finished(task_id: String, _status: String, _reason: StringName, id: String) -> void:
+	if _busy.has(id) and _sessions[_busy[id]].holds.get(id) == task_id:
+		interrupt(id)
+
+func _on_claim_revoked(_claim: StringName, old_owner: String, id: String) -> void:
+	if _busy.has(id) and old_owner == "session:" + String(_sessions[_busy[id]].id):
+		interrupt(id)
 
 func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev_b: int, token: int) -> void:
 	var start: int = Time.get_ticks_msec()
@@ -64,8 +121,7 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 			and first.life_revision == rev_a and second.life_revision == rev_b \
 			and not _sheltering(a) and not _sheltering(b) \
 			and Time.get_ticks_msec() - start < 45000 and _near(first, second)
-	_sessions[token] = {"valid": valid, "a": a, "b": b,
-		"first": weakref(first), "second": weakref(second)}
+	_sessions[token].valid = valid
 	_status(a, b, "assessing")
 	for round_index: int in range(2):
 		if not valid.call():
@@ -136,17 +192,16 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 			break
 	_release(a, b, token)
 
+# Cleanup ends both holds and finishes both conversations; safe to call more than once.
 func _release(a: String, b: String, token: int) -> void:
 	if not _sessions.has(token):
 		return
 	var session: Dictionary = _sessions[token]
-	for pair: Array in [[a, session.first], [b, session.second]]:
-		if _busy.get(pair[0]) != token:
+	for id: String in [a, b]:
+		if _busy.get(id) != token:
 			continue
-		_busy.erase(pair[0])
-		var actor: BaseNpc = pair[1].get_ref()
-		if actor != null and actor.daily_routine != null:
-			actor.daily_routine.hold(false)
+		_busy.erase(id)
+		_unreserve(session.brains[id], session.id, session.holds[id])
 	_sessions.erase(token)
 
 func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:

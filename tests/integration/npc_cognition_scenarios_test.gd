@@ -21,14 +21,20 @@ func _run() -> void:
 	await _scenario_reload_stability()
 	await _scenario_no_information_without_evidence()
 	await _scenario_personal_knowledge()
+	await _scenario_sleeper_shelters()
+	await _scenario_safety_ends_session()
+	await _scenario_reload_mid_travel()
 	for failure: String in failures:
 		push_error(failure)
 	print("NPC cognition scenarios: ", "PASS" if failures.is_empty() else "FAIL")
 	quit(0 if failures.is_empty() else 1)
 
-func _start() -> Simulation:
+## `minute` (when not negative) sets the town clock before the world loads.
+func _start(minute: float = -1.0) -> Simulation:
 	var sim := Simulation.new()
 	sim.setup(self)
+	if minute >= 0.0:
+		sim.save_game().life.minute = minute
 	await sim.load_world()
 	_check(sim.problems.is_empty(), "Fixture problems: %s" % [sim.problems])
 	return sim
@@ -243,3 +249,243 @@ func _size_report(sim: Simulation) -> Dictionary:
 		max_facts = maxi(max_facts, (_knowledge_of(sim, id).to_data().facts as Array).size())
 	_check(save.save_file() == OK, "Save failed")
 	return {"minds": minds, "file": FileAccess.get_file_as_bytes(sim.save_path).size(), "max_facts": max_facts}
+
+func _task(sim: Simulation, id: String) -> NpcTask:
+	var brain: NpcBrain = sim.life.brain_for(id)
+	return brain.controller.current if brain != null else null
+
+func _claims(sim: Simulation, id: String) -> Dictionary:
+	return sim.life.brain_for(id).debug_snapshot().claims
+
+func _journey_owner(sim: Simulation, id: String) -> String:
+	var journey: Dictionary = sim.life.buildings._journeys.get(id, {})
+	return String(journey.owner) if journey.get("state") == &"traveling" else ""
+
+## Every trace entry of `id` from `minute` on shows the running task as the only locomotion owner.
+func _check_single_owner(sim: Simulation, id: String, minute: float, label: String) -> void:
+	for entry: Dictionary in sim.trace():
+		if entry.id == id and float(entry.minute) >= minute:
+			_check(entry.locomotion == entry.task_id,
+				"%s: locomotion owned by '%s' while '%s' runs at %.1f" % [label, entry.locomotion, entry.task_id, entry.minute])
+
+## No resident sleeps or travels without a task owning that state.
+func _check_owned_states(sim: Simulation, label: String) -> void:
+	for id: String in sim.resident_ids():
+		var npc: BaseNpc = sim.resident(id)
+		var task: NpcTask = _task(sim, id)
+		if npc.is_sleeping():
+			_check(task != null and task.kind == &"routine" and task.phase == NpcRoutineTask.PHASE_SLEEP,
+				"%s: %s sleeps without a rest task" % [label, id])
+		var owner: String = _journey_owner(sim, id)
+		if not owner.is_empty():
+			_check(task != null and task.task_id == owner, "%s: %s travels for '%s', not its running task" % [label, id, owner])
+
+## (a) A sleeper stirs on a noise without waking, then a SHELTER concern orients, wakes and moves it
+## to a refuge; once the concern expires a routine takes over.
+func _scenario_sleeper_shelters() -> void:
+	var sim: Simulation = await _start(60.0)
+	var id: String = ""
+	for attempt: int in 60:
+		for candidate: String in sim.resident_ids():
+			var resident: BaseNpc = sim.resident(candidate)
+			var current: NpcTask = _task(sim, candidate)
+			if not resident.is_in_group(&"town_guards") and resident.is_sleeping() and current != null \
+					and current.kind == &"routine" and current.phase == NpcRoutineTask.PHASE_SLEEP:
+				id = candidate
+				break
+		if not id.is_empty():
+			break
+		await sim.advance(1.0)
+	_check(not id.is_empty(), "(a) Nobody went to sleep in a rest task")
+	if id.is_empty():
+		await sim.teardown()
+		return
+	var npc: BaseNpc = sim.resident(id)
+	var brain: NpcBrain = sim.life.brain_for(id)
+	var rest_id: String = _task(sim, id).task_id
+	var start_minute: float = sim.save_game().life.minute
+	var start_space: StringName = npc.world_space
+	var start_position: Vector2 = npc.global_position
+	# The cognition pipeline's reflex and provisional concern, then a SHELTER classification.
+	var event: Dictionary = {"origin_id": "noise:m3a", "text": "Something heavy crashed against the door.",
+		"sense": "hearing", "danger_possible": true, "directly_affected": false}
+	npc.alert_response.notice(npc, event)
+	sim.save_game().life.notice_perception(id, event, String(npc.world_space))
+	sim.save_game().life.assess_perception(id, event, {"safety_response": "SHELTER"})
+	_check(npc.alert_response.phase == "stirring", "(a) A sleeper did not stir on the noise")
+	var safety_id: String = ""
+	var oriented_asleep: bool = false
+	var fled: bool = false
+	for frame: int in 600:
+		await sim.advance(1.0 / 60.0)
+		if npc.alert_response.phase == "stirring":
+			_check(npc.is_sleeping(), "(a) The sleeper woke inside the stirring window")
+		var current: NpcTask = _task(sim, id)
+		if current == null or current.kind != &"safety":
+			continue
+		if safety_id.is_empty():
+			safety_id = current.task_id
+			_check(_claims(sim, id) == {"locomotion": safety_id, "conversation": safety_id},
+				"(a) The shelter task does not own both claims: %s" % [_claims(sim, id)])
+			_check(brain.controller.suspended != null and brain.controller.suspended.task_id == rest_id,
+				"(a) The rest task was not suspended under the shelter task")
+		if current.phase == NpcSafetyTask.PHASE_ORIENT and npc.is_sleeping():
+			oriented_asleep = true
+		if current.phase == NpcSafetyTask.PHASE_FLEE and not npc.is_sleeping() \
+				and _journey_owner(sim, id) == safety_id:
+			fled = true
+			break
+	_check(not safety_id.is_empty(), "(a) The SHELTER concern produced no safety task")
+	_check(oriented_asleep, "(a) The shelter task did not orient while the sleeper stirred")
+	_check(fled, "(a) The resident never woke and set off for the refuge")
+	await sim.advance(10.0)
+	_check(npc.world_space != start_space or npc.global_position.distance_to(start_position) > 16.0,
+		"(a) The resident did not travel towards the refuge")
+	# Let the concern expire; the shelter task completes and a routine takes over.
+	var until: float = float(sim.save_game().life.get_person(id).safety.get("until", start_minute))
+	sim.save_game().life.advance(maxf(0.0, until - sim.save_game().life.minute) + 0.5)
+	var resumed: bool = false
+	for second: int in 5:
+		await sim.advance(1.0)
+		var current: NpcTask = _task(sim, id)
+		if current != null and current.kind == &"routine":
+			resumed = true
+			break
+	_check(resumed, "(a) No routine resumed after the concern expired")
+	_check(brain.task_state(safety_id) != "running", "(a) The expired shelter task kept running")
+	_check_single_owner(sim, id, start_minute, "(a)")
+	await sim.teardown()
+
+## (b) A safety task on one participant ends the session for both, and the session's late
+## release cannot take the safety task's claims.
+func _scenario_safety_ends_session() -> void:
+	var sim: Simulation = await _start(600.0)
+	await sim.advance(2.0)
+	var pair: Array[BaseNpc] = []
+	for id: String in sim.resident_ids():
+		var npc: BaseNpc = sim.resident(id)
+		if npc.is_in_group(&"town_guards") or npc.world_space != &"outdoors" or npc.is_sleeping() \
+				or npc.daily_routine.activity == "rest" or not npc.can_speak_reaction() \
+				or sim.life.encounters.is_busy(id) or sim.life.funerals.is_assigned(id) \
+				or float(sim.save_game().life.get_person(id).social_after) > sim.save_game().life.minute:
+			continue
+		pair.append(npc)
+		if pair.size() == 2:
+			break
+	_check(pair.size() == 2, "(b) Fewer than two free residents are outdoors")
+	if pair.size() < 2:
+		await sim.teardown()
+		return
+	var first: BaseNpc = pair[0]
+	var second: BaseNpc = pair[1]
+	var first_id: String = String(first.get_npc_profile().npc_id)
+	var second_id: String = String(second.get_npc_profile().npc_id)
+	second.global_position = first.global_position + Vector2(12.0, 0.0)
+	sim.backend.hold("life/social")
+	sim.life.encounters.consider(first, second)
+	_check(sim.life.encounters.is_busy(first_id) and sim.life.encounters.is_busy(second_id),
+		"(b) The session did not start: %s / %s" % [sim.life.brain_for(first_id).debug_snapshot(),
+			sim.life.brain_for(second_id).debug_snapshot()])
+	if not sim.life.encounters.is_busy(first_id):
+		sim.backend.release("life/social")
+		await sim.teardown()
+		return
+	var session_owner: String = String(_claims(sim, first_id).conversation)
+	for id: String in [first_id, second_id]:
+		var hold: NpcTask = _task(sim, id)
+		_check(hold != null and hold.kind == &"hold", "(b) %s is not held by the session" % id)
+		_check(hold != null and _claims(sim, id) == {"locomotion": hold.task_id, "conversation": session_owner},
+			"(b) %s claims do not belong to the session: %s" % [id, _claims(sim, id)])
+	_check(session_owner.begins_with("session:"), "(b) The conversation claim has no session owner")
+	var event: Dictionary = {"origin_id": "attack:m3b", "text": "Someone struck me.",
+		"sense": "touch", "danger_possible": true, "directly_affected": true}
+	sim.save_game().life.notice_perception(second_id, event, String(second.world_space))
+	var safety: NpcTask = null
+	for frame: int in 90:
+		await sim.advance(1.0 / 60.0)
+		var current: NpcTask = _task(sim, second_id)
+		if current != null and current.kind == &"safety":
+			safety = current
+			break
+	_check(safety != null, "(b) The SHELTER concern produced no safety task")
+	if safety == null:
+		sim.backend.release("life/social")
+		await sim.teardown()
+		return
+	_check(not sim.life.encounters.is_busy(first_id) and not sim.life.encounters.is_busy(second_id),
+		"(b) The session outlived a participant's safety task")
+	_check(_claims(sim, first_id).conversation != session_owner, "(b) The partner kept the session's conversation claim")
+	var partner: NpcTask = _task(sim, first_id)
+	_check(partner == null or partner.kind != &"hold", "(b) The partner is still held")
+	sim.backend.release("life/social")
+	await sim.advance(0.5)
+	_check(_task(sim, second_id) == safety and safety.status == NpcTask.Status.RUNNING,
+		"(b) The session's late release ended the safety task")
+	_check(_claims(sim, second_id) == {"locomotion": safety.task_id, "conversation": safety.task_id},
+		"(b) The session's late release took the safety task's claims: %s" % [_claims(sim, second_id)])
+	await sim.teardown()
+
+## (c) Reloading mid-travel restores the task, which re-routes from the saved position; no state is
+## left without an owning task and nobody stays inactive for long.
+func _scenario_reload_mid_travel() -> void:
+	var sim: Simulation = await _start(480.0)
+	var id: String = ""
+	for attempt: int in 30:
+		await sim.advance(0.5)
+		for candidate: String in sim.resident_ids():
+			var current: NpcTask = _task(sim, candidate)
+			if current != null and current.kind == &"routine" and current.phase == NpcRoutineTask.PHASE_TRAVEL \
+					and _journey_owner(sim, candidate) == current.task_id \
+					and sim.resident(candidate).world_space == &"outdoors":
+				id = candidate
+				break
+		if not id.is_empty():
+			break
+	_check(not id.is_empty(), "(c) Nobody was travelling for a routine")
+	if id.is_empty():
+		await sim.teardown()
+		return
+	var task_id: String = _task(sim, id).task_id
+	await sim.reload_world()
+	_check(sim.problems.is_empty(), "(c) Reload problems: %s" % [sim.problems])
+	var saved: Array = sim.save_game().life.get_person(id).position
+	var saved_position := Vector2(float(saved[0]), float(saved[1]))
+	var npc: BaseNpc = sim.resident(id)
+	var restored: NpcTask = _task(sim, id)
+	_check(restored != null and restored.task_id == task_id and restored.phase == NpcRoutineTask.PHASE_TRAVEL,
+		"(c) The travelling routine was not restored: %s" % [restored.checkpoint() if restored != null else {}])
+	_check(npc.global_position.distance_to(saved_position) <= 4.0,
+		"(c) %s restored at %s, saved at %s" % [id, npc.global_position, saved_position])
+	_check(_journey_owner(sim, id) == task_id, "(c) The restored task did not re-route")
+	_check_owned_states(sim, "(c) after reload")
+	var reload_minute: float = sim.save_game().life.minute
+	await sim.advance(2.0)
+	_check(npc.global_position.distance_to(saved_position) > 4.0 or _task(sim, id) == null
+		or _task(sim, id).task_id != task_id or _task(sim, id).phase != NpcRoutineTask.PHASE_TRAVEL,
+		"(c) The restored traveller did not move")
+	await sim.advance_minutes(10.0)
+	_check_owned_states(sim, "(c) 10 minutes later")
+	for resident: String in sim.resident_ids():
+		var current: NpcTask = _task(sim, resident)
+		var active: bool = current != null and current.status == NpcTask.Status.RUNNING
+		var replanning: bool = current == null and (sim.life._pending.has(resident) or sim.life._routine_due(resident))
+		_check(active or replanning, "(c) %s is inactive with nothing pending" % resident)
+	_check_idle_bounded(sim, reload_minute, 4.5, "(c)")
+	await sim.teardown()
+
+## No resident runs without a task for longer than `limit` game minutes after `from`.
+func _check_idle_bounded(sim: Simulation, from: float, limit: float, label: String) -> void:
+	var idle_since: Dictionary = {}
+	var end: float = sim.save_game().life.minute
+	for entry: Dictionary in sim.trace():
+		if float(entry.minute) < from:
+			continue
+		if String(entry.task_id).is_empty():
+			if not idle_since.has(entry.id):
+				idle_since[entry.id] = float(entry.minute)
+		elif idle_since.has(entry.id):
+			_check(float(entry.minute) - float(idle_since[entry.id]) <= limit,
+				"%s %s idled %.1f minutes" % [label, entry.id, float(entry.minute) - float(idle_since[entry.id])])
+			idle_since.erase(entry.id)
+	for id: String in idle_since:
+		_check(end - float(idle_since[id]) <= limit, "%s %s still idle after %.1f minutes" % [label, id, end - float(idle_since[id])])

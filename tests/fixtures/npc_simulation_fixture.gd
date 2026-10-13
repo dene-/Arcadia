@@ -113,12 +113,14 @@ func _record_trace() -> void:
 		var npc: BaseNpc = resident(id)
 		var person: Dictionary = save_game().life.get_person(id)
 		var routine: NpcDailyRoutine = npc.daily_routine
-		if person.is_empty() or routine == null:
+		var brain: NpcBrain = life.brain_for(id)
+		if person.is_empty() or routine == null or brain == null:
 			continue
+		var task: Dictionary = brain.current_activity()
 		var entry: Dictionary = {"id": id, "activity": person.activity, "place": person.place,
 			"destination": routine.destination.snappedf(0.1),
-			# M3 replaces this private read with the actor's task claim.
-			"held": routine._held, "sleeping": npc.is_sleeping(),
+			"task": "%s:%s" % [task.get("kind", ""), task.get("phase", "")], "task_id": task.get("task_id", ""),
+			"locomotion": brain.controller.claim_owner(&"locomotion"), "sleeping": npc.is_sleeping(),
 			"alert_phase": npc.alert_response.phase, "space": String(npc.world_space)}
 		if _last_entry.get(id) == entry:
 			continue
@@ -179,6 +181,20 @@ func reload_save() -> Dictionary:
 		error = reloaded.load_file()
 	return {"error": error, "before": before, "after": _normalize(reloaded.to_data()),
 		"effects_before": effects_before, "effects_after": _normalize(save_effects(reloaded))}
+
+## Awaitable. Writes the save, frees the world, reads the save file back into the live NpcWorldSave
+## and loads a fresh world from it, as a restart would. Returns null if the reload failed.
+func reload_world() -> Node:
+	life.save_snapshot()
+	world.queue_free()
+	await tree.process_frame
+	await tree.process_frame
+	var error: Error = save_game().load_file()
+	if error != OK:
+		_fail("Could not read the save back: %s" % error)
+		return null
+	_last_entry.clear()
+	return await load_world()
 
 func teardown() -> void:
 	if backend != null and is_instance_valid(backend):

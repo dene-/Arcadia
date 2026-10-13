@@ -3,11 +3,17 @@ extends Node
 
 ## Coordinates physical discovery, reporting, recovery and burial through ordinary actor routes.
 ## TownDeaths owns persistence; cognition sees only each participant's perceived facts.
+## Every errand or pause is a task requested from the participant's NpcBrain (owner "funerals").
+const OWNER: String = "funerals"
+
 var life: TownLife
 var cemetery: TownCemetery
 var _bodies: Dictionary[String, NpcRemains] = {}
 var _scan_elapsed: float = 0.0
-var _routed: Dictionary = {}
+# npc_id -> {task_id, kind: "travel"|"hold", space, point, activity}: the one task funerals owns.
+var _tasks: Dictionary = {}
+# npc_id -> true once this node listens to the resident's brain.
+var _listening: Dictionary = {}
 var _settled: Dictionary = {}
 
 func _ready() -> void:
@@ -45,7 +51,7 @@ func advance(delta: float) -> void:
 			if guard != null:
 				if guard.has_enemy_target() or guard.state_machine.is_in_state(&"hurt"):
 					_change(id, "reported")
-					_routed.erase(entry.guard)
+					_forget(entry.guard)
 					_bodies[id].set_carried(false)
 					continue
 				# A covered body follows its carrier through the same doors, never teleports ahead.
@@ -179,7 +185,7 @@ func _recover(guard: BaseNpc, guard_id: String, id: String, entry: Dictionary) -
 		guard.show_spoken_reaction("Give me some room, please.")
 	elif life.save_game.life.minute - entry.since >= 6:
 		_change(id, "carried")
-		_routed.erase(guard_id)
+		_forget(guard_id)
 		_bodies[id].set_carried(true)
 	return true
 
@@ -197,23 +203,76 @@ func _safe(guard: BaseNpc, point: Vector2) -> bool:
 
 func _move(npc: BaseNpc, id: String, space: StringName, point: Vector2, activity: String, label: String) -> void:
 	life.encounters.interrupt(id)
-	npc.daily_routine.hold(false)
-	var previous: Dictionary = _routed.get(id, {})
-	if not previous.is_empty() and previous.space == space and previous.activity == activity \
-		and Vector2(previous.point).distance_to(point) < 20 and npc.daily_routine.activity == activity:
+	var brain: NpcBrain = _brain(id)
+	if brain == null:
 		return
-	_routed[id] = {"space": space, "point": point, "activity": activity}
-	npc.life_revision += 1 # Invalidates pending ordinary routine/model results.
-	life.buildings.travel(npc, id, space, point, activity, label)
+	var previous: Dictionary = _tasks.get(id, {})
+	if not previous.is_empty() and previous.kind == "travel" and previous.space == space \
+		and previous.activity == activity and Vector2(previous.point).distance_to(point) < 20 \
+		and _live(brain, previous.task_id):
+		return
+	_forget(id)
+	var task := NpcDirectedTravelTask.create({"owner": OWNER, "activity": activity, "space": String(space),
+		"point": [point.x, point.y], "label": label, "priority": life.tuning.directed_travel_priority,
+		"hold_on_arrival": true})
+	if brain.request_task(task):
+		_tasks[id] = {"task_id": task.task_id, "kind": "travel", "space": space, "point": point,
+			"activity": activity}
 
-func _pause(npc: BaseNpc, id: String) -> void:
+func _pause(_npc: BaseNpc, id: String) -> void:
 	life.encounters.interrupt(id)
-	npc.daily_routine.hold(true)
+	var brain: NpcBrain = _brain(id)
+	if brain == null:
+		return
+	var previous: Dictionary = _tasks.get(id, {})
+	if not previous.is_empty() and previous.kind == "hold" and _live(brain, previous.task_id):
+		return
+	_forget(id)
+	var task := NpcHoldTask.create({"owner": OWNER, "reason": "absorbing a death",
+		"priority": life.tuning.directed_travel_priority})
+	if brain.request_task(task):
+		_tasks[id] = {"task_id": task.task_id, "kind": "hold", "space": &"", "point": Vector2.ZERO,
+			"activity": ""}
 
-func _resume(npc: BaseNpc, id: String) -> void:
-	npc.daily_routine.hold(false)
-	_routed.erase(id)
+func _resume(_npc: BaseNpc, id: String) -> void:
+	_forget(id)
 	life.save_game.life.interrupt(id)
+
+# Ends the task funerals owns for this resident, if any; the brain then resumes its routine.
+func _forget(id: String) -> void:
+	var previous: Dictionary = _tasks.get(id, {})
+	_tasks.erase(id)
+	var brain: NpcBrain = _brain(id)
+	if not previous.is_empty() and brain != null:
+		brain.end_task(previous.task_id, &"released")
+
+## After a reload: keep a restored funerals errand only while this resident still has the duty.
+func reconcile(id: String, brain: NpcBrain) -> void:
+	for task: NpcTask in [brain.controller.current, brain.controller.suspended]:
+		if task == null or task.kind != &"directed_travel" or task.params.get("owner") != OWNER:
+			continue
+		if is_assigned(id) and not _tasks.has(id):
+			_brain(id)
+			_tasks[id] = {"task_id": task.task_id, "kind": "travel", "space": StringName(task.params.space),
+				"point": Vector2(float(task.params.point[0]), float(task.params.point[1])),
+				"activity": task.params.activity}
+		else:
+			brain.end_task(task.task_id, &"unowned")
+
+func _brain(id: String) -> NpcBrain:
+	var brain: NpcBrain = life.brain_for(id)
+	if brain != null and not _listening.has(id):
+		_listening[id] = true
+		brain.task_finished.connect(_on_task_finished.bind(id))
+	return brain
+
+func _on_task_finished(task_id: String, _status: String, _reason: StringName, id: String) -> void:
+	if _tasks.has(id) and _tasks[id].task_id == task_id:
+		_tasks.erase(id) # Displaced or unreachable: the next maintain asks again if still assigned.
+
+static func _live(brain: NpcBrain, task_id: String) -> bool:
+	return brain.task_state(task_id) in [NpcTask.status_name(NpcTask.Status.RUNNING),
+		NpcTask.status_name(NpcTask.Status.SUSPENDED)]
 
 func _busy(npc_id: String, except_body: String = "") -> bool:
 	for id: String in life.save_game.deaths.records:

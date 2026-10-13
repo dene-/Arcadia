@@ -27,7 +27,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M0 | done: simulation fixture, fake decision service, four audit-probe characterizations, 11 synthetic legacy fixtures | `5c89f4d` |
 | M1 | done: `NpcMindStore`/`NpcMindState`/`NpcRelationshipGraph`/`NpcCommitments`; v2 save with load resolution v2 → v1 world → memory-only → new; `NpcSaveMigration` revision 1; reset tooling on v2; relationships single-owned with receipts | see git log |
 | M2 | done: `NpcObservation` evidence per observer in a per-mind `NpcEvidenceInbox` (fair 32-item window, noise coalescing, protected evidence never dropped, deferred retry); `NpcKnowledge` with provenance/contradiction rules, public bootstrap (runtime-only, not saved), throttled first-hand sightings; `WorldEventSnapshot`; migration revision 2 | see git log |
-| M3 | pending | |
+| M3 | done: `NpcTaskController` (owner-checked claims, one suspended task, checkpoints), `NpcBrain` per resident, routine/safety tasks, directed-travel/hold adapter tasks; `TownBuildings` is a task-owned executor (no sleep/wake decisions); `NpcDailyRoutine.hold` and the `maintain` priority chain removed | see git log |
 | M4 | pending | |
 | M5 | pending | |
 | M6 | pending | |
@@ -47,10 +47,18 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 - Regression probes 1-3 flipped: death evidence survives 12 newer observations; a spoken body report becomes a hearsay memory naming the deceased and the reporter with no fighting cue; a provider failure defers evidence and a later attempt appraises it once.
 - Save size with knowledge: 221 KB on load, 303 KB after 2 game hours (public facts are re-derived at load; only personal facts are saved). Self-sighting history is not kept.
 
+### M3 evidence
+
+- Unit 386 passed; all 13 integrations passed (incl. new scenarios: sleeper → stirring → shelter → resume with one locomotion owner per trace entry; a safety task ends a two-person session and the late session release cannot release its claims; reload mid-travel resumes the same task from the saved position and nobody idles > 4.5 game minutes); backend 64 passed with `GODOT` set.
+- Grep for `daily_routine.hold`, `buildings.travel(`, `.travel_to(`, `investigate(`, `sleep_at(` outside the executor/tasks finds only `BaseNpc.sleep_at`'s definition.
+- Behavior changes: an investigating guard (caution priority) refuses conversations; a conversation replaces a patrol leg, which is re-requested after the session; a restored watch investigation is dropped on reload; safety tasks interrupt player dialogue.
+
 ## Remaining migration adapters
 
 - `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
+- `NpcDirectedTravelTask` / `NpcHoldTask` adapters used by `TownWatch` (patrol, investigation), `TownFunerals` (errands, pauses) and `TownEncounters` (session holds). Replaced by social/guard/recovery tasks in M4/M5.
+- `TownLifeState.select_activity` activity/place/until remain as a saved context projection of the current routine/safety task (M9).
 
 ## Next step
 
-M2 integration: perception produces `NpcObservation` records into each mind's `NpcEvidenceInbox`; the event processor claims from the inbox; knowledge bootstrap and sightings; migration revision 2.
+M4: social task with invitation before holding, player dialogue through the brain's availability boundary, session ids/timestamps/delivery status in dialogue and social history, commitments resolved by task outcome.
