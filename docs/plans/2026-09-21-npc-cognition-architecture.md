@@ -2,7 +2,7 @@
 
 Status: proposed implementation plan; no gameplay implementation is authorized by this document alone.
 
-Prepared against `0c0f7be` (`fix/town-emergency-flow`), following the cognition audit, and re-verified against `8c4a375` (`fix/npc-dialogue-voice`) on 2026-10-13. That review corrected the legacy save chain, NPC seed handling, schema evolution, backend timeout alignment, SDK answer shapes, field names, alert pacing units, the file map and commit types; code facts below describe `8c4a375`. Execute sequentially after the user requests implementation. Do not create another task or use subagents without explicit user authorization.
+Prepared against `0c0f7be` (`fix/town-emergency-flow`), following the cognition audit, and re-verified against `8c4a375` (`fix/npc-dialogue-voice`) on 2026-10-13. That review corrected the legacy save chain, NPC seed handling, schema evolution, backend timeout alignment, SDK answer shapes, field names, alert pacing units, the file map and commit types; code facts below describe `8c4a375`. Execute milestones sequentially after the user requests implementation. Subagents are authorized for implementation and review under the delegation rules in section 6.
 
 ## 1. Outcome and scope
 
@@ -288,6 +288,30 @@ Dependency order: **M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8 �
 
 Every milestone records completed tests, changed files, remaining migration adapters, and the next step in **new** `docs/plans/npc-cognition-progress.md`. This is implementation continuity, not a second design document. Commit/push completed slices on the implementation feature branch per `AGENTS.md`; do not auto-merge or create a PR unless requested.
 
+### Delegation
+
+Subagents are authorized (user decision, 2026-10-13). Milestones stay sequential; parallel work happens inside a milestone and in review.
+
+- **One integration owner.** The orchestrating session owns this plan, `npc-cognition-progress.md`, shared contracts, edits to hub files (`town_life.gd`, `base_npc.gd`, `npc_cognition.gd`, `npc_world_save.gd`, `dialog_manager.gd`, `world.tscn`, `project.godot`), integration, validation, commits and pushes. Subagents never commit, push, stage or switch branches.
+- **Contract first.** Before fanning out, the owner lands the milestone's shared types and signatures (for example `NpcObservation` fields, the v2 schema revision, `NpcTask`/`NpcTaskResult`, or the ticket/result JSON fixtures) and records them in the progress file. Each slice gets disjoint file ownership. A slice that needs a change in another slice's file or a hub file messages the owner instead of editing it.
+- **No concurrent Godot in one checkout.** Headless runs write the `.godot/` caches, including the global class cache that every new `class_name` script updates, so parallel Godot processes in the same directory race. Subagents may run `node --test` on their own server files but do not run Godot. The owner runs `--check-only`, the focused unit tests and the wrappers serially after integrating each wave. A slice that genuinely needs its own Godot runs gets a separate `git worktree` with isolated save paths.
+- **Self-contained assignments.** Subagents start without this conversation. Each assignment quotes the relevant plan text and contract (not just a link), lists allowed and forbidden files, prior findings, the acceptance checks the owner will run, and the expected report shape. Treat every result as a claim: read the diff before integrating.
+- **Tiers** (per the user's agent guide): `task`/`sonic` (Haiku) for fixture data, mechanical renames, test-fixture updates, docs and the suggested-reply removal; `task-hard` (Sonnet) for most implementation slices; `task-expert` (Opus) only for the v1→v2 migration and its review, and for M7 settle-once/cancellation semantics. A `reviewer` pass runs on every milestone diff before its commit.
+
+| Milestone | Parallel slices after the owner lands the contract |
+| --- | --- |
+| M0 | Simulation fixture and fake decision service; the four audit-probe regressions; synthetic legacy fixtures (v1, memory-only, invalid, future version) |
+| M1 | Relationship graph and mind state; migration plus three-file load resolution; reset tooling and test-path isolation |
+| M2 | Evidence inbox; knowledge projections; perception, funeral and conversation observation adapters |
+| M3 | Controller core is serial; then routine task, safety task and the `TownBuildings` executor |
+| M4 | Social task and encounter reservation; player-dialogue session boundary; commitments |
+| M5 | `TownDeaths` intent methods; guard task; recovery task |
+| M6 | Consolidation and receipt compaction; retrieval and salience |
+| M7 | Server provider queue, timeouts and `AbortSignal`; Godot decision service and policy, meeting at the shared JSON fixtures |
+| M8 | Needs/emotions condition; goal selector; check-relative and visit-grave tasks |
+| M9 | Context builder; inspector groups and traces; v2 dialogue routes; suggested-reply removal |
+| M10 | Scenario/soak scripts; `.sh`/`.ps1` check wrappers; evaluation corpus; docs |
+
 ### M0. Baseline, fixtures and behavioral contracts
 
 **Files:** existing tests listed in section 8; **new** `tests/fixtures/npc_simulation_fixture.gd`, `tests/fixtures/npc_fake_decision_service.gd`, `tests/unit/npc_cognition_regression_test.gd`; fixture save files under **new** `tests/fixtures/cognition/`.
@@ -450,7 +474,14 @@ Initial tuning for M8 is explicit and centralized, so implementation does not in
 2. Derive activity, destination, sleep/wake status and interruption reason from the task/actor authority. Remove conflicting saved/runtime activity projections. Include explicit world time and known session ages, so a 21:00 greeting cannot accidentally reuse a morning wake context.
 3. Feed a bounded speech intent such as warn a visible attacker, ask a known person for help, acknowledge a report, or decline an interruption. Let the dialogue model express the intent in the saved voice. It cannot create a completed action, a new culprit, an unsupported promise or hidden knowledge.
 4. Preserve direct NPC speech, normalized ASCII apostrophes/quotes, no em dash, concise bubbles, NPC names, farewell closure and anti-assistant wording. Do not flatten all personalities to one sentence length; retain bubble maximum width and integer font sizing.
-5. Add v2 `/v2/dialogue/chat` and `/v2/dialogue/say` contracts with response, grounded memory proposals and used recall IDs where relevant. Remove compulsory generation of three suggested player replies from the free-input path. Preserve any existing authored-choice path through its own adapter until proven unused.
+5. Add v2 `/v2/dialogue/chat` and `/v2/dialogue/say` contracts with response, grounded memory proposals and used recall IDs where relevant. Drop suggested player replies entirely (user decision, 2026-10-13). Every shipped chat NPC, including procedural residents, has `able_to_chat = true`, and `DialogManager` only shows replies when `_able_to_chat` is false, so the three generated replies are paid for on every `/chat` and never displayed. Remove:
+   - `dialogue.js`: the "exactly three distinct player replies" prompt text and the reply wording in the em-dash rule, `replies` in the response schema and `required` list, and the reply checks and mapping in `parseDialogue`.
+   - `npc_memory_store.gd`: the exactly-three `replies` check in `is_valid_result()`.
+   - `dialog_manager.gd`: `_active_replies`, `_get_replies_from_result`, reply buttons, `REPLIES_CONTAINER_PATH`, `_on_reply_selected`/`_on_reply_button_pressed`, the reply branch in `_update_reply_ui`, and the reply condition that keeps a finished page open (it becomes `_able_to_chat` alone). Fallback results stop carrying `replies`.
+   - `world.tscn`: the `RepliesContainer` subtree. Inspect the user's live diff first and edit only that subtree.
+   - Tests and docs that pass or describe replies: `dialog_farewell_test.gd`, `town_interiors_test.gd`, `npc_conversation_test.gd`, `npc_memory_test.gd` (including the one-reply rejection case), `npc_memory_inspector_test.gd`, `memory.test.js` and `docs/npc_memory.md`.
+
+   A source that cannot chat shows its response and closes after the last page. This step depends on no earlier milestone and may land at any point as `feat(dialogue): drop suggested player replies`.
 6. Replace hardcoded report/recovery speech with intent-driven optional lines plus short existing-style offline fallbacks where communication is necessary. When a report is simulated offscreen, commit its structured meaning at delivery; when audible generation fails before delivery, do not pretend its words were spoken. Keep both paths explicit in tests.
 7. Expose read-only Remote Inspector groups for goal scores, selected task/phase, suspended task, claims, perceived threats, knowledge sources, needs/emotions, relationships, commitments, pending evidence, request outcomes and last save status. Extend the existing debug-only `BaseNpc._get_property_list()` groups (`Runtime Memory`, `Town Life`); `addons/npc_debug` is the reset button, not an inspector. Keep expensive snapshots lazy and refresh only when selected or changed.
 8. Record capped traces (initial 64 entries/NPC): game time, event/incident, selected/rejected goals and score components, task transitions, request versions/latency/outcome, effect receipts and save failures. Reasons come from observable policy inputs and codes, not requests for hidden chain-of-thought.
@@ -669,6 +700,7 @@ Do not run `tools/server/evaluate-cognition.js --live` automatically. Its existe
 5. **Overly broad invalidation or retries.** Separate historical appraisal from current action decisions; diagnostics do not change semantic versions. Assert bounded retry/request counts under a noisy town.
 6. **Speech quality mistaken for architecture quality.** Contracts can be deterministic; prose variation needs evaluation. Keep actual model assessment distinct from structural validation.
 7. **User edits and active work diverge.** Recheck branch/status before each milestone. Never restore or stage unrelated resources wholesale. If a required API changed since this plan, update the plan/progress record with the observed reason before continuing.
+8. **Parallel slices diverging.** Contract-first fan-out, disjoint file ownership, owner-only hub edits and serial Godot validation keep slices from silently redefining shared types or racing the class cache. If two slices need the same file, sequence them rather than merging competing edits.
 
 Review points occur after M1 migration, M3 ownership, M7 asynchronous contracts and M10 integrated behavior. Present concrete fixtures/traces/diffs. These are progress reviews within authorized implementation, not repeated permission gates. Ask only when new ambiguity changes product behavior or a required operation would be irreversible beyond the existing authorization.
 
@@ -676,7 +708,7 @@ Review points occur after M1 migration, M3 ownership, M7 asynchronous contracts 
 
 Use this prompt only when the user requests execution. This planning turn must not create an implementation thread or start changing gameplay.
 
-> Implement `/Users/den/Documents/Projects/Arcadia/docs/plans/2026-09-21-npc-cognition-architecture.md` sequentially. Read current `AGENTS.md` and the authorized local Godot skill first. Inspect branch/status and preserve unrelated user edits. Work without subagents. Create a dedicated conventional implementation branch from the current verified baseline; if starting from master, update it first as required. Record the implementation base SHA. Complete M0 through M10 in dependency order with test-first behavioral checks, exact ownership/contracts, reversible v1-to-v2 migration, mocks and isolated saves. Keep `docs/plans/npc-cognition-progress.md` current. Commit and push completed feature-branch slices as required by the project; do not merge, reset the user's save, spend on live providers or rewrite unrelated scenes/resources. At each checkpoint report concrete evidence, remaining adapters and the next task. If source changes make the plan incorrect, inspect and amend it explicitly rather than silently inventing another architecture. Before completion run all specified unit/backend/integration checks and report measured results and any remaining live-evaluation limitation.
+> Implement `/Users/den/Documents/Projects/Arcadia/docs/plans/2026-09-21-npc-cognition-architecture.md` milestone by milestone. Read current `AGENTS.md` and the authorized local Godot skill first. Inspect branch/status and preserve unrelated user edits. Use subagents per the section 6 delegation rules; you remain the integration owner, the only one running Godot in the checkout, and the only committer. Create a dedicated conventional implementation branch from the current verified baseline; if starting from master, update it first as required. Record the implementation base SHA. Complete M0 through M10 in dependency order with test-first behavioral checks, exact ownership/contracts, reversible v1-to-v2 migration, mocks and isolated saves. Keep `docs/plans/npc-cognition-progress.md` current. Commit and push completed feature-branch slices as required by the project; do not merge, reset the user's save, spend on live providers or rewrite unrelated scenes/resources. At each checkpoint report concrete evidence, remaining adapters and the next task. If source changes make the plan incorrect, inspect and amend it explicitly rather than silently inventing another architecture. Before completion run all specified unit/backend/integration checks and report measured results and any remaining live-evaluation limitation.
 
 ## 11. Primary references
 
