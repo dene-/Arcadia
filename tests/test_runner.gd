@@ -25,6 +25,11 @@ func _run_tests() -> void:
 	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
 	cognition.backend.life_endpoint = "http://127.0.0.1:1/life"
 	var test_files := _discover_tests(TEST_ROOT)
+	# Optional substring filter for focused runs, e.g. ARCADIA_TEST_FILTER=npc_mind_state.
+	var filter: String = OS.get_environment("ARCADIA_TEST_FILTER")
+	if not filter.is_empty():
+		test_files = PackedStringArray(Array(test_files).filter(
+			func(path: String) -> bool: return path.contains(filter)))
 	test_files.sort()
 
 	if test_files.is_empty():
