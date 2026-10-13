@@ -2,7 +2,7 @@
 
 Status: proposed implementation plan; no gameplay implementation is authorized by this document alone.
 
-Prepared against `0c0f7be` (`fix/town-emergency-flow`), following the cognition audit. Execute sequentially after the user requests implementation. Do not create another task or use subagents without explicit user authorization.
+Prepared against `0c0f7be` (`fix/town-emergency-flow`), following the cognition audit, and re-verified against `8c4a375` (`fix/npc-dialogue-voice`) on 2026-10-13. That review corrected the legacy save chain, NPC seed handling, schema evolution, backend timeout alignment, SDK answer shapes, field names, alert pacing units, the file map and commit types; code facts below describe `8c4a375`. Execute sequentially after the user requests implementation. Do not create another task or use subagents without explicit user authorization.
 
 ## 1. Outcome and scope
 
@@ -53,18 +53,20 @@ The audit found these contracts and coupling points; recheck them against the im
 
 | Evidence | Consequence | Planned correction |
 | --- | --- | --- |
-| `game/world/life/town_life.gd::_process()` chains watch, funerals and safety handlers | Control priority depends on call order | Candidate goals plus one task owner |
-| `NpcDailyRoutine.hold(bool)` is called by safety, funerals and encounters | A caller can release another caller's pause | Task/session-owned claims and idempotent release |
-| `TownBuildings._journeys`, `TownWatch._investigations`, saved person activity and runtime routine overlap | Continuation and interruption rules are scattered | Saved task checkpoints; movement is an executor |
-| `TownFunerals._report()` scans actual guard positions | A witness can act on unobserved information | Last-known location, known patrol places and local discovery |
-| `NpcMemoryStore.record_observation()` caps all observations at eight | Pending important evidence can be evicted | Dedicated evidence inbox, separate attention window |
-| `commit_observation()` marks failures unavailable with no retry | Provider outages can prevent durable appraisal | Retry/deferred state with preserved evidence |
-| Event memory construction assumes hearing means fighting and drops other participants | Incorrect cues and poor person-based retrieval | Typed observation kind, modality, provenance and entities |
-| `TownDeaths.transition()` validates stage names but not transitions | Lifecycle invariants depend on callers | Intent-specific transition methods |
-| `NpcCognitiveContext.build()` selects player-related concerns | Other relationships and events lack equal standing | Subject-based concerns and relationship graph |
+| `game/world/life/town_life.gd::_process()` chains `watch.maintain(npc, id, false)`, `funerals.maintain`, `_maintain_safety`, then `watch.maintain` again | Control priority depends on short-circuit call order | Candidate goals plus one task owner |
+| `NpcDailyRoutine.hold(bool)` sets one `_held` boolean; safety (`town_life.gd`), funerals (`_move`/`_pause`/`_resume`) and encounters (start/cleanup) all call it | A caller can release another caller's pause; encounter cleanup can drop a CAUTION hold that was set without `encounters.interrupt` | Task/session-owned claims and idempotent release |
+| `TownBuildings._journeys`, `TownWatch._investigations`, saved person activity and runtime routine overlap; `TownBuildings.travel()` wakes sleepers and `advance()` starts sleep on arrival | Continuation, interruption and sleep rules are scattered | Saved task checkpoints; movement is an executor |
+| `TownFunerals._report()` ranks every living guard by live `global_position`; `TownWatch` investigations target the live suspect/subject position | A witness or guard can act on unobserved information | Last-known location, known patrol places and local discovery |
+| `NpcMemoryStore.record_observation()` pops the oldest entry past eight regardless of status | Pending important evidence can be evicted | Dedicated evidence inbox, separate attention window |
+| `commit_observation()` marks a failed/empty policy `unavailable`; `pending_observations()` only returns `pending`; `npc_event_processor.gd` labels both outcomes `assessment_failed_or_evicted` | Provider outages can prevent durable appraisal, and diagnostics cannot tell failure from eviction | Retry/deferred state with preserved evidence and distinct reason codes |
+| `npc_perception.gd` gives every hearing observation the text "sounds of fighting" and no participants; `commit_observation()` stores `people: ["player"]` and the fighting cue for every hearing memory, including body reports and conversation-origin hearsay | Incorrect cues and poor person-based retrieval | Typed observation kind, modality, provenance and entities |
+| `TownDeaths.transition()` only asserts (debug builds) that the stage name exists; no from→to check | Lifecycle invariants depend on callers | Intent-specific transition methods |
+| `NpcCognitiveContext.build()` uses `participants = ["player"]` and skips concerns without `player_involved` | Other relationships and events lack equal standing | Subject-based concerns and relationship graph |
 | `complete_intention()` has no production gameplay caller | Remembered intentions do not drive or resolve actions | Commitment IDs linked to supported task outcomes |
-| Separate conversation generations, actor revisions and social session tokens | Stale-result protection is inconsistent to extend | Decision tickets with explicit read versions and ownership |
+| Stale-result guards differ: `BaseNpc.life_revision` (dialog, encounters, funerals, watch, buildings), store revision plus `health`/`world_space` (event processor since `8c4a375`), dialog/conversation generations and encounter serials | Stale-result protection is inconsistent to extend | Decision tickets with explicit read versions and ownership |
 | Per-observer processing calls full save writes | Event bursts amplify persistence work | Dirty checkpoints and coalesced saves |
+| Guard behavior special-cases `voss_guard` in `town_watch.gd` (`_patrol_stops`) and `town_resident_schedule.gd` (`early`) | Role behavior is keyed on one ID | Role/assignment schedule data (M5) |
+| `DialogBackendClient` never calls `HTTPRequest.cancel_request()`; `tools/server/index.js` passes no `AbortSignal`; the TypeSafe client uses 10 s per attempt with one retry; the server has no concurrency limit | Abandoned work keeps running and billing; client and server deadlines are unrelated | Owner-settled cancellation, aligned deadlines and a provider queue (M7) |
 
 Four isolated Godot probes reproduced: pending death evidence eviction after eight newer observations; body-report memories with a fighting cue and no structured people; classifier failure leaving no pending work; and direct `fallen → buried` transition without recovery. These establish current behavior, not a live-provider accuracy evaluation.
 
@@ -136,7 +138,7 @@ Capabilities produce a bounded list of goals: rest, eat, work, school, patrol, s
 
 Separate hard feasibility, urgency, and preference. Death/incapacity and missing capabilities are hard constraints. Needs, commitments, personality, relationships, deadlines and perceived danger influence scores. A route may discover that a believed destination is inaccessible or a person absent; that failure updates knowledge instead of granting advance omniscience.
 
-Use an explainable score breakdown and a switching cost for abandoning current work. Initial ordinary commitment minimum: 5 game minutes; ordinary replacement requires a 0.15 advantage on normalized goal scores. Urgent new evidence bypasses these two limits. Treat those numbers as calibration defaults in `NpcBehaviorTuning`, with tests for stability rather than universal personality outcomes. Seed tie-breaking by world seed, NPC ID and saved decision sequence.
+Use an explainable score breakdown and a switching cost for abandoning current work. Initial ordinary commitment minimum: 5 game minutes; ordinary replacement requires a 0.15 advantage on normalized goal scores. Urgent new evidence bypasses these two limits. Treat those numbers as calibration defaults in `NpcBehaviorTuning`, with tests for stability rather than universal personality outcomes. Seed tie-breaking by `NpcWorldSave.get_npc_seed()`, NPC ID and saved decision sequence. Do not use `region_seed` directly: the editor's Reset NPCs button rerolls `npc_seed` while optionally keeping `region_seed`, and routine randomness already uses `get_npc_seed()`.
 
 Keep candidate generation with its domain: routines offer schedule activities, conditions/commitments offer personal goals, watch offers guard duties, funerals offer reporting/recovery opportunities, and encounters offer a nearby social invitation. Each returns `Array[NpcGoal]` from an explicit personal-knowledge projection. `NpcGoalSelector` accepts these candidates and scores/selects them; it does not become a new large dispatcher containing every role's conditions. A goal records stable ID, task kind, subject, evidence references, known destination, urgency, deadline and score inputs. Adding a goal changes its source/task and tests, not `TownLife`'s priority order.
 
@@ -160,11 +162,12 @@ All paths marked **new** are proposed additions. Existing paths are extension/mi
 | **new** `game/world/events/world_event_snapshot.gd` | Stable IDs, event time/location and frozen facts at publication; live scene references never cross the cognition boundary |
 | **new** `game/world/persistence/npc_save_migration.gd`, `npc_save_coordinator.gd` | Explicit migration and consistent dirty checkpoints |
 | Existing `game/actors/npcs/base_npc.gd`, `npc_cognition.gd`, `npc_alert_response.gd`, `npc_perception.gd`, `npc_perception_router.gd` | Physical capabilities/composition, typed perception and paced reflex integration |
-| Existing `game/world/life/town_life.gd`, `town_life_state.gd`, `npc_daily_routine.gd`, `npc_routine_plan.gd`, `town_resident_schedule.gd`, `npc_temperament.gd` | Remove action authority and duplicate mental state; retain clock, schedule generation and route execution |
+| Existing `game/world/life/town_life.gd`, `town_life_state.gd`, `npc_daily_routine.gd`, `npc_routine_plan.gd`, `town_resident_schedule.gd`, `npc_temperament.gd`, `npc_procedural_profile.gd`, `npc_safety_state.gd` | Remove action authority and duplicate mental state; retain clock, schedule generation, saved personalities and route execution |
 | Existing `game/world/life/town_encounters.gd`, `town_watch.gd`, `town_justice.gd`, `town_funerals.gd`, `town_deaths.gd`, `town_rumors.gd`, `town_economy.gd`, `town_population.gd` | Shared workflows, legal transitions, public knowledge and actual-work accounting |
 | Existing `game/world/interiors/town_buildings.gd` | Task-owned journeys, route completion/failure and door transitions; no independent sleep decision |
-| Existing `game/ui/dialog/npc_memory_store.gd`, `npc_memory.gd`, `npc_memory_retriever.gd`, `npc_conversation.gd`, `npc_cognitive_context.gd`, `npc_event_processor.gd`, `dialog_backend_client.gd`, `dialog_manager.gd` | Archive/retrieval and dialogue adapters; migrate processing and context to cognition, then remove redundant authority |
-| Existing `tools/server/src/app.js`, `npc-decisions.js`, `town-life.js`, `dialogue.js`, `memory-grounding.js`, `npc-voice.js`; **new** `cognition-contract.js`, `cognition-routes.js` in that directory | Versioned transport and bounded questions; preserve generation/grounding/voice behavior; no world mutation |
+| Existing `game/ui/dialog/npc_memory_store.gd`, `npc_memory.gd`, `npc_memory_retriever.gd`, `npc_relationship_state.gd`, `npc_conversation.gd`, `npc_cognitive_context.gd`, `npc_event_processor.gd`, `npc_ambient_history.gd`, `dialog_backend_client.gd`, `dialog_manager.gd` | Archive/retrieval and dialogue adapters; migrate processing and context to cognition, then remove redundant authority |
+| Existing `game/world/persistence/npc_world_save.gd`, `tools/reset_npc_world.gd`, `addons/npc_debug/plugin.gd`, `game/world/region/region_town.gd` | Save resolution/validation, reset tooling (currently hardcoded to `user://npc_world.json`) and resident creation/profile application |
+| Existing `tools/server/index.js`, `src/app.js`, `npc-decisions.js`, `town-life.js`, `dialogue.js`, `memory-grounding.js`, `npc-voice.js`; **new** `cognition-contract.js`, `cognition-routes.js` in `src/` | Versioned transport and bounded questions; `index.js` owns SDK client construction, upstream timeouts, retries and `AbortSignal` wiring; preserve generation/grounding/voice behavior; no world mutation |
 
 `.../` in this table denotes `game/actors/npcs/cognition/`. No generated folders or script renames are required before their migration stage. Keep compatibility facades only while an identified caller still needs them.
 
@@ -198,9 +201,9 @@ Use stable question IDs and closed choices. Build subject/candidate-specific IDs
 | Player speech | Existing intent Choice with `OTHER`, farewell Noul, memory/belief gates and response-mode Choice | Retain explicit present-tense surrender/farewell interpretation and reject quotations, negation and hypothetical cases |
 | Optional utterance | `speak` Noul and intent Choice from the supplied valid intents | Candidate intents include warn, protest, check on someone, request help, report, acknowledge, decline, farewell and silence; code permits only those supported by current evidence/task |
 
-Scores use five ordered levels with concrete criteria for each question: for emotion, absent/mild/clear/strong/overwhelming; for suitability, inappropriate/weak/plausible/good/compelling. Keep the SDK's zero-based score handling explicit. Do not use a Noul probability as an emotional intensity. Initial admission/retrieval/belief gates retain existing 0.70/0.50/0.80 values until corpus calibration; disposition/action Choice gates start at 0.65, farewell at 0.80. These are tunable defaults, not demonstrated accuracy claims.
+Scores use five ordered levels with concrete criteria for each question: for emotion, absent/mild/clear/strong/overwhelming; for suitability, inappropriate/weak/plausible/good/compelling. Keep the SDK's zero-based score handling explicit. Installed SDK facts (`@typesafe-ai/sdk` 0.6.0, model `jev-latest`): `Noul` returns only a yes-probability and has no separate answer confidence, so a Noul gate compares that probability; `Choice` and `Score` return `confidence` and `probabilities`; a `Score` may fall between integer levels 0–4. Do not use a Noul probability as an emotional intensity. Initial admission/retrieval/belief gates retain the existing `THRESHOLDS` values `remember` 0.70, `retrieve` 0.50 and `belief` 0.80 until corpus calibration; disposition/action Choice gates start at `choice` 0.65, farewell at `end_conversation` 0.80. Move these from `npc-decisions.js` and the hardcoded `>= 0.7` in `npc_memory_store.gd` into one Godot policy table. These are tunable defaults, not demonstrated accuracy claims.
 
-Per-dimension disposition magnitude maps initially to 0, 0.025, 0.05, 0.075, 0.10. Track the amount already applied for that incident/subject/dimension and apply only new justified escalation, not that entire amount per hit or retry. Conflicting/corrective evidence creates an explicit revision with its own source; it cannot oscillate feelings through repeated reevaluation of unchanged input. Familiarity changes through distinct delivered interactions and bounded exposure policy rather than a positive increment on every provider request.
+Per-dimension disposition magnitude maps linearly from the 0–4 Score to 0–0.10 (0.025 per level; fractional scores interpolate), matching the existing ±0.1 per-change clamp in `NpcRelationshipState.changed()`. Track the amount already applied for that incident/subject/dimension and apply only new justified escalation, not that entire amount per hit or retry. Conflicting/corrective evidence creates an explicit revision with its own source; it cannot oscillate feelings through repeated reevaluation of unchanged input. Familiarity changes through distinct delivered interactions and bounded exposure policy rather than a positive increment on every provider request.
 
 If an utterance or goal depends on newly applied appraisal results, build its request after those results are committed. A sibling question in the original batch cannot implicitly consume them. Preserve the separate post-generation semantic grounding check for proposed memories.
 
@@ -216,36 +219,40 @@ Commitments carry ID, owner, beneficiary/other parties, kind, evidence IDs, crea
 
 ### Save ownership and versions
 
-Keep the current `user://npc_world.json` untouched as the legacy source. The new default is `user://npc_world_v2.json`, root schema version 2. Tests must override both candidate paths before loading the world. If v2 exists but is invalid, report a load failure and prohibit writes; do not silently fall back to an old world or create an empty one.
+Today the live world file is `user://npc_world.json` (`NpcWorldSave.SAVE_PATH`, root `version: 1`). When it is absent, `NpcWorldSave.load_file()` falls back to the older memory-only `user://npc_memory.json` (`NpcMemoryStore.SAVE_PATH`) and copies its `world_minute` into the life clock. The new default is `user://npc_world_v2.json`, root schema version 2. Load resolution is: v2 if present; otherwise migrate the v1 world file; otherwise load the memory-only file through the existing legacy path and migrate it; otherwise create a new world. From the first v2 write onward, neither legacy file is written. Tests must override all three paths before loading the world (extend the per-PID temp redirect in `tests/test_runner.gd` and the `NpcWorldSave.path` pattern used by `npc_world_save_test.gd` and `npc_reset_world_test.gd`). If v2 exists but is invalid, report a load failure and prohibit writes; do not silently fall back to an old world or create an empty one.
 
 The v2 root contains:
 
 - `version: 2` and migration metadata (`source_version`, source digest, migration revision).
-- Existing world seed, authoritative deaths/remains, population, economy and justice records, with their validated subversions.
+- Existing seeds (`region_seed` and `npc_seed`, keeping `npc_seed == 0` as "use `region_seed`" so original NPC generation is unchanged), authoritative deaths/remains, population, economy and justice records. Life, population, economy and justice already carry `version: 1`; `TownDeaths` and `TownRumors` (`life.rumors`) are unversioned today, so v2 adds versions for them. The nested memory store keeps its own `SAVE_VERSION`.
+- `life.personalities`: saved temperament traits and voice axes, copied verbatim. Procedural profiles are re-derived from them at load (`npc_procedural_profile.gd`), so a changed value would silently change a resident.
 - Simulation clock, stable event/incident counters and plans/positions.
 - `minds`: per-NPC knowledge, directed relationships, condition, commitments, pending evidence, receipt state, task checkpoint and decision sequence.
 - `memory`: existing stable memory IDs/archive contents plus timestamped conversation sessions and revised provenance fields.
 
 Do not save HTTP handles, request deadlines based on machine ticks, live routes, claims referring to scene nodes, or incomplete generated text. Save decisions already applied and evidence still awaiting appraisal. Rebuild runtime requests after load from pending evidence and current context.
 
-Migration is pure and validated before installation: `NpcSaveMigration.upgrade(source: Dictionary) -> Dictionary` returns an envelope with `ok: bool`, `data: Dictionary`, and `error: String`. Success carries the v2 candidate with an empty error; failure carries an empty data dictionary and a stable diagnostic. `NpcWorldSave.from_data()` validates all subobjects before replacing any live state. Migration is deterministic and idempotent for fixture inputs.
+Migration is pure and validated before installation: `NpcSaveMigration.upgrade(source: Dictionary) -> Dictionary` returns an envelope with `ok: bool`, `data: Dictionary`, and `error: String`. Success carries the v2 candidate with an empty error; failure carries an empty data dictionary and a stable diagnostic. `NpcWorldSave.from_data()` (today a `version == 1`-only bool validator) validates all subobjects before replacing any live state. Migration is deterministic and idempotent for fixture inputs.
+
+The v2 shape grows from M1 to M10. Every milestone that adds or reshapes a v2 section bumps `migration_revision` and adds a pure step from the previous revision, with a fixture saved by the previous revision. A v2 file with a newer revision than the running code is a load failure, like an unknown future version. This keeps saves made during M1 review loadable by later milestones.
 
 | Legacy field | Migration rule |
 | --- | --- |
-| Memory archive, IDs, authored memories, seed, personality and voice | Preserve values and identity; do not regenerate |
+| Memory archive, IDs, authored memories, `region_seed`, `npc_seed`, `life.personalities` (traits and voice axes) | Preserve values and identity; do not regenerate; keep `npc_seed == 0` unchanged |
 | `memory.npcs[id].relationship` | Move to that NPC's graph entry for `player`; retain a temporary read adapter |
 | `life.people[id].ties` | Move to directed resident graph; default only missing dimensions |
 | Observations with `pending` or `unavailable` | Preserve as pending/deferred evidence; do not declare remembered or reapply assessed deltas |
 | `sense=hearing` | Infer a specific modality only from explicit event kind/source metadata; otherwise keep anonymous sound or unknown hearing provenance |
-| Existing incorrect fighting cues | Remove only when explicit body-report metadata proves the cue wrong; do not rewrite unverifiable history or fabricate participants |
-| Assessed observations and heard-origin receipts | Import processed receipts so migration/retry cannot repeat disposition changes |
+| Existing incorrect fighting cues | The cue is attached to every hearing memory. Remove it only where the observation's recorded kind/origin proves a non-combat source (for example `body_reported` or conversation-origin hearsay); do not rewrite unverifiable history or fabricate participants |
+| Classified observations (`status: classified` with a saved `decision`) and `heard_origins` receipts | Import processed receipts so migration/retry cannot repeat disposition changes |
 | Saved safety concern | Import with remaining simulation-time lifetime; expired concerns stay historical |
 | Saved activity/place/until | Reconstruct an ordinary task if valid; otherwise explicitly replan from the saved position |
 | Runtime-only investigation/journey progress | Do not pretend it was saved; use stored justice evidence/known destination where available, otherwise replan |
-| Death stages and carrier/reporter IDs | Validate references, reconstruct eligible shared process, and preserve the actual body location |
+| Death stages, `reporter` and `guard` (the assigned recovery guard/carrier; there is no `carrier` field) | Validate references, reconstruct eligible shared process, and preserve the actual body location |
 | Known-by/burial-known-by lists | Import attributed knowledge for those NPCs only; no town-wide broadcast |
 | Prospective memories | Preserve uncompleted status; add executable commitment only where the old data proves a supported kind |
 | Recent dialogue lacking dates/session IDs | Mark a legacy session with unknown time; never label it as a fresh exchange |
+| Memory-only `npc_memory.json` with no world file | Load through the existing legacy path (clock from `world_minute`, no life state), then migrate; never write it |
 
 On reload, validate every task's actor, space, target, phase, role, evidence and shared claim. Missing targets produce a recorded cancellation/replan. A dead carrier leaves remains at the last authoritative carried position; a missing reporter releases the report assignment for later discovery. Loading a checkpoint must not create another corpse, grave, relationship delta, wage settlement or utterance.
 
@@ -255,6 +262,7 @@ On reload, validate every task's actor, space, target, phase, role, evidence and
 - Write v2 to a temporary file, flush, then atomically replace v2 using the existing save approach. Never overwrite legacy v1.
 - Rolling code back to the pre-migration commit uses preserved v1. Progress made exclusively in v2 will not exist in v1; document this explicitly. Do not implement a lossy reverse migration or automatically delete either file.
 - During development, fixtures and isolated saves are the default. Record the exact last-good commit and fixture version at each milestone.
+- v2 is created once. Progress made later by running an older build (which writes v1) is not re-imported automatically; re-importing requires an explicit reset/re-migrate action that backs up v2 first. `tools/reset_npc_world.gd` and the editor's Reset NPCs button must target v2 and keep the existing `.reset-<time>.bak` backup.
 - Do not perform an irreversible conversion/reset of the user's running world. Normal migration creates a new file and leaves the source recoverable.
 
 ### Failure behavior
@@ -296,19 +304,20 @@ Every milestone records completed tests, changed files, remaining migration adap
 
 ### M1. Owned mental state and migration scaffold
 
-**Files:** `NpcMindState`, `NpcMindStore`, `NpcRelationshipGraph`, `NpcCommitments`, `NpcSaveMigration`, `NpcWorldSave`; **new** `tests/unit/npc_mind_state_test.gd`, `npc_save_migration_test.gd`.
+**Files:** `NpcMindState`, `NpcMindStore`, `NpcRelationshipGraph`, `NpcCommitments`, `NpcSaveMigration`, `NpcWorldSave`; existing `npc_relationship_state.gd`, `town_life_state.gd`, `npc_conversation.gd`, `npc_event_processor.gd`, `tools/reset_npc_world.gd`, `addons/npc_debug/plugin.gd`, `tests/test_runner.gd`, `tests/integration/npc_reset_world_test.gd`; **new** `tests/unit/npc_mind_state_test.gd`, `npc_save_migration_test.gd`.
 
 1. Add directed relationships with evidence receipts and private owned records. Port existing validation/ranges from `NpcRelationshipState`; use explicit operations instead of exposing writable nested dictionaries.
 2. Add the minimal mind record and component version counters. Include neutral condition/knowledge sections that later milestones fill; no simulated needs behavior yet.
-3. Implement pure v1-to-v2 migration and atomic validation. Test idempotence, preservation of stable identities/numeric values, refusal of unknown future versions and no partial installation on one malformed NPC.
+3. Implement pure v1-to-v2 migration, the three-file load resolution from section 5 and atomic validation. Test idempotence, preservation of stable identities/numeric values (including `npc_seed == 0` and `life.personalities`), the memory-only legacy path, refusal of unknown future versions/revisions and no partial installation on one malformed NPC.
 4. Wire legacy relationship/ties reads through adapters backed by the new single owner. Remove dual writes in the same commit; old serialization remains readable through migration, not a second mutable authority.
 5. Add task-checkpoint schema validation and decision-sequence persistence without enabling a new controller yet.
+6. Retarget reset tooling and test isolation to v2: `NpcWorldSave.reset()`, `tools/reset_npc_world.gd`, the editor plugin's hardcoded path and the per-PID test redirect. Remove the fallbacks in `npc_conversation.gd` and `npc_event_processor.gd` that call `store.save_file()` on the default `user://npc_memory.json` when no save callback is set; route through the world save or fail visibly.
 
-**Exit:** fixtures round-trip in v2 with zero lost NPCs, memories, families, deaths or balances; legacy file remains byte-identical; current dialogue behavior still passes.
+**Exit:** fixtures round-trip in v2 with zero lost NPCs, memories, families, deaths, balances or personalities; `npc_world.json` and `npc_memory.json` remain byte-identical; reset writes only v2; current dialogue behavior still passes.
 
 **Review checkpoint:** inspect migration diff/inventory and a sample saved mind. Surface any legacy ambiguity rather than inventing history. Real-save use remains reversible through the preserved v1 file.
 
-**Commit:** `refactor(cognition): own resident mental state and migrate saves`.
+**Commit:** `feat(save)!: own resident mental state in a migrated v2 save`, with a `BREAKING CHANGE:` footer stating that older builds keep using v1 and cannot read progress made in v2.
 
 ### M2. Personal evidence and knowledge boundaries
 
@@ -318,28 +327,28 @@ Every milestone records completed tests, changed files, remaining migration adap
 2. Split noise from attributed speech and preserve participants/topics/cues. Add body discovery/report/burial and ordinary conversation adapters. Unknown evidence stays unknown rather than defaulting to combat.
 3. Bootstrap residents' public town knowledge from stable identities, family roles and familiar public places. Do not seed live positions, private knowledge, actual hidden deaths or private household balances of other families.
 4. Track last-seen locations with timestamps and explicit updates from reports. Expose `known_locations(subject_id)` and `known_help_places()` as copied projections. Seeking somebody uses this projection and local perception.
-5. Move pending processing out of the eight-entry display/working-memory array into the inbox. Claim processing per observation ID; success/failure/defer methods are idempotent. Preserve failed work and migrate unavailable observations.
+5. Move pending processing out of the eight-entry display/working-memory array into the inbox. Claim processing per observation ID; success/failure/defer methods are idempotent. Preserve failed work and migrate unavailable observations. Replace the shared `assessment_failed_or_evicted` diagnostic with distinct provider-failure, deferral and coalescing reasons.
 6. Add explicit contradiction handling: a later firsthand sighting may supersede an older location report; repeating the same origin is not corroboration; conflicting reports remain contested. No vector search or semantic claim graph is required.
 
 **Exit:** the death-plus-eight-noises test preserves death evidence; hearing a report produces speech provenance and named retrieval entities, no fighting cue; freeing/moving an actor cannot change an already published observation. Behavior-facing knowledge cannot reveal a hidden guard position.
 
-**Commit:** `refactor(perception): preserve personal evidence and bounded knowledge`.
+**Commit:** `fix(perception): preserve personal evidence and bounded knowledge`.
 
 ### M3. One task owner; routines, sleep and safety
 
 **Files:** `NpcBrain`, task base/controller/context/result, routine/safety tasks, `NpcBehaviorTuning`; existing `base_npc.gd`, `npc_alert_response.gd`, `npc_daily_routine.gd`, `town_life.gd`, `town_life_state.gd`, `town_buildings.gd`; **new** `tests/unit/npc_task_controller_test.gd`, `npc_routine_task_test.gd`, `npc_safety_task_test.gd`.
 
 1. Implement task state transitions and owner-checked claims. A terminal task cannot resume; duplicate completion/cancellation is harmless. Test invalid transitions before binding actors.
-2. Implement a narrow executor boundary: `TownBuildings.begin_task_travel(npc, npc_id, space_id, point, owner_task_id)`, `cancel_task_travel(npc_id, owner_task_id)`, and completion/failure notifications with owner ID. Type all arguments in GDScript. A stale cancellation must not remove a newer journey.
-3. Convert existing routine travel/rest/work/patrol behavior to controller-owned tasks. Move sleep entry out of `TownBuildings.advance()` into the rest task after arrival. Wake and task context must agree before dialogue becomes available.
+2. Implement a narrow executor boundary: `TownBuildings.begin_task_travel(npc, npc_id, space_id, point, label, owner_task_id)`, `cancel_task_travel(npc_id, owner_task_id)`, and completion/failure notifications with owner ID. `label` keeps feeding `NpcDailyRoutine.travel()` for context display. Type all arguments in GDScript. A stale cancellation must not remove a newer journey.
+3. Convert existing routine travel/rest/work/patrol behavior to controller-owned tasks. Move sleep entry out of `TownBuildings.advance()` and the schedule wake out of `TownBuildings.travel()` into the rest task. Wake and task context must agree before dialogue becomes available.
 4. Integrate timed stirring/orientation with the safety task and existing physical hurt reaction. Test asleep, awake, injured, threatened-at-home and repeated-noise cases. Danger in one's own home must not select that room as a refuge automatically.
 5. Adapt every remaining movement caller (watch, funerals, social sessions) through temporary explicit task requests before enabling a resident brain. These adapters are removed in M4/M5. A migrated resident must never run both old and new authorities in a frame.
 6. Restore checkpoints by revalidating destinations and rerouting from the actual saved position. A paused task's timer cannot extend past mandatory expiry or be reset by every loop.
 7. Keep `ActorRoute`, `ActorCrowd`, `NpcPursuit`, hit/hurt boxes and attack range tuning unchanged. Run the real movement/contact integration tests at this boundary.
 
-**Exit:** sleep → noise → orient → investigate/shelter → resume is consistent; conversation/encounter release cannot release safety's claim; saves do not leave residents indefinitely asleep or traveling without an owner. Remove `NpcDailyRoutine._held` once its last caller is migrated.
+**Exit:** sleep → noise → orient → investigate/shelter → resume is consistent; conversation/encounter release cannot release safety's claim; saves do not leave residents indefinitely asleep or traveling without an owner. Remove `NpcDailyRoutine._held` once its last caller is migrated, and rewrite the `town_encounters_test.gd` assertions that read `_held` to check public task/claim outcomes.
 
-Preserve the current pacing at the default simulation speed: initial stirring takes 2–5 game minutes and orientation 1–3, with saved per-occurrence seeded variation influenced by alertness. Physical hit response remains immediate. Express task waits in game minutes and UI/animation timing in real seconds; do not mix units in a shared numeric field. Pausing the simulation pauses story progress and needs, while request timeouts may still settle safely.
+Preserve the current pacing. `NpcAlertResponse` deliberately runs these beats in real seconds, independent of model latency: stirring 1.2–3.4 s and orientation 0.8–1.2 s plus 0.5 s × (1 − courage), seeded per NPC and origin (about 1.8–5.1 and 1.2–2.6 game minutes at the default 1.5 game minutes per second). Keep them as real-second physical beats; the safety task waits for their completion instead of re-timing them in game minutes. Physical hit response remains immediate. Express task waits in game minutes and UI/animation timing in real seconds; do not mix units in a shared numeric field. Pausing the simulation pauses story progress and needs, while request timeouts may still settle safely.
 
 **Commit:** `refactor(npc): centralize task ownership and interruptions`.
 
@@ -356,16 +365,16 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 **Exit:** crossing social invitations do not deadlock; player or danger interruption releases both participants; a late response cannot speak through a new conversation or share an undelivered rumor; a supported commitment completes once across reload.
 
-**Commit:** `refactor(social): coordinate shared tasks and conversation lifecycles`.
+**Commit:** `feat(social): coordinate shared tasks and conversation lifecycles`.
 
 ### M5. Guard and funeral workflows
 
 **Files:** guard/recovery tasks; existing `town_watch.gd`, `town_justice.gd`, `town_funerals.gd`, `town_deaths.gd`, `town_resident_schedule.gd`; existing emergency/watch integration scripts plus **new** `tests/unit/npc_guard_task_test.gd`, `npc_recovery_task_test.gd`.
 
-1. Make shifts/patrol routes schedule data derived from role and saved assignment, removing the special-case guard ID from execution. Preserve staffed night patrol and ordinary off-duty life.
-2. Express investigation, warning, intervention, pursuit and surrender as guard task phases. Escalation consumes the guard's own admissible evidence. A report can cause investigation but cannot by itself authorize attacking an unseen named suspect.
+1. Make shifts/patrol routes schedule data derived from role and saved assignment, removing the `voss_guard` special cases in `town_watch.gd` (`_patrol_stops`) and `town_resident_schedule.gd` (`early`). Preserve staffed night patrol and ordinary off-duty life.
+2. Express investigation, warning, intervention, pursuit and surrender as guard task phases. Escalation consumes the guard's own admissible evidence. Investigation targets the reported or last-perceived location, not the suspect's live position. A report can cause investigation but cannot by itself authorize attacking an unseen named suspect.
 3. Body reporting searches last-known guard locations, familiar patrol points or a known guard home. If a guard is visible, approach the perceived location; reacquire locally if the guard moves. No global nearest-living-guard query in the witness's decision path.
-4. Replace writable `TownDeaths.records`/generic transition calls with snapshots and intent-specific methods: `discover`, `claim_report`, `acknowledge_report`, `begin_recovery`, `pick_up`, `drop`, `bury`, `release_assignment`. Return success/reason and enforce prerequisites, ownership and body location inside this owner.
+4. Replace writable `TownDeaths.records`/generic transition calls with snapshots and intent-specific methods: `discover`, `claim_report`, `acknowledge_report`, `begin_recovery`, `pick_up`, `drop`, `bury`, `release_assignment`. Return success/reason and enforce prerequisites, ownership and body location inside this owner. Keep the saved `reporter` and `guard` fields (or migrate `guard` to an explicit carrier field in the same revision step).
 5. Encode allowed transitions: `fallen → discovered → reported → recovering → carried → buried`; a discovering guard may acknowledge their own report. Interrupted recovery returns to reported; dropped carriage returns to reported at the physical drop point. Reporter loss before acknowledgment releases the claim without erasing other witnesses' knowledge. Buried is terminal.
 6. Task phases: absorb discovery, seek help, report/acknowledge, reach body, assess immediate safety, prepare, carry, reach cemetery, bury. Use simulation time for progress and actual completion events for arrival. Preserve the body until pickup and the grave after burial.
 7. Handle no guard, two witnesses, two guards claiming one body, combat while carrying, dead carrier, closed/unreachable route, missing reporter, and save/load in every phase. Known death/burial is projected from personal knowledge, including correctly attributed later reports.
@@ -373,7 +382,7 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 **Exit:** complete realistic report/recovery/burial flow with exactly one body/grave, no unseen culprit inference, no witness stuck forever when no guard survives, and restored patrol/ordinary commitments after intervention.
 
-**Commit:** `refactor(town): execute guard and burial duties as validated tasks`.
+**Commit:** `fix(town): execute guard and burial duties as validated tasks`.
 
 ### M6. Memory, beliefs and incident-based appraisal effects
 
@@ -381,7 +390,7 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 1. Separate inbox, working-memory projection, archive and belief updates. A short display window no longer controls admission eligibility. Admission and disposition updates consume stable evidence receipts transactionally.
 2. Store event kind, entities, source, incident/origin and game time in new event memories. Preserve hearsay chains; “heard a report” and “saw the death” remain distinct even if they concern the same resident.
-3. Apply dispositions per subject/incident with bounded escalation. Compare one assault represented by many hit events to one with fewer hits: total physical severity and evidence drive the outcome, not just callback count. New lethal escalation and surrender violation remain significant.
+3. Apply dispositions per subject/incident with bounded escalation. Compare one assault represented by many hit events to one with fewer hits: total physical severity and evidence drive the outcome, not just callback count. New lethal escalation and surrender violation remain significant. Until M7 replaces the source, the incident budget wraps the existing v1 `relationship_delta`; M7 swaps in direction/magnitude judgments behind the same budget.
 4. Introduce working-memory salience for any personally relevant subject. Include family losses, unresolved commitments and current duties; do not require `player_involved` to become a concern.
 5. Improve retrieval first with normalized entity IDs, topic aliases, incident links, current goals and unresolved commitments, retaining bounded imperfect recall. Keep a paraphrase fixture set to measure lexical blind spots. Do not expose the full archive to Jev as a workaround.
 6. Add conservative consolidation: group repetitive low-importance episodes sharing subject/type/source/incident, preserving evidence references and the strongest warranted uncertainty. Keep authored core memories, unresolved commitments, contested beliefs and consequential losses protected. Never merge independent accounts into false corroboration.
@@ -390,7 +399,7 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 **Exit:** archive/working-memory policies are explicit and independent of queue load; repeated evidence cannot farm relationship changes; contested and forgotten information remains epistemically sound; supported intentions resolve by gameplay outcome.
 
-**Commit:** `refactor(memory): separate evidence processing from recollection and belief`.
+**Commit:** `feat(memory): separate evidence processing from recollection and belief`.
 
 ### M7. Unified decision service and provider contracts
 
@@ -398,11 +407,11 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 1. Implement `evaluate(ticket: NpcDecisionTicket, payload: Dictionary) -> NpcDecisionResult`, `cancel(request_id: String) -> void`, and `cancel_owner(npc_id: String) -> void`. Evaluation can be awaited by application flows, never a physics loop. All completion paths settle exactly once, release capacity and wake waiting callers.
 2. Use one game-side scheduler with explicit urgency and per-NPC fairness. Initial transport limits: four judgment requests, two text requests; reserve availability for interactive work while aging background jobs so they cannot starve. Process one observation/incident batch per NPC turn instead of draining a busy NPC forever. Coalesce obsolete routine requests rather than queuing each tick.
-3. Backend provider queue enforces actual upstream limits, including secondary memory-grounding calls nested in text requests. Game scheduling owns relevance; server scheduling owns provider concurrency. Avoid nested acquisition of the same permit and release permits on every error/disconnect.
-4. Make request cancellation settle locally without depending on `HTTPRequest.request_completed`. Call `cancel_request()` and clean up the request node. Propagate cancellation through the backend to upstream SDKs when the installed SDK supports it; do not claim cancelling the client always stops provider billing. Test transports that complete after cancellation and those that never emit completion.
-5. Use real monotonic time only for transport deadlines/backoff; use simulation time for story/task relevance. Initial budgets: 8 seconds for a judgment, 30 seconds for dialogue, 10 seconds for optional ambient text. Evidence retries after 2, 10 and 30 real seconds, then deferred until a successful health/recovery signal or a 60-second backoff. Retained evidence can be assessed later without producing old speech.
+3. Backend provider queue enforces actual upstream limits, including secondary memory-grounding calls nested in text requests. Game scheduling owns relevance; server scheduling owns provider concurrency. Avoid nested acquisition of the same permit and release permits on every error/disconnect. Set judgment SDK retries to 0: the game's evidence retry schedule is the only retry layer.
+4. Make request cancellation settle locally without depending on `HTTPRequest.request_completed`. Call `cancel_request()` and clean up the request node. On the server, abort upstream work when the client disconnects by passing an `AbortSignal`: both installed SDKs accept one (`@typesafe-ai/sdk` `RequestOptions.signal`, OpenAI request options). Do not claim aborting always stops provider billing. Test transports that complete after cancellation and those that never emit completion.
+5. Use real monotonic time only for transport deadlines/backoff; use simulation time for story/task relevance. Server upstream budgets: 8 seconds per judgment, 30 seconds for dialogue generation plus 5 seconds for nested memory grounding, 10 seconds for optional ambient text. Game transport deadlines are each route's total server budget plus a 2-second margin: 10, 40 and 12 seconds. A game deadline shorter than the server budget would discard, and still pay for, slow successful work. Evidence retries after 2, 10 and 30 real seconds, then deferred until a successful health/recovery signal or a 60-second backoff. Retained evidence can be assessed later without producing old speech.
 6. Standardize a v2 JSON envelope carrying ticket identifiers, protocol/prompt versions, bounded state and candidate/evidence IDs. Add `/v2/cognition/appraise`, `/v2/cognition/select-goal`, `/v2/cognition/social`, and `/v2/cognition/listen`; retain v1 routes only while callers migrate. Reject mismatched versions explicitly and fall back locally; never silently reinterpret another schema.
-7. Backend returns validated typed judgments with `choice`, `score`, `noul`, answer confidence and distributions as appropriate. Godot `NpcDecisionPolicy` alone maps them to domain effects and authoritative thresholds. Remove duplicate JS relationship-delta application when the last v1 caller is gone. Shared synthetic JSON fixtures verify both sides' enum/range/ID contracts.
+7. Backend returns validated typed judgments: `choice` with confidence and probabilities, `score` with confidence and probabilities, `noul` as a probability only. Godot `NpcDecisionPolicy` alone maps them to domain effects and authoritative thresholds. Remove the JS relationship-delta formulas (`decisionPolicy`, `observationPolicy`, the flat ±0.03 in `town-life.js`) and the delta projection in `npc_conversation.gd` when the last v1 caller is gone. Shared synthetic JSON fixtures verify both sides' enum/range/ID contracts.
 8. Decompose questions into event appraisal, goal suitability, listener belief and speech intent. Ask independent questions together. Do not ask an independent answer to reason about a sibling answer it cannot see. In particular, replace routine `linger` referring to an unseen selected activity with candidate-specific duration judgments or a subsequent bounded stage.
 9. Validate candidate coverage and uncertainty. Include a safe fallback/defer option when appropriate; validate that returned IDs were supplied. Confidence is not fear intensity, moral certainty or memory truth. Apply low-confidence fallbacks consistently, including response mode and routine selection.
 10. Validate/apply effects synchronously through the owner after ticket checks. Diagnostic-only changes must not invalidate a response; changed threat, relevant belief, session, target death or task ownership must. A cancelled/stale request cannot restore an old goal or duplicate relationship effects. Apply a resident's dependent historical appraisals in evidence sequence; independent requests can complete in any order. Replay fixtures control clock/deadlines and record accepted outcomes, so determinism is not falsely promised for different real-world provider latencies.
@@ -412,7 +421,7 @@ Preserve the current pacing at the default simulation speed: initial stirring ta
 
 **Review checkpoint:** inspect a recorded request/response contract and cancellation/failure traces. This is reviewable evidence, not permission to spend money on live evaluation.
 
-**Commit:** `refactor(ai): unify npc decisions and cancellable provider work`.
+**Commit:** `feat(ai): unify npc decisions and cancellable provider work`.
 
 ### M8. Needs, emotions, personality and goal selection
 
@@ -443,7 +452,7 @@ Initial tuning for M8 is explicit and centralized, so implementation does not in
 4. Preserve direct NPC speech, normalized ASCII apostrophes/quotes, no em dash, concise bubbles, NPC names, farewell closure and anti-assistant wording. Do not flatten all personalities to one sentence length; retain bubble maximum width and integer font sizing.
 5. Add v2 `/v2/dialogue/chat` and `/v2/dialogue/say` contracts with response, grounded memory proposals and used recall IDs where relevant. Remove compulsory generation of three suggested player replies from the free-input path. Preserve any existing authored-choice path through its own adapter until proven unused.
 6. Replace hardcoded report/recovery speech with intent-driven optional lines plus short existing-style offline fallbacks where communication is necessary. When a report is simulated offscreen, commit its structured meaning at delivery; when audible generation fails before delivery, do not pretend its words were spoken. Keep both paths explicit in tests.
-7. Expose read-only Remote Inspector groups for goal scores, selected task/phase, suspended task, claims, perceived threats, knowledge sources, needs/emotions, relationships, commitments, pending evidence, request outcomes and last save status. Keep expensive snapshots lazy and refresh only when selected or changed.
+7. Expose read-only Remote Inspector groups for goal scores, selected task/phase, suspended task, claims, perceived threats, knowledge sources, needs/emotions, relationships, commitments, pending evidence, request outcomes and last save status. Extend the existing debug-only `BaseNpc._get_property_list()` groups (`Runtime Memory`, `Town Life`); `addons/npc_debug` is the reset button, not an inspector. Keep expensive snapshots lazy and refresh only when selected or changed.
 8. Record capped traces (initial 64 entries/NPC): game time, event/incident, selected/rejected goals and score components, task transitions, request versions/latency/outcome, effect receipts and save failures. Reasons come from observable policy inputs and codes, not requests for hidden chain-of-thought.
 
 **Exit:** speech agrees with the same state that drives movement; names/quotes/fonts/farewell remain correct; a tester can explain why a resident is standing, fleeing, refusing, grieving or resuming work from the inspector alone.
@@ -452,7 +461,7 @@ Initial tuning for M8 is explicit and centralized, so implementation does not in
 
 ### M10. Persistence scheduling, scenarios, calibration and cleanup
 
-**Files:** save coordinator, `NpcCognition`, `TownLife`, memory/index helpers as needed; **new** `tests/integration/npc_cognition_scenarios_test.gd`, `npc_cognition_soak_test.gd`, `npc_runtime_smoke_test.gd`, `tools/run_npc_cognition_checks.sh`, `tools/server/test/cognition-evaluation.test.js`, `tools/server/evaluate-cognition.js`, `tools/server/evaluation/cognition-cases.json`; documentation listed below.
+**Files:** save coordinator, `NpcCognition`, `TownLife`, memory/index helpers as needed; **new** `tests/integration/npc_cognition_scenarios_test.gd`, `npc_cognition_soak_test.gd`, `npc_runtime_smoke_test.gd`, `tools/run_npc_cognition_checks.sh` and its PowerShell twin `tools/run_npc_cognition_checks.ps1` (matching the existing `run_godot_tests.sh`/`.ps1` pair), `tools/server/test/cognition-evaluation.test.js`, `tools/server/evaluate-cognition.js`, `tools/server/evaluation/cognition-cases.json`; documentation listed below.
 
 1. Coalesce ordinary dirty writes with an initial 2-real-second debounce and a maximum 10-second unsaved window. Flush critical transitions (death, body pickup/drop/burial and explicit checkpoint) after all related synchronous changes are coherent. Snapshot task checkpoints and positions in the same world snapshot. Do not serialize once per observer in the perception loop.
 2. Reuse cached public profiles and bounded context projections; avoid copying the full memory archive per request. Index memory candidates by entity/topic before ranking. Profile first before adding spatial indexing; if all-pairs social scanning is material, use an existing spatial partition or a simple per-space grid, not a new general spatial framework.
@@ -461,7 +470,7 @@ Initial tuning for M8 is explicit and centralized, so implementation does not in
 5. Target cognition/task processing p95 below 2 ms/frame for the 35-resident reference scene on the same development machine; report hardware/configuration and before/after measurements. Treat unmet targets as optimization work, not a reason to weaken behavior tests. Save count for 100 noncritical same-frame events must be one coalesced ordinary checkpoint, not 100 observer writes.
 6. Add a labeled provider-evaluation corpus and offline mocked contract tests. The live evaluator is opt-in via `--live`, refuses missing keys, accepts an explicit case limit, prints an estimated/request-count budget before execution and stores model/prompt versions with outputs. Do not run it as part of `npm test` or normal implementation verification.
 7. Remove obsolete legacy mutators/flags/adapters after all callers migrate: shared `_held`, priority-chain movement control, duplicate relationships/ties, direct funeral/watch routing and dead generic lifecycle setters. Preserve compatible public actor child names and useful archive APIs. A code search must show no alternate high-level movement writer for residents.
-8. Update `docs/town_life.md`, `docs/npc_perception.md`, `docs/npc_memory.md`, `docs/actor_dialog_development.md`, `docs/godot_testing.md`, `tests/README.md`, `tools/server/README.md`, and add `docs/npc_cognition_architecture.md`. Integrate the user's existing edits rather than replacing these files wholesale.
+8. Update `docs/town_life.md`, `docs/npc_perception.md`, `docs/npc_memory.md` (including its `complete_intention("garrin_holt", "mem:12")` example), `docs/actor_dialog_development.md`, `docs/godot_testing.md`, `tests/README.md`, `tools/server/README.md`, and add `docs/npc_cognition_architecture.md`. Integrate the user's existing edits rather than replacing these files wholesale.
 
 **Exit:** full acceptance matrix passes; ordinary saves are coalesced; real tasks survive reload; the old competing control paths are removed; extension recipe adds a new supported behavior through one goal/task boundary with no unrelated-system patching.
 
@@ -512,7 +521,7 @@ Also assert the protected observation round-trips, no unknown participant was ad
 
 ### A spoken report has speech provenance (M2/M6)
 
-Input: observer `vale_guard`, source `holt_partner`, deceased subject `garrin_holt`, kind `body_reported`, modality `SPOKEN_REPORT`, text “Mira told me she found Garrin dead. The cause is unconfirmed.”, topics `[death]`, and a successful remember judgment. Assert that the resulting memory retains Garrin and Mira as people, attributes the report, has no fighting cue, does not identify Den, and produces no player trust penalty. Sight of the body later is distinct supporting evidence, not another application of the original report's effects.
+Input: observer `vale_guard`, source `holt_partner`, deceased subject `garrin_holt`, kind `body_reported`, modality `SPOKEN_REPORT`, text “She told me she found Garrin dead. The cause is unconfirmed.”, topics `[death]`, and a successful remember judgment. Assert that the resulting memory retains `garrin_holt` and `holt_partner` as entity IDs (display names are generated, so assert IDs), attributes the report, has no fighting cue, does not identify Den, and produces no player trust penalty. Sight of the body later is distinct supporting evidence, not another application of the original report's effects.
 
 ### Ownership survives delayed callbacks (M3/M7)
 
@@ -545,8 +554,9 @@ Keep these existing integrations passing:
 - `tests/integration/combat_contact_test.gd`
 - `tests/integration/npc_combat_position_test.gd`
 - `tests/integration/pixel_camera_test.gd`
+- `tests/integration/npc_reset_world_test.gd`
 
-`tools/server/test/memory.test.js` already starts a mock server and runs `tests/integration/npc_memory_http_test.gd`. Keep that mock-driven coverage; do not run the HTTP script against the user's live backend.
+`tools/server/test/memory.test.js` already starts a mock server and runs `tests/integration/npc_memory_http_test.gd`; `town-life.test.js` also drives Godot. Both skip silently when `GODOT` is unset, so export it before `npm test` and record skip counts. Keep that mock-driven coverage; do not run the HTTP script against the user's live backend.
 
 Before running a scene integration, confirm it redirects persistence and injects mocks before loading the world. Update affected test setup to the common fixture if it does not. The new smoke script must instantiate the real world scene with isolated saves and mocks, advance normal frames, verify brain/actor initialization, then dispose it cleanly.
 
@@ -608,7 +618,7 @@ while IFS= read -r script_path; do
 done < <(git diff --name-only --diff-filter=ACM "$COGNITION_BASE" -- '*.gd')
 ```
 
-After M10, run the committed integration wrapper. It must execute the existing integrations above, the new scenario/soak scripts and the isolated world smoke, check exit status and error output, and summarize each result.
+After M10, run the committed integration wrapper (`.sh` on macOS/Linux, `.ps1` on Windows). It must execute the existing integrations above, the new scenario/soak scripts and the isolated world smoke, check exit status and error output, and summarize each result.
 
 ```bash
 ./tools/run_npc_cognition_checks.sh
