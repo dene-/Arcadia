@@ -49,7 +49,7 @@ func _observation(sense: String = "sight", observer: String = "test_observer") -
 	return NpcObservation.from_perception(observer, "event:%d" % _serial, 500.0, &"outdoors",
 		_event(sense))
 
-## Mirrors the processor's inbox handshake: display entry, claim, commit, complete.
+## Mirrors the processor's inbox handshake: display entry, claim, commit (which completes).
 func _record(store: NpcMemoryStore, observation: NpcObservation, minute: float = 500.0) -> bool:
 	var inbox: NpcEvidenceInbox = store.minds.get_mind(observation.observer_id).evidence
 	if not inbox.enqueue(observation):
@@ -62,10 +62,10 @@ func _commit(store: NpcMemoryStore, observation: NpcObservation, policy: Diction
 	var claimed: NpcObservation = inbox.claim(observation.observation_id, 500.0)
 	if claimed == null:
 		return false
-	if not store.commit_evidence(observation.observer_id, claimed, policy):
+	if not store.commit_evidence(observation.observer_id, claimed, policy).is_empty():
 		inbox.fail(observation.observation_id, "invalid_policy", 500.0)
 		return false
-	return inbox.complete(observation.observation_id)
+	return true
 
 func test_observations_are_short_term_then_optionally_durable_and_applied_once() -> void:
 	var store := NpcMemoryStore.new()
@@ -154,7 +154,8 @@ func test_background_processing_commits_without_conversation_and_keeps_new_arriv
 	assert_eq(backend.payloads[1].context.current.past_observations.size(), 1)
 	assert_eq(backend.payloads[1].context.memories.size(), 1,
 		"Observation decisions must be able to recognize a prior related experience")
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.16)
+	# Seeing and feeling one incident spends a single incident budget.
+	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.15)
 	assert_eq(backend.reaction_calls, 0)
 	processor.queue_free()
 	await tree.process_frame
@@ -222,14 +223,17 @@ func test_late_reaction_cannot_speak_through_a_freed_npc() -> void:
 	var npc := SpeakingNpc.new()
 	npc.npc_data = NpcData.new()
 	processor.observe(_profile(), {}, _observation(), npc)
-	await tree.process_frame
+	for _frame: int in range(10):
+		if backend.reaction_calls > 0:
+			break
+		await tree.process_frame
 	assert_eq(backend.reaction_calls, 1)
 	await processor.wait_for_assessment("test_observer")
 	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.08)
 	processor.observe(_profile(), {}, _observation("touch"), npc)
 	await tree.process_frame
 	await processor.wait_for_assessment("test_observer")
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.16)
+	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.15)
 	assert_eq(backend.payloads.size(), 2)
 	npc.free()
 	backend.release_reaction.emit()

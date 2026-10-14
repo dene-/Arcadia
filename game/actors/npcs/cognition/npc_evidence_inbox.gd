@@ -2,14 +2,16 @@ class_name NpcEvidenceInbox
 extends RefCounted
 
 ## One resident's pending evidence. Items leave the inbox only through `complete`; their ids then
-## become receipts so a replayed observation can never be appraised twice.
+## become receipts so a replayed observation can never be appraised twice. Receipts are removed
+## only by `compact`, once nothing can replay their origin.
 enum Status { PENDING, CLAIMED, DEFERRED }
 
 const READY_WINDOW: int = 32
 const INCIDENT_WINDOW_MINUTES: float = 10.0
 const RETRY_DELAY_MINUTES: float = 2.0
 const MAX_ITEMS: int = 512
-const MAX_RECEIPTS: int = 1024
+## Hard bound on stored receipts; at the bound `complete` refuses instead of dropping one.
+const MAX_RECEIPTS: int = 4096
 const MAX_DIAGNOSTICS: int = 64
 const MAX_INCIDENTS: int = 64
 const MAX_SERIALIZED_ITEMS: int = 8192
@@ -45,6 +47,9 @@ var _items: Array[_Item] = []
 var _by_id: Dictionary[String, _Item] = {}
 var _receipts: Array[String] = []
 var _receipt_ids: Dictionary[String, bool] = {}
+# Origin of each receipt completed since origins were recorded; receipts loaded from older saves
+# have no entry, so their origin is unknown and compaction keeps them.
+var _receipt_origins: Dictionary[String, String] = {}
 var _incidents: Array[Dictionary] = []
 var _diagnostics: Array[Dictionary] = []
 var _incident_counter: int = 0
@@ -110,17 +115,39 @@ func claim(observation_id: String, now_minute: float) -> NpcObservation:
 
 func complete(observation_id: String) -> bool:
 	var entry: _Item = _by_id.get(observation_id)
-	if entry == null or entry.status != Status.CLAIMED:
+	if entry == null or entry.status != Status.CLAIMED or _receipts.size() >= MAX_RECEIPTS:
 		return false
 	_items.erase(entry)
 	_by_id.erase(observation_id)
 	_receipts.append(observation_id)
 	_receipt_ids[observation_id] = true
-	while _receipts.size() > MAX_RECEIPTS:
-		_receipt_ids.erase(_receipts[0])
-		_receipts.remove_at(0)
+	_receipt_origins[observation_id] = entry.observation.origin_id
 	version += 1
 	return true
+
+## Origin recorded with a receipt ("" when unknown).
+func receipt_origin(observation_id: String) -> String:
+	return _receipt_origins.get(observation_id, "")
+
+func receipt_count() -> int:
+	return _receipts.size()
+
+## Prunes every receipt whose origin is known and neither its id nor its origin is in
+## `references`. Returns the number pruned.
+func compact(references: Dictionary) -> int:
+	var kept: Array[String] = []
+	for id: String in _receipts:
+		if _receipt_origins.has(id) and not references.has(id) \
+				and not references.has(_receipt_origins[id]):
+			_receipt_ids.erase(id)
+			_receipt_origins.erase(id)
+		else:
+			kept.append(id)
+	var pruned: int = _receipts.size() - kept.size()
+	if pruned > 0:
+		_receipts = kept
+		version += 1
+	return pruned
 
 func fail(observation_id: String, reason: String, now_minute: float) -> bool:
 	var entry: _Item = _by_id.get(observation_id)
@@ -183,9 +210,13 @@ func to_data() -> Dictionary:
 			"attempts": entry.attempts, "retry_after": 0.0 if claimed else entry.retry_after,
 			"count": entry.count, "first_minute": entry.first_minute,
 			"last_minute": entry.last_minute, "last_error": entry.last_error})
-	return {"version": SCHEMA_VERSION, "incident_counter": _incident_counter, "items": items,
-		"receipts": _receipts.duplicate(), "incidents": _incidents.duplicate(true),
+	var data: Dictionary = {"version": SCHEMA_VERSION, "incident_counter": _incident_counter,
+		"items": items, "receipts": _receipts.duplicate(), "incidents": _incidents.duplicate(true),
 		"diagnostics": _diagnostics.duplicate(true)}
+	# Written only when some receipt recorded its origin; saves without it load as legacy.
+	if not _receipt_origins.is_empty():
+		data["receipt_origins"] = _receipt_origins.duplicate()
+	return data
 
 static func is_valid_data(data: Variant) -> bool:
 	return not _parse(data).is_empty()
@@ -204,6 +235,7 @@ func from_data(data: Variant) -> bool:
 	_receipt_ids.clear()
 	for id: String in _receipts:
 		_receipt_ids[id] = true
+	_receipt_origins = parsed["receipt_origins"]
 	_incidents = parsed["incidents"]
 	_diagnostics = parsed["diagnostics"]
 	_incident_counter = parsed["incident_counter"]
@@ -270,9 +302,13 @@ static func _family(kind: StringName) -> String:
 
 # Validates everything and builds the replacement state; empty when `data` is invalid.
 static func _parse(data: Variant) -> Dictionary:
-	if not data is Dictionary or (data as Dictionary).size() != _DATA_KEYS.size():
+	if not data is Dictionary:
 		return {}
 	var source: Dictionary = data
+	var origins_present: bool = source.has("receipt_origins")
+	if source.size() != _DATA_KEYS.size() + (1 if origins_present else 0) \
+			or not source.get("receipt_origins", {}) is Dictionary:
+		return {}
 	for key: String in _DATA_KEYS:
 		if not source.has(key):
 			return {}
@@ -294,6 +330,14 @@ static func _parse(data: Variant) -> Dictionary:
 			return {}
 		receipts.append(entry)
 		receipt_ids[entry] = true
+	var receipt_origins: Dictionary[String, String] = {}
+	var raw_origins: Dictionary = source.get("receipt_origins", {})
+	for id: Variant in raw_origins:
+		var origin: Variant = raw_origins[id]
+		if not id is String or not receipt_ids.has(id) or not origin is String \
+				or (origin as String).length() > NpcObservation.MAX_ID_LENGTH:
+			return {}
+		receipt_origins[id] = origin
 	var items: Array[_Item] = []
 	var item_ids: Dictionary[String, bool] = {}
 	for raw: Variant in source["items"]:
@@ -315,8 +359,9 @@ static func _parse(data: Variant) -> Dictionary:
 		if diagnostic.is_empty():
 			return {}
 		diagnostics.append(diagnostic)
-	return {"items": items, "receipts": receipts, "incidents": incidents,
-		"diagnostics": diagnostics, "incident_counter": int(source["incident_counter"])}
+	return {"items": items, "receipts": receipts, "receipt_origins": receipt_origins,
+		"incidents": incidents, "diagnostics": diagnostics,
+		"incident_counter": int(source["incident_counter"])}
 
 static func _parse_item(raw: Variant) -> _Item:
 	if not raw is Dictionary or (raw as Dictionary).size() != _ITEM_KEYS.size():

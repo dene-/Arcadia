@@ -33,6 +33,8 @@ var _revisions: Dictionary = {}
 var _tick: float = 0.0
 var _save_elapsed: float = 0.0
 var _retry_elapsed: float = 0.0
+# Game hour whose memory and receipt upkeep already ran.
+var _maintained_hour: int = -1
 # (observer|target) -> {space, position, minute}: last sighting recorded, to throttle re-recording.
 var _sighted: Dictionary = {}
 # observer|deceased -> true once the observer has seen that grave this session.
@@ -196,6 +198,11 @@ func _process(delta: float) -> void:
 				if first != second and first.can_speak_reaction() and second.can_speak_reaction():
 					encounters.consider(first, second)
 	_update_environment()
+	var hour: int = floori(save_game.life.minute / 60.0)
+	if hour != _maintained_hour:
+		_maintained_hour = hour
+		save_game.memory.maintain(save_game.life.rumors.live_origins(save_game.life.minute),
+			save_game.life.minute)
 	if _save_elapsed >= 15.0:
 		_save_elapsed = 0.0
 		_save()
@@ -306,13 +313,15 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	var options: Array[Dictionary] = _options(id, preferred)
 	save_game.memory.ensure_npc(npc.get_npc_profile())
 	var memory: Dictionary = save_game.memory.snapshot(id)
-	var current: Dictionary = NpcCognitiveContext.build(memory, npc.get_cognitive_context())
+	var raw: Dictionary = npc.get_cognitive_context()
+	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
 	current.participants = [id]
 	current.relationship_with_player = memory.relationship
 	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
 		str(current.get("activity", "")) + " " + preferred.kind + " "
 		+ str(current.get("safety_response", {}).get("concern", "")),
-		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute)
+		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute,
+		NpcMemoryRetriever.links_for(raw))
 	var payload: Dictionary = {"protocol_version": 1,
 		"npc": {"id": id, "profile": npc.get_backend_profile()},
 		"current": current, "candidates": options}

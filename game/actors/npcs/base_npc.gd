@@ -182,7 +182,11 @@ func get_cognitive_context() -> Dictionary:
 	current.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
 	if is_inside_tree():
 		if profile != null:
-			current.recent_ambient = get_node("/root/NpcCognition").ambient.recent(String(profile.npc_id))
+			var cognition: Node = get_node("/root/NpcCognition")
+			current.recent_ambient = cognition.ambient.recent(String(profile.npc_id))
+			var minds: NpcMindStore = cognition.save_game.minds
+			if minds.has_mind(String(profile.npc_id)):
+				current.merge(NpcCognitiveContext.mind_context(minds.get_mind(String(profile.npc_id))), true)
 		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
 		if not players.is_empty() and players[0] is BasePlayer:
 			current.player_identity = players[0].get_social_identity()

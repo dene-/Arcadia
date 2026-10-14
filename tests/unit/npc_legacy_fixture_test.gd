@@ -60,6 +60,23 @@ func _count_source(save: NpcWorldSave, id: String, source: String) -> int:
 		count += int(memory.source == source)
 	return count
 
+## Defaults the loader fills in for fields older saves lack: undated memories say their date is
+## unknown, and every mind starts with an empty incident budget.
+func _undated(memory: Dictionary) -> Dictionary:
+	if not memory.has("created_minute"):
+		memory.created_minute = NpcMemory.UNKNOWN_MINUTE
+		memory.date_known = false
+	return memory
+
+func _with_load_defaults(data: Dictionary) -> Dictionary:
+	for npc: Dictionary in data.memory.npcs.values():
+		for memory: Dictionary in npc.memories:
+			_undated(memory)
+	for mind: Dictionary in data.minds.minds.values():
+		if not mind.has("incident_budget"):
+			mind.incident_budget = NpcIncidentBudget.new().to_data()
+	return data
+
 func test_v1_world_file_migrates_on_load_and_only_save_writes_v2() -> void:
 	for name: String in V1:
 		var save: NpcWorldSave = _isolated(name)
@@ -67,7 +84,7 @@ func test_v1_world_file_migrates_on_load_and_only_save_writes_v2() -> void:
 		assert_eq(save.load_file(), OK, name)
 		assert_false(FileAccess.file_exists(save.path), name + " wrote v2 during load")
 		assert_eq(FileAccess.get_file_as_string(save.legacy_world_path), _text(name), name)
-		var expected: Dictionary = NpcSaveMigration.upgrade(_fixture(name)).data
+		var expected: Dictionary = _with_load_defaults(NpcSaveMigration.upgrade(_fixture(name)).data)
 		expected.migration.source_digest = NpcSaveMigration.digest(_text(name))
 		assert_eq(_normalized(save.to_data()), _normalized(expected), name)
 		assert_eq(save.save_file(), OK, name)
@@ -93,7 +110,7 @@ func test_memory_only_legacy_file_loads_when_the_world_file_is_missing_and_migra
 	var source: Dictionary = _fixture("memory_only_legacy")
 	for id: String in source.npcs:
 		assert_eq(save.memory.snapshot(id).relationship, source.npcs[id].relationship, id)
-		assert_eq(save.memory.snapshot(id).memories, source.npcs[id].memories, id)
+		assert_eq(save.memory.snapshot(id).memories, source.npcs[id].memories.map(_undated), id)
 	assert_true(save.dead_npcs.is_empty())
 	assert_true(save.population.people.is_empty())
 	assert_true(save.deaths.ids().is_empty())

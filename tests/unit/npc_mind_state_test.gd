@@ -94,14 +94,22 @@ func test_receipts_survive_serialization_and_still_block_replays() -> void:
 	assert_eq(restored.get_relationship("player"), graph.get_relationship("player"))
 	assert_true(restored.version > 0)
 
-func test_receipts_are_a_fifo_window() -> void:
+func test_receipts_at_the_bound_never_drop_a_replayable_origin() -> void:
 	var graph := NpcRelationshipGraph.new()
-	for index: int in NpcRelationshipGraph.MAX_RECEIPTS + 1:
-		assert_true(graph.apply_delta("mira", {"familiarity": 0.01}, "r%d" % index))
-	assert_false(graph.has_receipt("r0"))
+	assert_true(graph.apply_delta("mira", {"familiarity": 0.01}, "counter:0"))
+	for index: int in range(1, NpcRelationshipGraph.MAX_RECEIPTS):
+		assert_true(graph.apply_delta("mira", {"familiarity": 0.01}, "r%d" % index, "origin:%d" % index))
+	# An origin-less receipt is never reissued, so it alone makes room at the bound.
+	assert_true(graph.apply_delta("mira", {"familiarity": 0.01}, "late", "origin:late"))
+	assert_false(graph.has_receipt("counter:0"))
 	assert_true(graph.has_receipt("r1"))
-	assert_true(graph.has_receipt("r%d" % NpcRelationshipGraph.MAX_RECEIPTS))
-	assert_eq(graph.to_data().receipts.size(), NpcRelationshipGraph.MAX_RECEIPTS)
+	assert_true(graph.has_receipt("late"))
+	# Every remaining receipt can still be replayed: a new delta is refused instead.
+	var before: Dictionary = graph.get_relationship("mira")
+	assert_false(graph.apply_delta("mira", {"familiarity": 0.01}, "refused", "origin:x"))
+	assert_false(graph.has_receipt("refused"))
+	assert_eq(graph.get_relationship("mira"), before)
+	assert_eq(graph.receipt_count(), NpcRelationshipGraph.MAX_RECEIPTS)
 	assert_true(NpcRelationshipGraph.is_valid_data(graph.to_data()))
 
 func test_malformed_graph_data_is_rejected_atomically() -> void:
@@ -320,7 +328,7 @@ func test_sections_require_json_safe_values_and_bump_only_their_version() -> voi
 	assert_false(mind.set_condition(wide))
 	assert_eq(mind.condition, {"energy": 0.5, "tags": ["tired"]})
 	assert_eq(mind.versions(), {"relationships": 0, "commitments": 0, "task": 0,
-		"condition": 1, "knowledge": 0, "evidence": 0})
+		"condition": 1, "knowledge": 0, "evidence": 0, "incident_budget": 0})
 
 func test_decision_sequence_increments_and_persists() -> void:
 	var mind := NpcMindState.new("vale")

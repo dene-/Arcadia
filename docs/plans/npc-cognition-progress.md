@@ -30,7 +30,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M3 | done: `NpcTaskController` (owner-checked claims, one suspended task, checkpoints), `NpcBrain` per resident, routine/safety tasks, directed-travel/hold adapter tasks; `TownBuildings` is a task-owned executor (no sleep/wake decisions); `NpcDailyRoutine.hold` and the `maintain` priority chain removed | see git log |
 | M4 | done: `NpcSocialTask`; encounter sessions invite (no claims, 8 s) → approach → converse → leave; player dialogue through the brain (urgent duties refuse with a short line); protected speech tokens; session id/minute/delivery in dialogue and social history (migration revision 3, legacy = unknown time); commitments resolved by task outcome, intentions completed only through commitments | see git log |
 | M5 | done: `TownDeaths` intent API with private records (no `transition()`); `NpcRecoveryTask` (witness absorb → seek help from own knowledge → report, or defer with a 30-minute retry; guard acknowledge → reach body → assess → prepare → carry → cemetery → bury); `NpcGuardTask` (patrol/investigate/warn/intervene/pursue/surrendered, force only on own evidence); guard shifts from role data (no named-guard cases); bereavement concerns for informed kin; graves teach burial; directed-travel/hold adapters removed | see git log |
-| M6 | pending | |
+| M6 | done: memories carry modality/incident/origin/evidence ids/perceived minute/hearsay chain; admission keyed by the evidence receipt and completed in the same commit (`store_unavailable`, `not_claimed`, `receipts_full` reasons); per-incident relationship budget (0.15, one fresh budget per fatal or surrender-violation escalation); undated legacy memories stay undated; salience from bereavement, commitments and duties; retrieval with name/topic aliases and incident/commitment links; hourly consolidation and reference-aware receipt compaction (no FIFO drops) | see git log |
 | M7 | pending | |
 | M8 | pending | |
 | M9 | pending | |
@@ -63,6 +63,14 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 - Unit 433 passed (new: `town_deaths`, `npc_recovery_task`, `npc_guard_task`, `npc_bereavement`; regression probe 4 flipped: burial before discovery/acknowledgment/pickup fails and changes nothing); all 13 integrations passed (new world scenarios: patrol → intervention → surrender → same patrol; report/recovery/burial with a reload mid-carry, one body and one grave; carrier killed leaves the body where it fell; no surviving guard → the witness defers, resumes ordinary life and the report is taken up again later); backend 64 passed with `GODOT` set.
 - Behavior changes: a witness searches guards' last-known places then help places instead of walking to the nearest living guard; a deferred report is retried after 30 minutes; recovery tasks wake their resident; old-save `directed_travel`/`hold` checkpoints are cancelled on restore (`restore_invalid`); a safety record's saved span accepts 0.001 minutes of JSON rounding.
 
+### M6 evidence
+
+- Unit 495 passed (new: `npc_incident_budget`, `npc_memory_evidence`, `npc_memory_retrieval`, `npc_memory_consolidation`, `npc_receipt_compaction`); all 13 integrations passed; backend 64 passed with `GODOT` set.
+- Paraphrase fixture (16 queries, top-3): word matching 0.38, new retriever 0.94.
+- Synthetic archive (one resident, 30 incidents × 12 low-importance sightings): `maintain()` 360 → 60 memories, 540 → 15 receipts, memory save 216 KB → 41 KB.
+- Rumor loop: a forgotten rumor re-heard after save/reload adds no memory and no trust change while any account is live; an origin nobody can retell is forgotten with its receipt.
+- Behavior changes: ten hits and three hits of one assault end within 0.15 of each other (seeing and feeling one incident share a budget); receipts at the 4096 bound refuse new completions until compaction frees room; first-hand sightings of one incident consolidate across origins (hearsay only within one origin).
+
 ## Remaining migration adapters
 
 - `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
@@ -70,4 +78,4 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 
 ## Next step
 
-M6: memory and appraisal on the evidence inbox; move player relationship/ties reads to cognition context.
+M7 (Godot side): `NpcDecisionService` with tickets, a fair scheduler and cancellable transport; move every caller to the v2 cognition routes; `NpcDecisionPolicy` owns effects; remove the v1 routes and JS delta formulas.

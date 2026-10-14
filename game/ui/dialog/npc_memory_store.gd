@@ -37,7 +37,7 @@ func ensure_npc(profile: NpcProfile) -> void:
 		if NpcMemory.is_valid(legacy):
 			memories.append(legacy)
 	for memory: Dictionary in memories:
-		NpcMemory.anchor_legacy(memory, world_minute, 0)
+		NpcMemory.anchor_legacy(memory, world_minute)
 	_states[id] = {"recent_dialogue": [], "memories": memories, "recent_events": [],
 		"observations": [], "next_observation_id": 1, "heard_origins": {}}
 	_changed(id)
@@ -73,18 +73,94 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 	if account.player_involved and account.confidence >= 0.7:
 		minds.get_mind(String(profile.npc_id)).relationships.apply_delta("player",
 			{"trust": clampf(policy.trust_player, -0.03, 0.03)},
-			"hearsay:%s:%s" % [profile.npc_id, account.origin_id])
+			"hearsay:%s:%s" % [profile.npc_id, account.origin_id], account.origin_id)
 	if not policy.remember:
 		return
 	var gist: String = "%s told me that %s reported: %s" % [account.source_name,
 		account.originator_name, account.text]
 	var memory: Dictionary = NpcMemory.create(id, "episodic", gist.substr(0, 500), "hearsay", turn)
 	memory.created_minute = world_minute
+	memory.date_known = true
 	memory.confidence = account.confidence
 	memory.importance = policy.importance
 	memory.topics = ["town", "news"]
 	memory.people = ["player"] if account.player_involved else []
-	state.memories.append(memory)
+	memory.observation_kind = "rumor"
+	memory.modality = "speech"
+	memory.incident_id = ""
+	memory.origin_id = account.origin_id
+	memory.evidence_ids = []
+	memory.observed_minute = NpcMemory.UNKNOWN_MINUTE
+	memory.chain = _speakers(account.get("chain", []), String(profile.npc_id))
+	if NpcMemory.is_valid(memory):
+		state.memories.append(memory)
+
+# Rumor chain (originator first, listener last) as the speakers before `listener`, newest first.
+static func _speakers(chain: Variant, listener: String) -> Array[String]:
+	var speakers: Array[String] = []
+	if not chain is Array:
+		return speakers
+	for index: int in range((chain as Array).size() - 1, -1, -1):
+		var speaker: Variant = chain[index]
+		if speaker is String and not (speaker as String).is_empty() and speaker != listener \
+				and speakers.size() < NpcMemory.MAX_CHAIN:
+			speakers.append(speaker)
+	return speakers
+
+## Bounded archive and receipt upkeep, run on the world schedule. `live_origins` are the rumor
+## origins anyone can still retell (TownRumors.live_origins): while an origin is live its receipts
+## and `heard_origins` entry are kept, so a retold story can never be admitted twice. A receipt is
+## also kept while an inbox item, open commitment or running duty references it or its origin.
+## Returns counts of the memories merged away, receipts pruned and heard origins forgotten.
+func maintain(live_origins: Dictionary, minute: float) -> Dictionary:
+	var result: Dictionary = {"memories_merged": 0, "receipts_pruned": 0, "origins_pruned": 0}
+	var ids: Array[String] = minds.ids()
+	for npc_id: String in _states:
+		if not npc_id in ids:
+			ids.append(npc_id)
+	ids.sort()
+	for npc_id: String in ids:
+		var mind: NpcMindState = minds.get_mind(npc_id)
+		var references: Dictionary = live_origins.duplicate()
+		for observation: NpcObservation in mind.evidence.pending_observations():
+			references[observation.observation_id] = true
+			references[observation.origin_id] = true
+		var cited: Array = mind.task_checkpoint().get("evidence_ids", []).duplicate()
+		for commitment: Dictionary in mind.commitments.open_commitments():
+			cited.append_array(commitment["evidence_ids"])
+		for evidence_id: Variant in cited:
+			references[evidence_id] = true
+			var origin: String = mind.evidence.receipt_origin(evidence_id)
+			if not origin.is_empty():
+				references[origin] = true
+		result.receipts_pruned += mind.evidence.compact(references) \
+			+ mind.relationships.compact(references)
+		if not _states.has(npc_id):
+			continue
+		var state: Dictionary = _states[npc_id]
+		for origin: String in state.heard_origins.keys():
+			if not live_origins.has(origin):
+				state.heard_origins.erase(origin)
+				result.origins_pruned += 1
+		var merged: int = NpcMemoryConsolidator.consolidate(state.memories,
+			_protected_refs(mind, cited), minute)
+		result.memories_merged += merged
+		# Only the archive feeds responses; forgotten receipts cannot invalidate one.
+		if merged > 0:
+			_changed(npc_id)
+	return result
+
+# Evidence and origins whose episodes must stay as they are: cited by an open commitment or
+# running duty, or behind a contested belief.
+static func _protected_refs(mind: NpcMindState, cited: Array) -> Dictionary:
+	var refs: Dictionary = {}
+	for evidence_id: Variant in cited:
+		refs[evidence_id] = true
+	for fact: Dictionary in mind.knowledge.to_data().get("facts", []):
+		if fact.get("status") == "CONTESTED":
+			for ref: Variant in fact.get("evidence_ids", []) + fact.get("origin_ids", []):
+				refs[ref] = true
+	return refs
 
 func advance_time(turns: int = 1) -> void:
 	turn += maxi(turns, 0)
@@ -130,12 +206,26 @@ func record_observation(profile: NpcProfile, event: Dictionary, world_minute: fl
 		state.observations.pop_front()
 	_changed(String(profile.npc_id))
 
-## Appraises evidence the inbox has claimed. Returns false and changes nothing for an invalid
-## policy, so the caller can defer the evidence. The caller completes the inbox item; the
-## inbox receipt (not this method) prevents a second appraisal of the same observation.
-func commit_evidence(npc_id: String, observation: NpcObservation, policy: Dictionary) -> bool:
-	if observation == null or not _states.has(npc_id) or not is_valid_policy(policy):
-		return false
+## Appraises evidence the mind's inbox has claimed. The inbox claim is completed first and its
+## receipt is what makes the appraisal happen once: when completion fails nothing changes, and a
+## completed claim always carries its effects. Returns "" on success (re-committing an already
+## receipted observation is a successful no-op) or why nothing was committed: "invalid_observation",
+## "store_unavailable" (this NPC has no memory state), "invalid_policy", "receipts_full" (every
+## stored receipt is still replayable; upkeep frees room once origins expire) or "not_claimed".
+func commit_evidence(npc_id: String, observation: NpcObservation, policy: Variant) -> String:
+	if observation == null or observation.observation_id.is_empty():
+		return "invalid_observation"
+	if not _states.has(npc_id):
+		return "store_unavailable"
+	if not is_valid_policy(policy):
+		return "invalid_policy"
+	var mind: NpcMindState = minds.get_mind(npc_id)
+	if mind.evidence.has_receipt(observation.observation_id):
+		return ""
+	if mind.evidence.receipt_count() >= NpcEvidenceInbox.MAX_RECEIPTS:
+		return "receipts_full"
+	if not mind.evidence.complete(observation.observation_id):
+		return "not_claimed"
 	var state: Dictionary = _states[npc_id]
 	_changed(npc_id)
 	for entry: Dictionary in state.observations:
@@ -146,7 +236,7 @@ func commit_evidence(npc_id: String, observation: NpcObservation, policy: Dictio
 	# Hearing noise alone cannot identify or change feelings toward the player.
 	if observation.facts.get("player_involved") == true \
 			and observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]:
-		minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
+		mind.apply_evidence_delta("player", observation, policy.relationship_delta,
 			"observation:%s:%s" % [npc_id, observation.observation_id])
 	if policy.remember:
 		var people: Array[String] = observation.participant_ids()
@@ -155,12 +245,28 @@ func commit_evidence(npc_id: String, observation: NpcObservation, policy: Dictio
 		var topics: Array[String] = observation.topics.slice(0, 8)
 		if topics.is_empty():
 			topics.append(String(observation.kind) if observation.kind != &"unknown" else "event")
+		var report: bool = observation.modality == NpcObservation.Modality.SPOKEN_REPORT
 		_admit(state.memories, {"type": "episodic",
-			"source": "hearsay" if observation.modality == NpcObservation.Modality.SPOKEN_REPORT \
-				else "observed_event",
+			"source": "hearsay" if report else "observed_event",
 			"gist": observation.text, "topics": topics, "people": people.slice(0, 8),
-			"sensory_cues": observation.cues.slice(0, 8)}, policy)
-	return true
+			"sensory_cues": observation.cues.slice(0, 8)}, policy, _evidence_of(observation))
+	return ""
+
+# Memory evidence fields of one observation.
+func _evidence_of(observation: NpcObservation) -> Dictionary:
+	var chain: Array[String] = []
+	if observation.modality == NpcObservation.Modality.SPOKEN_REPORT \
+			and not observation.source_id.is_empty():
+		chain.append(observation.source_id)
+	var observed: float = observation.observed_minute
+	return {"observation_kind": String(observation.kind).substr(0, NpcMemory.MAX_ID_LENGTH),
+		"modality": NpcMemory.modality_of(observation), "incident_id": observation.incident_id,
+		"origin_id": observation.origin_id if not observation.origin_id.is_empty()
+			else observation.observation_id,
+		"evidence_ids": [observation.observation_id],
+		"observed_minute": observed if is_finite(observed) and observed >= 0.0
+			else NpcMemory.UNKNOWN_MINUTE,
+		"chain": chain}
 
 ## Diagnostics belong to the display entry, never to model input or authored profiles.
 func annotate_observation(npc_id: String, observation_id: String, diagnostics: Dictionary) -> void:
@@ -270,7 +376,7 @@ func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 	# Memory shapes are strict: saves from older versions are upgraded by NpcSaveMigration.
 	for state: Dictionary in _states.values():
 		for memory: Dictionary in state.memories:
-			NpcMemory.anchor_legacy(memory, load_minute, int(data.turn))
+			NpcMemory.anchor_legacy(memory, load_minute)
 	turn = int(data.turn)
 	world_minute = load_minute
 	_next_memory_id = int(data.next_memory_id)
@@ -315,13 +421,16 @@ static func is_valid_result(result: Dictionary) -> bool:
 	return result.get("memory_writes") is Array and result.memory_writes.size() <= 3 \
 		and NpcMemory.is_text_list(result.get("recalled_memory_ids"))
 
-func _admit(memories: Array, proposal: Variant, policy: Dictionary) -> void:
+## `evidence` holds the NpcMemory evidence fields of perceived evidence, never model output.
+func _admit(memories: Array, proposal: Variant, policy: Dictionary, evidence: Dictionary = {}) -> void:
 	if not proposal is Dictionary:
 		return
 	var memory: Dictionary = NpcMemory.create("mem:%d" % _next_memory_id,
 		str(proposal.get("type", "")), str(proposal.get("gist", "")),
 		str(proposal.get("source", "")), turn)
-	memory.created_minute = world_minute
+	var observed: float = float(evidence.get("observed_minute", NpcMemory.UNKNOWN_MINUTE))
+	memory.created_minute = observed if observed >= 0.0 and observed <= world_minute else world_minute
+	memory.date_known = true
 	if memory.source == "authored":
 		return
 	if memory.type == "semantic" and (not policy.update_belief or memory.source == "npc_statement"):
@@ -335,11 +444,21 @@ func _admit(memories: Array, proposal: Variant, policy: Dictionary) -> void:
 		memory.evidence = proposal.evidence
 	for key: String in NpcMemory.TEXT_LISTS:
 		memory[key] = proposal.get(key, [])
+	memory.merge(evidence.duplicate(true), true)
 	if not NpcMemory.is_valid(memory):
 		return
+	# Hearing a report and seeing the event stay distinct memories, as do separate incidents.
 	for existing: Dictionary in memories:
-		if existing.gist.to_lower() == memory.gist.to_lower() and existing.source == memory.source:
-			return # Repetition is not independent evidence or a new memory.
+		if existing.gist.to_lower() == memory.gist.to_lower() and existing.source == memory.source \
+				and existing.get("modality", "") == memory.get("modality", "") \
+				and existing.get("incident_id", "") == memory.get("incident_id", ""):
+			# Repetition is not a new memory; it only records which evidence it rests on.
+			for evidence_id: String in memory.get("evidence_ids", []):
+				var ids: Array = existing.get("evidence_ids", [])
+				if not evidence_id in ids and ids.size() < NpcMemory.MAX_EVIDENCE_IDS:
+					ids.append(evidence_id)
+					existing.evidence_ids = ids
+			return
 	memories.append(memory)
 	_next_memory_id += 1
 

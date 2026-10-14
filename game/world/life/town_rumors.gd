@@ -75,6 +75,16 @@ func get_known(id: String, minute: float) -> Array[Dictionary]:
 			result.append(item.duplicate(true))
 	return result
 
+## Origins anyone can still retell at `minute`: an origin outlives every listener's own account
+## while one live account of it remains anywhere in town.
+func live_origins(minute: float) -> Dictionary[String, bool]:
+	var result: Dictionary[String, bool] = {}
+	for id: String in _known:
+		for item: Dictionary in _known[id]:
+			if item.expires_at > minute:
+				result[item.origin_id] = true
+	return result
+
 func _put(id: String, account: Dictionary, minute: float) -> void:
 	var known: Array[Dictionary] = get_known(id, minute)
 	# Direct perception supersedes hearsay, but never combines confidence from repeated tellings.

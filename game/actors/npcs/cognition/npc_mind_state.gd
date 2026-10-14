@@ -7,7 +7,9 @@ const MAX_SECTION_KEYS: int = 256
 const MAX_LIST_ITEMS: int = 64
 const MAX_JSON_DEPTH: int = 16
 const _DATA_KEYS: Array[String] = ["version", "relationships", "commitments", "condition",
-	"knowledge", "evidence", "task", "decision_sequence"]
+	"knowledge", "evidence", "task", "decision_sequence", "incident_budget"]
+## Saves written before incident budgets existed load with an empty budget.
+const _OPTIONAL_KEYS: Array[String] = ["incident_budget"]
 const _CHECKPOINT_KEYS: Array[String] = ["task_id", "kind", "phase", "status", "started_minute",
 	"deadline_minute", "generation", "evidence_ids", "commitment_ids", "claims", "params",
 	"progress", "suspended"]
@@ -20,6 +22,8 @@ var condition: Dictionary = {}
 var knowledge := NpcKnowledge.new()
 ## Evidence awaiting appraisal; survives provider outages and working-memory pressure.
 var evidence := NpcEvidenceInbox.new()
+## How much each incident has already changed relationships.
+var incident_budget := NpcIncidentBudget.new()
 var decision_sequence: int = 0
 
 var _task: Dictionary = {}
@@ -61,6 +65,24 @@ func add_bereavement(subject: String, evidence_id: String, minute: float) -> boo
 	next["concerns"] = updated
 	return set_condition(next)
 
+## Applies an evidence-driven change toward `subject` within the observation's incident budget.
+## Spends nothing and returns false when `receipt` was already applied.
+func apply_evidence_delta(subject: String, observation: NpcObservation, delta: Dictionary,
+		receipt: String) -> bool:
+	if subject.is_empty() or observation == null:
+		return false
+	if NpcIncidentBudget.is_surrender(subject, observation):
+		incident_budget.record_surrender(subject, observation.observed_minute)
+	var incident: String = observation.incident_id if not observation.incident_id.is_empty() \
+		else observation.observation_id
+	var kind: String = incident_budget.escalation_for(subject, observation,
+		evidence.pending_observations())
+	var allowed: Dictionary = incident_budget.allowance(subject, incident, kind, delta)
+	if not relationships.apply_delta(subject, allowed, receipt, observation.origin_id):
+		return false
+	incident_budget.spend(subject, incident, kind, allowed)
+	return true
+
 func next_decision() -> int:
 	decision_sequence += 1
 	return decision_sequence
@@ -68,28 +90,33 @@ func next_decision() -> int:
 func versions() -> Dictionary:
 	return {"relationships": relationships.version, "commitments": commitments.version,
 		"task": _task_version, "condition": _condition_version, "knowledge": knowledge.version,
-		"evidence": evidence.version}
+		"evidence": evidence.version, "incident_budget": incident_budget.version}
 
 func to_data() -> Dictionary:
 	return {"version": SCHEMA_VERSION, "relationships": relationships.to_data(),
 		"commitments": commitments.to_data(), "condition": condition.duplicate(true),
 		"knowledge": knowledge.to_data(), "evidence": evidence.to_data(), "task": task_checkpoint(),
-		"decision_sequence": decision_sequence}
+		"decision_sequence": decision_sequence, "incident_budget": incident_budget.to_data()}
 
 static func is_valid_data(data: Variant, npc_id: String) -> bool:
 	if not data is Dictionary:
 		return false
 	var source: Dictionary = data
-	if source.size() != _DATA_KEYS.size():
-		return false
+	var present: int = 0
 	for key: String in _DATA_KEYS:
-		if not source.has(key):
+		if source.has(key):
+			present += 1
+		elif not key in _OPTIONAL_KEYS:
 			return false
+	if source.size() != present:
+		return false
 	return _is_count(source["version"], SCHEMA_VERSION) and int(source["version"]) == SCHEMA_VERSION \
 		and NpcRelationshipGraph.is_valid_data(source["relationships"]) \
 		and NpcCommitments.is_valid_data(source["commitments"], npc_id) \
 		and _is_valid_section(source["condition"]) and NpcKnowledge.is_valid_data(source["knowledge"]) \
 		and NpcEvidenceInbox.is_valid_data(source["evidence"]) \
+		and (not source.has("incident_budget")
+			or NpcIncidentBudget.is_valid_data(source["incident_budget"])) \
 		and (source["task"] is Dictionary and ((source["task"] as Dictionary).is_empty()
 			or is_valid_task_checkpoint(source["task"]))) \
 		and _is_count(source["decision_sequence"], 0)
@@ -103,6 +130,7 @@ func from_data(data: Variant) -> bool:
 	condition = (source["condition"] as Dictionary).duplicate(true)
 	knowledge.from_data(source["knowledge"])
 	evidence.from_data(source["evidence"])
+	incident_budget.from_data(source.get("incident_budget", NpcIncidentBudget.new().to_data()))
 	_task = _normalized_checkpoint(source["task"])
 	decision_sequence = int(source["decision_sequence"])
 	_task_version += 1

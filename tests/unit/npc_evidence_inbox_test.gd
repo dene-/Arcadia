@@ -212,17 +212,20 @@ func test_claimed_items_are_not_dropped_at_capacity() -> void:
 	assert_false(inbox.contains_pending("s1"))
 	assert_true(inbox.complete("s0"))
 
-func test_receipts_are_bounded_fifo() -> void:
+func test_receipts_at_the_bound_refuse_completion_instead_of_dropping_one() -> void:
 	var inbox := NpcEvidenceInbox.new()
-	for index: int in range(NpcEvidenceInbox.MAX_RECEIPTS + 3):
+	for index: int in range(NpcEvidenceInbox.MAX_RECEIPTS):
 		var id: String = "r%d" % index
 		inbox.enqueue(_sight(id, 1.0))
 		inbox.claim(id, 1.0)
-		inbox.complete(id)
-	assert_false(inbox.has_receipt("r0"))
-	assert_false(inbox.has_receipt("r2"))
-	assert_true(inbox.has_receipt("r3"))
-	assert_true(inbox.has_receipt("r%d" % (NpcEvidenceInbox.MAX_RECEIPTS + 2)))
+		assert_true(inbox.complete(id))
+	inbox.enqueue(_sight("over", 1.0))
+	assert_not_null(inbox.claim("over", 1.0))
+	assert_false(inbox.complete("over"))
+	assert_true(inbox.has_receipt("r0"))
+	assert_false(inbox.has_receipt("over"))
+	assert_true(inbox.contains_pending("over"))
+	assert_eq(inbox.receipt_count(), NpcEvidenceInbox.MAX_RECEIPTS)
 
 func test_incident_grouping_rules() -> void:
 	var inbox := NpcEvidenceInbox.new()

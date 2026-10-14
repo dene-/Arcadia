@@ -263,12 +263,13 @@ func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 	var person: Dictionary = state.get_person(String(profile.npc_id))
 	store.ensure_npc(profile)
 	var memory: Dictionary = store.snapshot(String(profile.npc_id))
-	var current: Dictionary = NpcCognitiveContext.build(memory, speaker.get_cognitive_context())
+	var raw: Dictionary = speaker.get_cognitive_context()
+	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
 	current.participants = [String(profile.npc_id), String(other.npc_id)]
 	current.relationship_with_player = memory.relationship
 	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
 		other.profile_name + " " + str(current.get("activity", "")), current,
-		profile.get_cognition(), store.world_minute)
+		profile.get_cognition(), store.world_minute, NpcMemoryRetriever.links_for(raw))
 	return {"protocol_version": 1, "npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
 		"listener": {"id": String(other.npc_id), "name": other.profile_name, "job": other.job,
 			"activity": listener.daily_routine.activity},

@@ -86,7 +86,7 @@ func _process_npc(id: String, job: Dictionary) -> void:
 		if observation == null:
 			break
 		_inflight[id] = true
-		await _appraise(id, job, observation, inbox)
+		await _appraise(id, job, observation)
 	# New arrivals are included by the loop; remove any redundant scheduling entry.
 	_queued.erase(id)
 	_active.erase(id)
@@ -95,8 +95,7 @@ func _process_npc(id: String, job: Dictionary) -> void:
 	observation_assessed.emit()
 	_drain.call_deferred()
 
-func _appraise(id: String, job: Dictionary, observation: NpcObservation,
-		inbox: NpcEvidenceInbox) -> void:
+func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void:
 	var state: Dictionary = store.snapshot(id)
 	var source: BaseNpc = _source(job)
 	var current: Dictionary = job.current.duplicate(true)
@@ -121,17 +120,17 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation,
 			"recent_dialogue": NpcMemoryStore.history_for_prompt(
 				state.get("recent_dialogue", []), store.world_minute),
 			"memories": NpcMemoryRetriever.new().retrieve(state.get("memories", []), event.text,
-				current, job.profile.get_cognition(), store.world_minute)}}
+				current, job.profile.get_cognition(), store.world_minute,
+				NpcMemoryRetriever.links_for(current))}}
 	var judgment: Dictionary = await backend.request_observation(payload)
 	var policy: Variant = judgment.get("policy", {})
 	store.ensure_npc(job.profile)
-	var committed: bool = policy is Dictionary and store.commit_evidence(id, observation, policy)
-	if committed:
-		inbox.complete(observation.observation_id)
-	else:
-		inbox.fail(observation.observation_id,
-			"provider_unavailable" if judgment.is_empty() or not policy is Dictionary \
-				or (policy as Dictionary).is_empty() else "invalid_policy", store.world_minute)
+	# Committing completes the inbox claim; a failure leaves the claim for the inbox to retry.
+	var failure: String = "provider_unavailable" if judgment.is_empty() or not policy is Dictionary \
+		or (policy as Dictionary).is_empty() else store.commit_evidence(id, observation, policy)
+	var committed: bool = failure.is_empty()
+	if not committed:
+		store.minds.get_mind(id).evidence.fail(observation.observation_id, failure, store.world_minute)
 	_inflight.erase(id)
 	diagnostic.assessment_ms = Time.get_ticks_msec() - started
 	var speech_answer: Dictionary = judgment.get("answers", {}).get("should_speak", {})
@@ -180,7 +179,8 @@ func _speak(job: Dictionary, payload: Dictionary, judgment: Dictionary,
 	payload.context.current.merge(source.get_cognitive_context(), true)
 	payload.context.relationship = state.relationship
 	payload.context.memories = NpcMemoryRetriever.new().retrieve(state.memories,
-		payload.event.text, payload.context.current, job.profile.get_cognition(), store.world_minute)
+		payload.event.text, payload.context.current, job.profile.get_cognition(), store.world_minute,
+		NpcMemoryRetriever.links_for(payload.context.current))
 	payload.answers = judgment.get("answers", {})
 	var revision: int = store.revision(payload.npc.id)
 	var health: int = source.health

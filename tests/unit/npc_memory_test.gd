@@ -264,7 +264,10 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 		var noise: NpcObservation = NpcObservation.from_perception("other", "noise:%d" % index, 10.0,
 			&"outdoors", {"text": "I heard a noise.", "sense": "hearing", "player_involved": false})
 		save.memory.record_observation(_profile(&"other"), noise.to_event(), 10.0)
-		assert_true(save.memory.commit_evidence("other", noise, _policy(false)))
+		var inbox: NpcEvidenceInbox = save.memory.minds.get_mind("other").evidence
+		assert_true(inbox.enqueue(noise))
+		var claimed: NpcObservation = inbox.claim(noise.observation_id, 10.0)
+		assert_eq(save.memory.commit_evidence("other", claimed, _policy(false)), "")
 	assert_eq(retriever.recall(memory, cognition, save.memory.world_minute), before)
 	save.life.advance(1440)
 	var later: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)
@@ -275,7 +278,7 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 	assert_eq(retriever.recall(restored.memory.snapshot("test_npc").memories[0], cognition,
 		restored.memory.world_minute), later)
 
-func test_legacy_migration_preserves_retention_without_inventing_an_event_date() -> void:
+func test_legacy_migration_marks_undated_memories_without_counting_exchanges_as_age() -> void:
 	var save := NpcWorldSave.new()
 	save.memory.ensure_npc(_profile())
 	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
@@ -283,15 +286,18 @@ func test_legacy_migration_preserves_retention_without_inventing_an_event_date()
 	data.memory.turn = 501
 	data.memory.erase("world_minute")
 	data.memory.npcs.test_npc.memories[0].erase("created_minute")
+	data.memory.npcs.test_npc.memories[0].erase("date_known")
 	data.world.life.minute = 4320.0
 	var restored := NpcWorldSave.new()
 	assert_true(restored.from_data(data))
 	var memory: Dictionary = restored.memory.snapshot("test_npc").memories[0]
-	assert_false(memory.has("created_minute"))
+	assert_eq(memory.created_minute, NpcMemory.UNKNOWN_MINUTE)
+	assert_false(memory.date_known)
 	assert_eq(memory.age_anchor_minute, 4320.0)
-	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 500.0)
+	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 0.0,
+		"500 exchanges are not elapsed time")
 	restored.life.advance(60)
-	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 502.0)
+	assert_eq(NpcMemory.retention_age(memory, restored.memory.world_minute), 2.0)
 	var again := NpcWorldSave.new()
 	assert_true(again.from_data(restored.to_data()))
 	assert_eq(again.memory.snapshot("test_npc").memories[0], memory,

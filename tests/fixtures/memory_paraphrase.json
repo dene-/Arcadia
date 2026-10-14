@@ -1,0 +1,61 @@
+{
+	"people": [
+		{"id": "garrin_holt", "name": "Garrin Holt"},
+		{"id": "holt_partner", "name": "Ada Holt"},
+		{"id": "maris_bell", "name": "Maris Bell"},
+		{"id": "bell_partner", "name": "Corin Bell"},
+		{"id": "sella_rowan", "name": "Sella Rowan"},
+		{"id": "tovan_reed", "name": "Tovan Reed"}
+	],
+	"open_commitments": [
+		{"kind": "report_discovery", "other_ids": ["garrin_holt"], "evidence_ids": ["obs:body"]}
+	],
+	"memories": [
+		{"id": "mem:death", "gist": "I found Garrin dead behind the forge.", "source": "observed_event",
+			"topics": ["forge"], "people": ["garrin_holt"], "incident_id": "inc:forge",
+			"evidence_ids": ["obs:body"], "importance": 0.9},
+		{"id": "mem:fight", "gist": "The player hit Garrin again and again by the anvil.",
+			"source": "observed_event", "topics": ["anvil"], "people": ["player", "garrin_holt"],
+			"incident_id": "inc:forge", "evidence_ids": ["obs:hit"], "importance": 0.7},
+		{"id": "mem:noise", "gist": "I heard shouting from the smithy late at night.",
+			"source": "observed_event", "topics": ["night"], "people": [],
+			"incident_id": "inc:forge", "evidence_ids": ["obs:shout"], "importance": 0.4},
+		{"id": "mem:funeral", "gist": "Ada Holt wept at the grave on the hill.", "source": "observed_event",
+			"topics": ["cemetery"], "people": ["holt_partner"], "incident_id": "inc:funeral",
+			"evidence_ids": ["obs:grave"], "importance": 0.6},
+		{"id": "mem:theft", "gist": "Someone stole bread from Sella's stall.", "source": "hearsay",
+			"topics": ["market"], "people": ["sella_rowan"], "importance": 0.4},
+		{"id": "mem:corin", "gist": "Maris's husband lent me a ladder.", "source": "observed_event",
+			"topics": ["favour"], "people": ["bell_partner"], "importance": 0.3},
+		{"id": "mem:ada", "gist": "The cooper's wife brought me a pie.", "source": "observed_event",
+			"topics": ["gift"], "people": ["holt_partner"], "importance": 0.3},
+		{"id": "mem:report", "gist": "The guard has not yet heard what I saw.", "source": "observed_event",
+			"topics": ["guard"], "people": [], "evidence_ids": ["obs:body"], "importance": 0.5},
+		{"id": "mem:sword", "gist": "The player bought a sword from Garrin.", "source": "observed_event",
+			"topics": ["trade"], "people": ["player", "garrin_holt"], "importance": 0.4},
+		{"id": "mem:cloth", "gist": "Maris Bell sold me fine cloth.", "source": "observed_event",
+			"topics": ["cloth", "market"], "people": ["maris_bell"], "importance": 0.3},
+		{"id": "mem:well", "gist": "The well water tasted of iron.", "source": "observed_event",
+			"topics": ["water"], "people": [], "importance": 0.2},
+		{"id": "mem:storm", "gist": "A storm broke the mill roof.", "source": "observed_event",
+			"topics": ["weather"], "people": [], "importance": 0.3}
+	],
+	"queries": [
+		{"query": "Did someone die near the smithy?", "expected": "mem:death"},
+		{"query": "Who attacked the blacksmith?", "expected": "mem:fight"},
+		{"query": "Was there a burial?", "expected": "mem:funeral"},
+		{"query": "Did you hear of a theft?", "expected": "mem:theft"},
+		{"query": "Was anything stolen at the market?", "expected": "mem:theft"},
+		{"query": "What has Corin done for you?", "expected": "mem:corin"},
+		{"query": "How is Ada?", "expected": "mem:ada"},
+		{"query": "Anything weighing on your mind?", "expected": "mem:report"},
+		{"query": "Who died at the forge?", "expected": "mem:noise"},
+		{"query": "Did Garrin sell you anything?", "expected": "mem:sword"},
+		{"query": "Tell me about Maris Bell.", "expected": "mem:cloth"},
+		{"query": "Is the well water safe?", "expected": "mem:well"},
+		{"query": "Has anyone been hurt lately?", "expected": "mem:fight"},
+		{"query": "Where is Garrin's corpse?", "expected": "mem:death"},
+		{"query": "Has anybody been murdered?", "expected": "mem:death"},
+		{"query": "Did the storm do any damage?", "expected": "mem:storm"}
+	]
+}
