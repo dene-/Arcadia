@@ -1,9 +1,31 @@
 class_name TownResidentSchedule
 extends RefCounted
 
+## Watch shifts in assignment order. Each row is `[minute, kind, place]`; "home" expands to the
+## guard's home. `origin` is the patrol stop the shift's route cycles on from.
+## The first living guard keeps the night watch, so one survivor still patrols after dark.
+const GUARD_SHIFTS: Array[Dictionary] = [
+	# The late watch crosses midnight and sleeps after handing over in the morning.
+	{"name": "night", "origin": 2, "plan": [[0, "patrol", "patrol:2"], [390, "meal", "home"],
+		[450, "rest", "home"], [930, "meal", "home"], [960, "socialize", "square"],
+		[1110, "patrol", "patrol:1"]]},
+	{"name": "day", "origin": 0, "plan": [[0, "rest", "home"], [330, "meal", "home"],
+		[360, "patrol", "patrol:0"], [690, "meal", "home"], [720, "patrol", "patrol:2"],
+		[1140, "meal", "home"], [1200, "socialize", "square"], [1250, "rest", "home"]]},
+]
+
+## Deterministic shift assignment by role: the guard's index among living guards (sorted ids).
+static func guard_shift(population: TownPopulation, id: String, dead: Array[String]) -> Dictionary:
+	var living: Array[String] = []
+	for other: String in population.people:
+		if population.people[other].job == "guard" and not other in dead:
+			living.append(other)
+	living.sort()
+	return GUARD_SHIFTS[maxi(living.find(id), 0) % GUARD_SHIFTS.size()]
+
 ## Obligations constrain Jev's choices; the model chooses among appropriate activities.
 static func generate(population: TownPopulation, id: String, seed_value: int,
-		day: int, places: Array[String]) -> Array[Dictionary]:
+		day: int, places: Array[String], dead: Array[String] = []) -> Array[Dictionary]:
 	var person: Dictionary = population.people[id]
 	var plan: Array[Dictionary] = NpcRoutinePlan.generate(seed_value, id, day, places)
 	var random := NpcRoutinePlan.random_for(seed_value, "%s:family-day:%d" % [person.household, day])
@@ -22,25 +44,8 @@ static func generate(population: TownPopulation, id: String, seed_value: int,
 		plan[4].kind = "socialize"
 		plan[4].place = "square"
 	elif person.job == "guard":
-		var early: bool = id == "voss_guard"
-		# The late watch crosses midnight and sleeps after handing over in the morning.
-		if not early:
-			return [
-				{"minute": 0, "kind": "patrol", "place": "patrol:2"},
-				{"minute": 390, "kind": "meal", "place": "home:" + id},
-				{"minute": 450, "kind": "rest", "place": "home:" + id},
-				{"minute": 930, "kind": "meal", "place": "home:" + id},
-				{"minute": 960, "kind": "socialize", "place": "square"},
-				{"minute": 1110, "kind": "patrol", "place": "patrol:1"},
-			]
-		plan = [
-			{"minute": 0, "kind": "rest", "place": "home:" + id},
-			{"minute": 330, "kind": "meal", "place": "home:" + id},
-			{"minute": 360, "kind": "patrol", "place": "patrol:0"},
-			{"minute": 690, "kind": "meal", "place": "home:" + id},
-			{"minute": 720, "kind": "patrol", "place": "patrol:2"},
-			{"minute": 1140, "kind": "meal", "place": "home:" + id},
-			{"minute": 1200, "kind": "socialize", "place": "square"},
-			{"minute": 1250, "kind": "rest", "place": "home:" + id},
-		]
+		plan = []
+		for slot: Array in guard_shift(population, id, dead).plan:
+			plan.append({"minute": slot[0], "kind": slot[1],
+				"place": "home:" + id if slot[2] == "home" else slot[2]})
 	return plan

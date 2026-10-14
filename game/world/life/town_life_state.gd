@@ -39,7 +39,7 @@ func issue_event_id() -> String:
 	return id
 
 func ensure_person(id: String, seed_value: int, residents: Array[String], places: Array[String],
-		population: TownPopulation = null) -> void:
+		population: TownPopulation = null, dead: Array[String] = []) -> void:
 	var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
 	if not _people.has(id):
 		var random := NpcRoutinePlan.random_for(seed_value, id + ":social")
@@ -67,9 +67,12 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 			relationships.seed_relationship(relative, {"familiarity": 1.0,
 				"trust": random.randf_range(0.25, 0.9), "affection": random.randf_range(0.25, 0.95)}, true)
 		person.family_initialized = true
-	if person.plan_day != day() or person.get("plan_revision", 0) != NpcRoutinePlan.REVISION:
+	# A guard's shift follows the living watch, so a death reassigns it the same day.
+	var shifted: bool = population != null and population.people[id].job == "guard" and not _same_plan(
+		TownResidentSchedule.generate(population, id, seed_value, day(), places, dead), person.plan)
+	if shifted or person.plan_day != day() or person.get("plan_revision", 0) != NpcRoutinePlan.REVISION:
 		person.plan = NpcRoutinePlan.generate(seed_value, id, day(), places) if population == null \
-			else TownResidentSchedule.generate(population, id, seed_value, day(), places)
+			else TownResidentSchedule.generate(population, id, seed_value, day(), places, dead)
 		person.plan_day = day()
 		person.plan_revision = NpcRoutinePlan.REVISION
 		if not NpcSafetyState.sheltering(person.safety, minute):
@@ -186,6 +189,17 @@ func from_data(data: Variant) -> bool:
 
 static func _number(value: Variant) -> bool:
 	return (value is int or value is float) and is_finite(float(value))
+
+# Saved plans come back from JSON with float minutes; compare slots by value.
+static func _same_plan(expected: Array[Dictionary], actual: Array) -> bool:
+	if expected.size() != actual.size():
+		return false
+	for index: int in range(expected.size()):
+		var slot: Dictionary = expected[index]
+		if not actual[index] is Dictionary or float(actual[index].get("minute", -1)) != float(slot.minute) \
+			or actual[index].get("kind") != slot.kind or actual[index].get("place") != slot.place:
+			return false
+	return true
 
 static func _valid_person(person: Variant) -> bool:
 	if not person is Dictionary:

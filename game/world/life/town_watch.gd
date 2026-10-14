@@ -1,22 +1,30 @@
 class_name TownWatch
 extends Node
 
-## Scene adapter: perception -> saved evidence -> bounded enforcement -> actor mechanics.
-## Investigations and patrol stops are directed-travel tasks requested from the guard's NpcBrain
-## (owner "watch"); the brain's priorities settle conflicts with other duties.
+## Scene adapter: perception -> saved evidence -> the guard's NpcGuardTask -> actor mechanics.
+## The watch records what each guard perceives (justice reports, sightings, heard disturbances)
+## and serves it to that guard's task, which decides where to go and whom to stop; the brain's
+## priorities settle conflicts with other duties.
 const OWNER: String = "watch"
+const PATROL_STOPS: int = 4
+## Minutes a heard disturbance stays worth investigating.
+const LEAD_MINUTES: float = 12.0
 
 var life: TownLife
-var _investigations: Dictionary = {}
-var _patrol_stops: Dictionary = {}
-# npc_id -> {task_id, kind: "investigate"|"patrol"}: the one task the watch owns per guard.
-var _tasks: Dictionary = {}
-# npc_id -> true once this node listens to the guard's brain.
-var _listening: Dictionary = {}
+# npc_id -> {subject: {subject, minute, until, space, x, y}}: unsaved leads the guard heard.
+var _leads: Dictionary = {}
+# npc_id -> the patrol stop the guard last headed for; a new duty continues after it.
+var _stops: Dictionary = {}
+var _origins: int = 0
 var _hint: Label
 
 func _ready() -> void:
 	get_node("/root/WorldEvents").occurred.connect(_on_event)
+	for guard: BaseNpc in get_tree().get_nodes_in_group(&"town_guards"):
+		var id: String = String(guard.get_npc_profile().npc_id)
+		var brain: NpcBrain = life.brain_for(id)
+		if brain != null:
+			_provide(brain, guard, id)
 	var overlay := CanvasLayer.new()
 	add_child(overlay)
 	_hint = Label.new()
@@ -78,8 +86,7 @@ func _on_event(event: WorldEvent) -> void:
 			continue
 		if observation.sense == "hearing":
 			# Sound supplies a location to investigate, never an identified criminal.
-			_investigations[id] = {"space": event.subject.world_space,
-				"point": event.subject.global_position, "until": life.save_game.life.minute + 12}
+			_hear(id, event.subject)
 			continue
 		if not NpcPerception.can_see(guard, suspect):
 			continue
@@ -90,18 +97,20 @@ func _on_event(event: WorldEvent) -> void:
 			guard.show_spoken_reaction("Get behind me!")
 
 func _notice(guard: BaseNpc, id: String, suspect: BaseActor, kind: String) -> void:
-	var before: Dictionary = life.save_game.justice.current(id, "player", life.save_game.life.minute)
+	var minute: float = life.save_game.life.minute
+	var before: Dictionary = life.save_game.justice.current(id, "player", minute)
 	# Do not keep extending a warning just because a held attack loops its animation.
 	if kind == "brandishing" and not before.is_empty():
 		return
-	var report: Dictionary = life.save_game.justice.notice(id, "player", kind, life.save_game.life.minute)
+	var report: Dictionary = life.save_game.justice.notice(id, "player", kind, minute)
+	# The guard saw the suspect here; a pursuit heads for this, never for a live position.
+	_origins += 1
+	var origin: String = "watch:%s:%d:%d" % [id, int(minute * 10.0), _origins]
+	life.save_game.minds.get_mind(id).knowledge.record("player", "location",
+		{"space": String(suspect.world_space), "x": suspect.global_position.x, "y": suspect.global_position.y},
+		NpcKnowledge.Status.OBSERVED, NpcKnowledge.SELF_SOURCE, origin, origin, minute, 1.0)
 	life.encounters.interrupt(id)
-	guard.life_context.enforcement = report
-	if report.status == "combat":
-		guard.set_enforcement_target(suspect)
-	else:
-		_investigations[id] = {"space": suspect.world_space, "point": suspect.global_position,
-			"until": report.until}
+	guard.life_context.enforcement = life.save_game.justice.known_to(id)
 	if before.get("status") != report.status:
 		var lines: Array[String] = ["Enough. Put it away. You can surrender.", "Easy now. Stand down and no one else gets hurt.", "Stop there. Put the weapon down."]
 		if report.status == "combat":
@@ -109,6 +118,15 @@ func _notice(guard: BaseNpc, id: String, suspect: BaseActor, kind: String) -> vo
 		guard.show_spoken_reaction(lines[abs(hash(id)) % lines.size()])
 	life.save_game.life.interrupt(id)
 	life.save_game.save_file()
+	_prompt(id)
+
+func _hear(id: String, source: BaseActor) -> void:
+	var minute: float = life.save_game.life.minute
+	var leads: Dictionary = _leads.get_or_add(id, {})
+	leads["disturbance"] = {"subject": "disturbance", "minute": minute, "until": minute + LEAD_MINUTES,
+		"space": String(source.world_space), "x": source.global_position.x, "y": source.global_position.y}
+	life.encounters.interrupt(id)
+	_prompt(id)
 
 func _accept_surrender(player: BasePlayer) -> void:
 	for guard: BaseNpc in get_tree().get_nodes_in_group(&"town_guards"):
@@ -117,127 +135,131 @@ func _accept_surrender(player: BasePlayer) -> void:
 			continue
 		var id: String = String(guard.get_npc_profile().npc_id)
 		if life.save_game.justice.surrender(id, "player", life.save_game.life.minute):
-			if not guard.is_fighting_monster():
-				guard.clear_enforcement_target()
-			_investigations.erase(id)
-			_end_task(id, "investigate")
 			guard.life_revision += 1
 			guard.show_spoken_reaction("All right. Keep that weapon down.")
-			guard.life_context.enforcement = {"status": "surrendered"}
+			guard.life_context.enforcement = life.save_game.justice.known_to(id)
 			life.save_game.life.interrupt(id)
+			_prompt(id)
 	life.save_game.save_file()
 
+## Keeps an on-duty guard on its watch task. True while the guard is busy with the watch.
 func maintain(npc: BaseNpc, id: String) -> bool:
 	if not npc.is_in_group(&"town_guards"):
 		return false
 	if npc.alert_response.active():
 		return true
-	for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
-		var report: Dictionary = life.save_game.justice.current(id, "player", life.save_game.life.minute)
-		if not report.is_empty() and report.status == "combat" and player.health > 0 \
-			and NpcPerception.can_see(npc, player):
-			npc.set_enforcement_target(player)
-		elif report.is_empty() and npc.has_enemy_target() and not npc.is_fighting_monster():
-			npc.clear_enforcement_target()
-	if npc.has_enemy_target():
-		return true
-	if _investigations.has(id):
-		var investigation: Dictionary = _investigations[id]
-		if investigation.until > life.save_game.life.minute and npc.can_follow_routine():
-			if not _owns(id, "investigate"):
-				life.encounters.interrupt(id)
-				_request(id, "investigate", NpcDirectedTravelTask.create({"owner": OWNER,
-					"activity": "investigate", "label": "a disturbance", "space": String(investigation.space),
-					"point": [investigation.point.x, investigation.point.y],
-					"priority": life.tuning.caution_priority, "hold_on_arrival": true}))
-			return true
-		_investigations.erase(id)
-		_end_task(id, "investigate")
-	var person: Dictionary = life.save_game.life.get_person(id)
-	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, life.save_game.life.minute)
-	if preferred.kind != "patrol":
-		_end_task(id, "patrol")
-		return false
-	if npc.can_follow_routine() and not _owns(id, "patrol"):
-		var stop: int = (int(_patrol_stops.get(id, 0 if id == "voss_guard" else 2)) + 1) % 4
-		var place: String = "patrol:%d" % stop
-		var target: Dictionary = life.destination(id, {"kind": "patrol", "place": place})
-		var point: Vector2 = target.point
-		var task := NpcDirectedTravelTask.create({"owner": OWNER, "activity": "patrol",
-			"label": target.label, "space": String(target.space), "point": [point.x, point.y],
-			"priority": life.tuning.routine_priority, "hold_on_arrival": false, "stop": stop})
-		# Patrol is the guard's scheduled routine, so it replaces ordinary routine tasks.
-		if _request(id, "patrol", task, true):
-			_patrol_stops[id] = stop
-			life.save_game.life.select_activity(id, {"kind": "patrol", "place": place}, 20,
-				{"service": "town_obligation"})
-	return true
+	var brain: NpcBrain = life.brain_for(id)
+	if brain == null:
+		return npc.has_enemy_target()
+	var on_duty: bool = _on_duty(id)
+	if on_duty and _guard_task(brain) == null and npc.can_follow_routine():
+		_request(id, brain, false)
+	var current: NpcTask = brain.controller.current
+	return on_duty or npc.has_enemy_target() or (current != null and current.kind == &"guard")
 
-## After a reload: investigations are not saved, so only a restored patrol stop that is still
-## scheduled is kept; every other restored watch task ends.
+## After a reload: a restored guard task continues from its saved stop.
 func reconcile(id: String, brain: NpcBrain) -> void:
 	for task: NpcTask in [brain.controller.suspended, brain.controller.current]:
-		if task == null or task.kind != &"directed_travel" or task.params.get("owner") != OWNER:
-			continue
-		var person: Dictionary = life.save_game.life.get_person(id)
-		var scheduled: bool = not person.is_empty() \
-			and NpcRoutinePlan.current(person.plan, life.save_game.life.minute).kind == "patrol"
-		var stop: Variant = task.params.get("stop")
-		if task == brain.controller.current and task.params.activity == "patrol" and scheduled \
-			and (stop is float or stop is int) and not _tasks.has(id):
-			_brain(id)
-			_tasks[id] = {"task_id": task.task_id, "kind": "patrol"}
-			_patrol_stops[id] = int(stop)
-		else:
-			brain.end_task(task.task_id, &"unowned")
+		if task != null and task.kind == &"guard":
+			_stops[id] = int(task.progress.get("stop", task.params["stop"]))
 
-# True when `kind` is requested and still running or suspended in the guard's brain.
-func _owns(id: String, kind: String) -> bool:
-	var owned: Dictionary = _tasks.get(id, {})
-	if owned.is_empty() or owned.kind != kind:
-		return false
-	var brain: NpcBrain = _brain(id)
-	return brain != null and brain.task_state(owned.task_id) in [
-		NpcTask.status_name(NpcTask.Status.RUNNING), NpcTask.status_name(NpcTask.Status.SUSPENDED)]
-
-# Replaces the watch's previous task for this guard; a higher-priority current task refuses
-# without spending a decision. `replace_routine` ends ordinary routine tasks first so a finished
-# patrol stop does not fall back into them.
-func _request(id: String, kind: String, task: NpcDirectedTravelTask, replace_routine: bool = false) -> bool:
-	var brain: NpcBrain = _brain(id)
+# Something new to act on: the current guard task re-decides at once, otherwise a new one starts
+# at caution priority (a busier duty refuses it and the suspended watch re-decides on resume).
+func _prompt(id: String) -> void:
+	var brain: NpcBrain = life.brain_for(id)
 	if brain == null:
-		return false
+		return
 	var current: NpcTask = brain.controller.current
-	if current != null and current.priority > task.priority \
-		and current.task_id != _tasks.get(id, {}).get("task_id", ""):
+	if current != null and current.kind == &"guard":
+		brain.advance(life.save_game.life.minute, 0.0)
+	else:
+		_request(id, brain, true)
+
+# Patrol is the guard's scheduled routine, so it replaces ordinary routine tasks; an incident
+# only suspends them.
+func _request(id: String, brain: NpcBrain, incident: bool) -> bool:
+	var task := NpcGuardTask.create(int(_stops.get(id, _origin(id))), "the watch", life.tuning, incident)
+	var current: NpcTask = brain.controller.current
+	if current != null and current.kind != &"routine" and current.priority > task.priority:
 		return false
-	_end_task(id, "")
-	if replace_routine:
+	if not incident:
 		for routine: NpcTask in [brain.controller.suspended, brain.controller.current]:
 			if routine != null and routine.kind == &"routine":
 				brain.end_task(routine.task_id, &"replanned")
-	if not brain.request_task(task):
+	return brain.request_task(task)
+
+func _guard_task(brain: NpcBrain) -> NpcTask:
+	for task: NpcTask in [brain.controller.current, brain.controller.suspended]:
+		if task != null and task.kind == &"guard":
+			return task
+	return null
+
+func _origin(id: String) -> int:
+	return int(TownResidentSchedule.guard_shift(life.save_game.population, id,
+		life.save_game.dead_npcs)["origin"])
+
+func _on_duty(id: String) -> bool:
+	var person: Dictionary = life.save_game.life.get_person(id)
+	return not person.is_empty() \
+		and NpcRoutinePlan.current(person.plan, life.save_game.life.minute).kind == "patrol"
+
+# --- Services for the guard's task (NpcGuardTask documents the contract) ---
+
+func _provide(brain: NpcBrain, guard: BaseNpc, id: String) -> void:
+	brain.provide_service(&"guard_on_duty", _on_duty.bind(id))
+	brain.provide_service(&"guard_patrol", _patrol_stop.bind(id))
+	brain.provide_service(&"guard_reports", _reports.bind(id))
+	brain.provide_service(&"guard_leads", _active_leads.bind(id))
+	brain.provide_service(&"guard_sees", _sees.bind(guard))
+	brain.provide_service(&"guard_engage", _engage.bind(guard))
+	brain.provide_service(&"guard_disengage", _disengage.bind(guard))
+	brain.provide_service(&"guard_duty", _duty.bind(guard))
+
+func _reports(id: String) -> Array[Dictionary]:
+	return life.save_game.justice.known_to(id)
+
+func _patrol_stop(stop: int, id: String) -> Dictionary:
+	var index: int = posmod(stop, PATROL_STOPS)
+	var selected: Dictionary = {"kind": "patrol", "place": "patrol:%d" % index}
+	var target: Dictionary = life.destination(id, selected)
+	var point: Vector2 = target.point
+	_stops[id] = index
+	life.save_game.life.select_activity(id, selected, 20, {"service": "town_obligation"})
+	return {"stop": index, "space": String(target.space), "x": point.x, "y": point.y,
+		"label": target.label}
+
+func _active_leads(id: String) -> Array:
+	var minute: float = life.save_game.life.minute
+	var leads: Dictionary = _leads.get(id, {})
+	for subject: String in leads.keys():
+		if float(leads[subject]["until"]) <= minute:
+			leads.erase(subject)
+	return leads.values().map(func(lead: Dictionary) -> Dictionary: return lead.duplicate())
+
+func _sees(subject: String, guard: BaseNpc) -> bool:
+	var actor: BaseActor = _actor(subject)
+	return actor != null and actor.health > 0 and NpcPerception.can_see(guard, actor)
+
+func _engage(subject: String, guard: BaseNpc) -> bool:
+	var actor: BaseActor = _actor(subject)
+	if actor == null:
 		return false
-	_tasks[id] = {"task_id": task.task_id, "kind": kind}
-	return true
+	guard.set_enforcement_target(actor)
+	return guard.has_enemy_target()
 
-# Ends the watch's task for this guard when it is of `kind` (any kind when empty).
-func _end_task(id: String, kind: String) -> void:
-	var owned: Dictionary = _tasks.get(id, {})
-	if owned.is_empty() or (not kind.is_empty() and owned.kind != kind):
-		return
-	_tasks.erase(id)
-	var brain: NpcBrain = _brain(id)
-	if brain != null:
-		brain.end_task(owned.task_id, &"released")
+# A guard defending against a monster keeps that fight.
+func _disengage(guard: BaseNpc) -> void:
+	if not guard.is_fighting_monster():
+		guard.clear_enforcement_target()
 
-func _brain(id: String) -> NpcBrain:
-	var brain: NpcBrain = life.brain_for(id)
-	if brain != null and not _listening.has(id):
-		_listening[id] = true
-		brain.task_finished.connect(_on_task_finished.bind(id))
-	return brain
+func _duty(activity: String, label: String, guard: BaseNpc) -> void:
+	if guard.daily_routine != null:
+		guard.daily_routine.activity = activity
+		guard.daily_routine.place = label
 
-func _on_task_finished(task_id: String, _status: String, _reason: StringName, id: String) -> void:
-	if _tasks.has(id) and _tasks[id].task_id == task_id:
-		_tasks.erase(id) # Arrived, displaced or unreachable: the next maintain decides again.
+func _actor(subject: String) -> BaseActor:
+	if subject != "player":
+		return null
+	for player: BasePlayer in get_tree().get_nodes_in_group(&"players"):
+		return player
+	return null

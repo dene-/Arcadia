@@ -7,10 +7,10 @@ extends Resource
 @export_range(0.0, 120.0, 0.5) var caution_minutes: float = 10.0
 ## Priority (0..1) of routine tasks.
 @export_range(0.0, 1.0, 0.01) var routine_priority: float = 0.3
-## Priority (0..1) of tasks that hold a resident still for an external owner.
+## Priority (0..1) of conversation tasks.
 @export_range(0.0, 1.0, 0.01) var hold_priority: float = 0.4
-## Default priority (0..1) of directed-travel adapter tasks.
-@export_range(0.0, 1.0, 0.01) var directed_travel_priority: float = 0.6
+## Priority (0..1) of recovery duties.
+@export_range(0.0, 1.0, 0.01) var duty_priority: float = 0.6
 ## Priority (0..1) of CAUTION safety tasks. Conversations are refused at or above it.
 @export_range(0.0, 1.0, 0.01) var caution_priority: float = 0.7
 ## Priority (0..1) of SHELTER safety tasks.

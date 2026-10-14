@@ -148,8 +148,9 @@ func save_effects(save: NpcWorldSave) -> Dictionary:
 	var dead: Array[String] = save.dead_npcs.duplicate()
 	dead.sort()
 	var stages: Dictionary = {}
-	for id: String in save.deaths.records:
-		stages[id] = save.deaths.records[id].stage
+	var death_ids: Array[String] = save.deaths.ids()
+	for id: String in death_ids:
+		stages[id] = save.deaths.snapshot(id).stage
 	var coins: int = save.economy.treasury
 	for household: String in save.economy.accounts:
 		coins += int(save.economy.accounts[household])
@@ -163,7 +164,7 @@ func save_effects(save: NpcWorldSave) -> Dictionary:
 			continue
 		relationships[id] = state.relationship
 		memory_counts[id] = {"memories": state.memories.size(), "observations": state.observations.size()}
-	return {"dead": dead, "death_records": save.deaths.records.size(), "death_stages": stages,
+	return {"dead": dead, "death_records": death_ids.size(), "death_stages": stages,
 		"coins": coins, "relationships": relationships, "memory_counts": memory_counts}
 
 ## Writes the live save, loads the same file into a fresh NpcWorldSave and compares the two.

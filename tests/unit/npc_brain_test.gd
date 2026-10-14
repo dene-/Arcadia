@@ -3,13 +3,6 @@ extends "res://tests/test_case.gd"
 const Routine = preload("res://tests/unit/npc_routine_task_test.gd")
 const Safety = preload("res://tests/unit/npc_safety_task_test.gd")
 
-static func directed_params(space: String, priority: float, hold: bool = false) -> Dictionary:
-	return {"owner": "watch", "activity": "report", "label": "Reporting", "space": space,
-		"point": [5.0, 6.0], "priority": priority, "hold_on_arrival": hold}
-
-static func hold_params(priority: float = 0.4) -> Dictionary:
-	return {"owner": "funeral", "reason": "mourning", "priority": priority}
-
 func _routine(rig: Routine.Rig, activity: String, space: String, until: float) -> NpcRoutineTask:
 	return NpcRoutineTask.create(Routine.routine_params(activity, space, until), rig.tuning)
 
@@ -101,9 +94,8 @@ func test_shelter_revokes_a_session_and_its_claims_survive_stale_releases() -> v
 	rig.brain.finish_conversation("old")
 	assert_eq(rig.brain.controller.claim_owner(&"conversation"), shelter.task_id)
 	assert_false(rig.brain.request_conversation("new"))
-	var hold_id := "hold:holt_partner:stale"
-	assert_false(rig.brain.request_task(NpcHoldTask.create(hold_params(), hold_id)), "weaker duty refused")
-	assert_false(rig.brain.end_task(hold_id))
+	assert_false(rig.brain.request_task(_caution(rig, 400.0)), "weaker duty refused")
+	assert_false(rig.brain.end_task("safety:holt_partner:stale"))
 	assert_eq(rig.brain.controller.claim_owner(&"locomotion"), shelter.task_id)
 	assert_eq(rig.brain.task_state(shelter.task_id), "RUNNING")
 	rig.dispose()
@@ -112,18 +104,20 @@ func test_a_stale_travel_completion_cannot_finish_a_newer_task() -> void:
 	var rig := Routine.Rig.new()
 	var routine := _routine(rig, "work", "bakery", 900.0)
 	assert_true(rig.start(routine, 100.0))
-	var directed := NpcDirectedTravelTask.create(directed_params("mill", 0.6))
-	assert_true(rig.start(directed, 110.0))
+	var shelter := _shelter(rig, 300.0)
+	assert_true(rig.start(shelter, 110.0))
 	assert_eq(rig.brain.task_state(routine.task_id), "SUSPENDED")
 	rig.executor.states[routine.task_id] = &"arrived"
 	rig.tick(111.0)
-	assert_eq(rig.brain.task_state(directed.task_id), "RUNNING")
-	assert_eq(rig.phase(), "travel")
+	assert_eq(rig.brain.task_state(shelter.task_id), "RUNNING")
+	assert_eq(rig.phase(), "flee")
 	assert_eq(rig.brain.task_state(routine.task_id), "SUSPENDED")
 	rig.executor.arrive()
 	rig.tick(120.0)
-	assert_eq(rig.last_finished()["task_id"], directed.task_id)
-	assert_eq(rig.last_finished()["reason"], &"arrived")
+	assert_eq(rig.phase(), "shelter")
+	rig.tick(300.0)
+	assert_eq(rig.last_finished()["task_id"], shelter.task_id)
+	assert_eq(rig.last_finished()["reason"], &"until")
 	assert_eq(rig.brain.task_state(routine.task_id), "RUNNING")
 	rig.dispose()
 
@@ -143,7 +137,7 @@ func test_checkpoint_mid_travel_reissues_the_journey_under_the_same_owner() -> v
 	loaded.executor.arrive()
 	loaded.tick(140.0)
 	assert_eq(loaded.phase(), "perform")
-	var next := NpcDirectedTravelTask.create(directed_params("mill", 0.6))
+	var next := _shelter(loaded, 400.0)
 	assert_true(loaded.brain.request_task(next))
 	assert_ne(next.task_id, routine.task_id)
 	rig.dispose()
@@ -227,9 +221,9 @@ func test_task_ids_ending_and_state_lookup() -> void:
 	var first := _routine(rig, "work", "bakery", 900.0)
 	assert_true(rig.start(first, 100.0))
 	assert_true(first.task_id.begins_with("routine:holt_partner:"), first.task_id)
-	var second := NpcHoldTask.create(hold_params(0.7))
+	var second := _caution(rig, 500.0)
 	assert_true(rig.brain.request_task(second))
-	assert_true(second.task_id.begins_with("hold:holt_partner:"), second.task_id)
+	assert_true(second.task_id.begins_with("safety:holt_partner:"), second.task_id)
 	assert_ne(first.task_id, second.task_id)
 	assert_eq(rig.brain.task_state(first.task_id), "SUSPENDED")
 	assert_eq(rig.brain.task_state(second.task_id), "RUNNING")
@@ -250,71 +244,39 @@ func test_task_ids_ending_and_state_lookup() -> void:
 func test_invalid_or_weaker_requests_change_nothing() -> void:
 	var rig := Routine.Rig.new()
 	assert_false(rig.brain.request_task(null))
-	var bad := directed_params("mill", 0.6)
-	bad["priority"] = 3.0
-	assert_false(rig.brain.request_task(NpcDirectedTravelTask.create(bad)))
+	var bad := Safety.safety_params("SHELTER", 300.0, "plaza", [10.0, 20.0])
+	bad["response"] = "PANIC"
+	assert_false(rig.brain.request_task(NpcSafetyTask.create(bad, rig.tuning)))
 	assert_true(rig.start(_shelter(rig, 300.0), 100.0))
-	assert_false(rig.brain.request_task(NpcDirectedTravelTask.create(directed_params("mill", 0.6))))
+	assert_false(rig.brain.request_task(_caution(rig, 400.0)))
 	assert_false(rig.brain.request_task(_routine(rig, "work", "bakery", 900.0)))
 	assert_eq(rig.brain.current_activity()["kind"], "safety")
 	rig.dispose()
 
-func test_directed_travel_completes_holds_and_reacts_to_interrupts() -> void:
-	var rig := Routine.Rig.new()
-	rig.actor.sleeping = true
-	var directed := NpcDirectedTravelTask.create(directed_params("mill", 0.6))
-	assert_true(rig.start(directed, 100.0))
-	assert_eq(directed.priority, 0.6)
-	assert_eq(rig.actor.log, ["wake:called"] as Array[String])
-	assert_eq(rig.executor.begun[0]["point"], Vector2(5.0, 6.0))
-	assert_eq(rig.executor.begun[0]["owner"], directed.task_id)
-	rig.brain.interrupt(NpcTask.Interrupt.CONVERSATION)
-	assert_eq(rig.brain.task_state(directed.task_id), "RUNNING")
-	rig.brain.interrupt(NpcTask.Interrupt.HURT)
-	assert_eq(rig.brain.task_state(directed.task_id), "SUSPENDED")
-	rig.tick(110.0)
-	assert_eq(rig.brain.task_state(directed.task_id), "RUNNING")
-	assert_eq(rig.executor.begun.size(), 2, "the journey is reissued on resume")
-	rig.executor.fail()
-	rig.tick(111.0)
-	assert_eq(rig.last_finished()["status"], "FAILED")
-	assert_eq(rig.last_finished()["reason"], &"unreachable")
-	var holding := NpcDirectedTravelTask.create(directed_params("mill", 0.6, true))
-	assert_true(rig.brain.request_task(holding))
-	rig.executor.arrive()
-	rig.tick(120.0)
-	assert_eq(rig.phase(), "hold")
-	rig.tick(900.0)
-	assert_eq(rig.brain.task_state(holding.task_id), "RUNNING", "held until its owner lets go")
-	rig.brain.interrupt(NpcTask.Interrupt.DANGER)
-	assert_eq(rig.last_finished()["reason"], &"danger")
-	rig.dispose()
-
-func test_hold_stands_still_until_ended_and_is_not_saved() -> void:
+func test_a_conversation_displaces_the_routine_and_is_not_saved() -> void:
 	var rig := Routine.Rig.new()
 	var routine := _routine(rig, "work", "bakery", 900.0)
 	assert_true(rig.start(routine, 100.0))
-	var hold := NpcHoldTask.create(hold_params())
-	assert_true(rig.brain.request_task(hold))
-	assert_eq(hold.priority, 0.4)
-	assert_eq(rig.phase(), "hold")
+	var talk := NpcSocialTask.create("s1", "holt_other", "initiator", rig.tuning)
+	assert_true(rig.brain.request_task(talk))
+	assert_eq(rig.phase(), "approach")
+	assert_eq(rig.brain.current_activity()["activity"], "conversation")
 	assert_eq(rig.executor.cancelled, [routine.task_id] as Array[String])
-	rig.brain.interrupt(NpcTask.Interrupt.CONVERSATION)
 	rig.brain.interrupt(NpcTask.Interrupt.SCHEDULE)
-	rig.tick(500.0)
-	assert_eq(rig.brain.task_state(hold.task_id), "RUNNING")
+	rig.tick(100.5)
+	assert_eq(rig.brain.task_state(talk.task_id), "RUNNING")
 	assert_true(rig.brain.save_checkpoint())
 	var loaded := _reloaded(rig)
-	assert_true(loaded.brain.restore_checkpoint(520.0), "the suspended routine survives")
-	assert_eq(loaded.last_finished()["task_id"], hold.task_id)
+	assert_true(loaded.brain.restore_checkpoint(101.0), "the suspended routine survives")
+	assert_eq(loaded.last_finished()["task_id"], talk.task_id)
 	assert_eq(loaded.last_finished()["reason"], &"restore_invalid")
 	assert_eq(loaded.brain.task_state(routine.task_id), "SUSPENDED")
-	loaded.tick(521.0)
+	loaded.tick(102.0)
 	assert_eq(loaded.brain.task_state(routine.task_id), "RUNNING")
 	rig.brain.interrupt(NpcTask.Interrupt.HURT)
 	assert_eq(rig.last_finished()["reason"], &"hurt")
-	rig.tick(530.0)
-	assert_eq(rig.brain.task_state(routine.task_id), "RUNNING", "the routine takes over after the hold")
+	rig.tick(110.0)
+	assert_eq(rig.brain.task_state(routine.task_id), "RUNNING", "the routine takes over after the conversation")
 	rig.dispose()
 	loaded.dispose()
 
@@ -343,9 +305,6 @@ func test_activity_and_debug_snapshot_describe_what_the_resident_is_doing() -> v
 	assert_eq(snapshot["claims"]["conversation"], shelter.task_id)
 	assert_false((snapshot["transitions"] as Array).is_empty())
 	assert_true((snapshot["transitions"] as Array).size() <= NpcBrain.RECENT_TRANSITIONS)
-	var hold := NpcHoldTask.create(hold_params(0.97))
-	assert_true(rig.brain.request_task(hold))
-	assert_eq(rig.brain.current_activity()["activity"], "mourning")
 	rig.dispose()
 
 func test_only_terminal_transitions_are_announced() -> void:
@@ -358,4 +317,28 @@ func test_only_terminal_transitions_are_announced() -> void:
 	assert_true(rig.finished.is_empty(), "resuming is not an ending")
 	rig.tick(900.0)
 	assert_eq(rig.finished.size(), 1)
+	rig.dispose()
+
+class ServiceProbe extends NpcTask:
+	var answer: Variant = null
+
+	func _init() -> void:
+		kind = &"probe"
+		task_id = "probe:1"
+
+	func _on_start(context: NpcTaskContext) -> NpcTaskResult:
+		answer = context.call_service(&"town_note", ["body"])
+		context.call_service(&"travel", [&"plaza", Vector2(1, 2), "Going", task_id])
+		return NpcTaskResult.running()
+
+func test_provided_services_reach_tasks_but_never_replace_the_brain_s_own() -> void:
+	var rig := Routine.Rig.new()
+	assert_false(rig.brain.provide_service(&"travel", func(_a, _b, _c, _d) -> bool: return false))
+	assert_false(rig.brain.provide_service(&"", func(note: String) -> String: return note))
+	assert_true(rig.brain.provide_service(&"town_note", func(_note: String) -> String: return "old"))
+	assert_true(rig.brain.provide_service(&"town_note", func(note: String) -> String: return note))
+	var probe := ServiceProbe.new()
+	assert_true(rig.start(probe, 100.0))
+	assert_eq(probe.answer, "body")
+	assert_eq(rig.executor.owners(), ["probe:1"] as Array[String], "the brain still owns travel")
 	rig.dispose()

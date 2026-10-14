@@ -1,28 +1,39 @@
 class_name TownFunerals
 extends Node
 
-## Coordinates physical discovery, reporting, recovery and burial through ordinary actor routes.
-## TownDeaths owns persistence; cognition sees only each participant's perceived facts.
-## Every errand or pause is a task requested from the participant's NpcBrain (owner "funerals").
+## Scene adapter for bodies: draws remains and graves, gates discovery on perception, and starts
+## each participant's NpcRecoveryTask through its brain. TownDeaths owns every lifecycle change;
+## the tasks make them through its intent API using the services provided here.
 const OWNER: String = "funerals"
+## A deferred reporter or a guard whose recovery failed tries again after this many minutes.
+const RETRY_MINUTES: float = 30.0
 
 var life: TownLife
 var cemetery: TownCemetery
 var _bodies: Dictionary[String, NpcRemains] = {}
 var _scan_elapsed: float = 0.0
-# npc_id -> {task_id, kind: "travel"|"hold", space, point, activity}: the one task funerals owns.
-var _tasks: Dictionary = {}
-# npc_id -> true once this node listens to the resident's brain.
-var _listening: Dictionary = {}
 var _settled: Dictionary = {}
+# npc_id -> world minute before which funerals assigns this resident nothing. Not saved.
+var _retry_at: Dictionary = {}
 
 func _ready() -> void:
 	cemetery = life.get_parent().get_node("Cemetery")
 	get_node("/root/WorldEvents").occurred.connect(_on_event)
-	for id: String in life.save_game.deaths.records:
+	for id: String in _deaths().ids():
 		if life.save_game.population.people.has(id):
 			_settled[id] = true
 			_refresh_visual(id)
+	for id: String in life.resident_ids():
+		var brain: NpcBrain = life.brain_for(id)
+		if brain == null:
+			continue
+		brain.provide_service(&"deaths", _deaths)
+		brain.provide_service(&"guard_roster", _guard_roster)
+		brain.provide_service(&"visible_guards", _visible_guards.bind(id))
+		brain.provide_service(&"assess_scene", _assess_scene.bind(id))
+		brain.provide_service(&"cemetery_plot", cemetery.plot_for)
+		brain.provide_service(&"recovery_event", _recovery_event.bind(id))
+		brain.task_finished.connect(_on_task_finished.bind(id))
 
 func _exit_tree() -> void:
 	for id: String in _bodies:
@@ -34,263 +45,227 @@ func _on_event(event: WorldEvent) -> void:
 		return
 	var npc: BaseNpc = event.subject
 	var id: String = String(npc.get_npc_profile().npc_id)
-	var records: Dictionary = life.save_game.deaths.records
-	if not records.has(id):
+	if _deaths().settle(id, String(npc.world_space), npc.global_position) != TownDeaths.OK_RESULT:
 		return
-	records[id].position = [npc.global_position.x, npc.global_position.y]
-	records[id].space = String(npc.world_space)
 	_settled[id] = true
 	_refresh_visual(id)
 	life.save_snapshot()
 
 func advance(delta: float) -> void:
-	for id: String in _bodies:
-		var entry: Dictionary = life.save_game.deaths.records[id]
-		if entry.stage == "carried":
-			var guard: BaseNpc = _actor(entry.guard)
-			if guard != null:
-				if guard.has_enemy_target() or guard.state_machine.is_in_state(&"hurt"):
-					_change(id, "reported")
-					_forget(entry.guard)
-					_bodies[id].set_carried(false)
-					continue
-				# A covered body follows its carrier through the same doors, never teleports ahead.
-				_bodies[id].global_position = guard.global_position + Vector2(0, -7)
-				entry.position = [_bodies[id].global_position.x, _bodies[id].global_position.y]
-				entry.space = String(guard.world_space)
+	for id: String in _bodies.keys():
+		var entry: Dictionary = _deaths().snapshot(id)
+		var carrier: BaseNpc = _actor(entry.guard) if entry.stage == "carried" else null
+		if carrier == null:
+			continue
+		# Combat or injury makes the carrier set the body down where it stands.
+		var brain: NpcBrain = life.brain_for(entry.guard)
+		if (carrier.has_enemy_target() or carrier.state_machine.is_in_state(&"hurt")) \
+				and brain != null and brain.controller.current is NpcRecoveryTask:
+			brain.interrupt(NpcTask.Interrupt.DANGER)
+		_refresh_visual(id)
 	_scan_elapsed += delta
 	if _scan_elapsed < 1:
 		return
 	_scan_elapsed = 0
-	for id: String in life.save_game.deaths.records:
-		var entry: Dictionary = life.save_game.deaths.records[id]
-		if not _settled.has(id) or entry.stage == "buried":
-			continue
-		if not entry.guard.is_empty() and _actor(entry.guard) == null:
-			entry.guard = ""
-			entry.reporter = ""
-			# A fallen carrier cannot radio a new body location to the rest of town.
-			_change(id, "fallen")
-			_refresh_visual(id)
-		for npc_id: String in life.resident_ids():
-			var npc: BaseNpc = _actor(npc_id)
-			if npc == null or npc.alert_response.active() \
-				or (npc_id in entry.known_by and entry.stage != "fallen"):
-				continue
-			if NpcPerception.can_see_point(npc, StringName(entry.space), _point(entry)):
-				if not npc_id in entry.known_by:
-					entry.known_by.append(npc_id)
-				_observe(npc, id, "body_found", "I found %s's body here." % _name(id), "sight",
-					_point(entry))
-				if entry.stage == "fallen":
-					entry.reporter = npc_id
-					_change(id, "discovered")
-				if npc.is_in_group(&"town_guards") and entry.guard.is_empty() and not _busy(npc_id, id):
-					entry.guard = npc_id
-					_change(id, "reported")
-		if entry.stage == "discovered" and (_actor(entry.reporter) == null or _busy(entry.reporter, id)):
-			entry.reporter = ""
-			for witness: String in entry.known_by:
-				var npc: BaseNpc = _actor(witness)
-				if npc != null and not npc.is_sleeping() and not _busy(witness, id):
-					entry.reporter = witness
-					break
+	for id: String in _deaths().ids():
+		if _settled.has(id) and _deaths().snapshot(id).stage != "buried":
+			_scan(id)
 
+func _scan(id: String) -> void:
+	var deaths: TownDeaths = _deaths()
+	var minute: float = life.save_game.life.minute
+	var entry: Dictionary = deaths.snapshot(id)
+	for actor_id: String in [entry.reporter, entry.guard]:
+		if not actor_id.is_empty() and _actor(actor_id) == null:
+			deaths.release_assignment(id, actor_id, minute)
+	entry = deaths.snapshot(id)
+	_refresh_visual(id)
+	var point: Vector2 = _point(entry)
+	for npc_id: String in life.resident_ids():
+		var npc: BaseNpc = _actor(npc_id)
+		if npc == null or npc.alert_response.active() or npc_id in entry.known_by \
+				or not NpcPerception.can_see_point(npc, StringName(entry.space), point):
+			continue
+		if deaths.discover(id, npc_id, minute) == TownDeaths.OK_RESULT:
+			_observe(npc, id, "body_found", "I found %s's body here." % _name(id), "sight", point)
+	entry = deaths.snapshot(id)
+	if entry.stage != "discovered" or not entry.reporter.is_empty():
+		return
+	for witness: String in entry.known_by:
+		var npc: BaseNpc = _actor(witness)
+		if npc != null and not npc.is_sleeping() and _free(witness) \
+				and deaths.claim_report(id, witness, minute) == TownDeaths.OK_RESULT:
+			return
+
+## Starts or keeps this resident's recovery duty. True while funerals engages the resident.
 func maintain(npc: BaseNpc, npc_id: String) -> bool:
 	if npc.alert_response.active():
 		return true
-	for id: String in life.save_game.deaths.records:
-		var entry: Dictionary = life.save_game.deaths.records[id]
+	var brain: NpcBrain = life.brain_for(npc_id)
+	if brain == null:
+		return false
+	var minute: float = life.save_game.life.minute
+	var live: NpcRecoveryTask = _recovery_task(brain)
+	if live != null:
+		if live.phase != NpcRecoveryTask.PHASE_DEFERRED:
+			return true
+		# No guard found anywhere the witness knew of: the commitment stays open for a later try.
+		brain.end_task(live.task_id, &"deferred")
+		_deaths().release_assignment(live.body_id(), npc_id, minute)
+		_retry_at[npc_id] = minute + RETRY_MINUTES
+		return false
+	if float(_retry_at.get(npc_id, -INF)) > minute:
+		return false
+	var guard: bool = npc.is_in_group(&"town_guards")
+	for id: String in _deaths().ids():
+		var entry: Dictionary = _deaths().snapshot(id)
 		if entry.stage == "discovered" and entry.reporter == npc_id:
-			return _report(npc, npc_id, id, entry)
+			if not guard:
+				return _start(brain, npc_id, id, NpcRecoveryTask.WITNESS)
+			# A discovering guard acknowledges its own report.
+			if _deaths().acknowledge_report(id, npc_id, npc_id, minute) == TownDeaths.OK_RESULT:
+				return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
 		if entry.guard == npc_id and entry.stage in ["reported", "recovering", "carried"]:
-			return _recover(npc, npc_id, id, entry)
+			return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+	if not guard or npc.is_sleeping():
+		return false
+	for id: String in _deaths().ids():
+		var entry: Dictionary = _deaths().snapshot(id)
+		if entry.stage == "reported" and entry.guard.is_empty() and npc_id in entry.known_by:
+			return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
 	return false
 
-func _report(npc: BaseNpc, npc_id: String, id: String, entry: Dictionary) -> bool:
-	if not npc.can_follow_routine():
-		return true
-	# Take a moment to absorb the discovery before setting off for help.
-	if life.save_game.life.minute - entry.since < 4:
-		_pause(npc, npc_id)
-		return true
-	if npc.is_in_group(&"town_guards") and not _busy(npc_id, id):
-		entry.guard = npc_id
-		_change(id, "reported")
-		_resume(npc, npc_id)
-		return true
-	var guard: BaseNpc
-	var distance: float = INF
-	for candidate_id: String in life.resident_ids():
-		var candidate: BaseNpc = _actor(candidate_id)
-		if candidate == null or not candidate.is_in_group(&"town_guards") or _busy(candidate_id):
-			continue
-		var next: float = npc.global_position.distance_to(candidate.global_position)
-		# Prefer an awake watchman, but a guard at home can be roused if needed.
-		if candidate.is_sleeping():
-			next += 10000
-		if next < distance:
-			distance = next
-			guard = candidate
-	if guard == null:
-		_resume(npc, npc_id)
-		return false # No surviving guard: the body remains, and normal safety still applies.
-	if npc.world_space == guard.world_space and npc.global_position.distance_to(guard.global_position) < 28 \
-		and NpcPerception.can_see(npc, guard):
-		entry.guard = String(guard.get_npc_profile().npc_id)
-		guard.alert_response.notice(guard, {"danger_possible": true, "origin_id": "body:" + id})
-		if not entry.guard in entry.known_by:
-			entry.known_by.append(entry.guard)
-		_observe(guard, id, "body_reported", "%s told me they found %s dead. The cause is unconfirmed." % [
-			npc.get_npc_profile().profile_name, _name(id)], "hearing", null, npc)
-		npc.show_spoken_reaction("%s is dead. Please, come with me." % _name(id).get_slice(" ", 0))
-		_change(id, "reported")
-		_resume(npc, npc_id)
-		return true
-	_move(npc, npc_id, guard.world_space, guard.global_position + Vector2(0, 16), "seek_guard", "finding a guard")
+func _start(brain: NpcBrain, npc_id: String, id: String, role: String) -> bool:
+	var witness: bool = role == NpcRecoveryTask.WITNESS
+	var task := NpcRecoveryTask.create({"role": role, "body": id,
+		"activity": "seek_guard" if witness else "recover_body",
+		"label": "finding a guard" if witness else "a reported death"}, life.tuning)
+	if not witness:
+		return brain.request_task(task)
+	var commitments: NpcCommitments = life.save_game.minds.get_mind(npc_id).commitments
+	var commitment_id: String = _report_commitment(npc_id, id)
+	if not commitment_id.is_empty():
+		task.commitment_ids.assign([commitment_id])
+	if not brain.request_task(task):
+		return false
+	if not commitment_id.is_empty():
+		commitments.link_task(commitment_id, task.task_id)
 	return true
 
-func _recover(guard: BaseNpc, guard_id: String, id: String, entry: Dictionary) -> bool:
-	if not guard.can_follow_routine():
-		return true
-	if entry.stage == "carried":
-		var plot: Vector2 = cemetery.plot_for(id) + Vector2(0, 12)
-		_move(guard, guard_id, &"outdoors", plot, "burial", "the cemetery")
-		if guard.world_space != &"outdoors" or guard.global_position.distance_to(plot) > 16:
-			entry.since = life.save_game.life.minute
-			return true
-		if life.save_game.life.minute - entry.since < 12:
-			return true
-		_change(id, "buried")
-		_refresh_visual(id)
-		for observer_id: String in life.resident_ids():
-			var observer: BaseNpc = _actor(observer_id)
-			if observer != null and NpcPerception.can_see_point(observer, &"outdoors", plot):
-				entry.burial_known_by.append(observer_id)
-				_observe(observer, id, "body_buried", "I saw %s laid to rest in the town cemetery." % _name(id),
-					"sight", cemetery.plot_for(id))
-		guard.show_spoken_reaction("Rest easy.")
-		_resume(guard, guard_id)
-		life.save_game.save_file()
-		return true
-	var point: Vector2 = _point(entry)
-	_move(guard, guard_id, StringName(entry.space), point + Vector2(0, 12), "recover_body", "a reported death")
-	if guard.world_space != StringName(entry.space) or guard.global_position.distance_to(point) > 24 \
-		or not NpcPerception.can_see_point(guard, StringName(entry.space), point) or not _safe(guard, point):
-		if entry.stage == "recovering":
-			_change(id, "reported")
-		return true
-	if entry.stage == "reported":
-		_change(id, "recovering")
-		guard.show_spoken_reaction("Give me some room, please.")
-	elif life.save_game.life.minute - entry.since >= 6:
-		_change(id, "carried")
-		_forget(guard_id)
-		_bodies[id].set_carried(true)
-	return true
+# The witness's open report_discovery commitment for this body, created once and citing the
+# observation through which the witness learned of the death.
+func _report_commitment(npc_id: String, id: String) -> String:
+	var mind: NpcMindState = life.save_game.minds.get_mind(npc_id)
+	for item: Dictionary in mind.commitments.open_commitments():
+		if item["kind"] == "report_discovery" and id in item["other_ids"]:
+			return item["id"]
+	var evidence: Array[String] = []
+	for fact: Dictionary in mind.knowledge.current(id, "status"):
+		if fact["value"] == "dead" and not (fact["evidence_ids"] as Array).is_empty():
+			evidence.append((fact["evidence_ids"] as Array).back())
+			break
+	var others: Array[String] = [id]
+	return mind.commitments.create("report_discovery", others, evidence, life.save_game.life.minute)
 
-func _safe(guard: BaseNpc, point: Vector2) -> bool:
+static func _recovery_task(brain: NpcBrain) -> NpcRecoveryTask:
+	for task: NpcTask in [brain.controller.current, brain.controller.suspended]:
+		if task is NpcRecoveryTask:
+			return task
+	return null
+
+func _on_task_finished(task_id: String, status: String, _reason: StringName, id: String) -> void:
+	if task_id.begins_with("recovery:") and status == NpcTask.status_name(NpcTask.Status.FAILED):
+		_retry_at[id] = life.save_game.life.minute + RETRY_MINUTES
+
+## After a reload: drop any errand an older build of funerals left in the task stack. Restored
+## recovery tasks revalidate themselves against TownDeaths.
+func reconcile(_id: String, brain: NpcBrain) -> void:
+	for task: NpcTask in [brain.controller.current, brain.controller.suspended]:
+		if task != null and task.params.get("owner") == OWNER:
+			brain.end_task(task.task_id, &"unowned")
+
+# --- Services for NpcRecoveryTask ---
+
+func _deaths() -> TownDeaths:
+	return life.save_game.deaths
+
+func _guard_roster() -> Array[String]:
+	var result: Array[String] = []
+	for id: String in life.save_game.population.people:
+		if life.save_game.population.people[id].get("job") == "guard":
+			result.append(id)
+	result.sort()
+	return result
+
+func _visible_guards(id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var npc: BaseNpc = _actor(id)
+	if npc == null:
+		return result
+	for guard_id: String in life.resident_ids():
+		var guard: BaseNpc = _actor(guard_id)
+		if guard != null and guard != npc and guard.is_in_group(&"town_guards") and NpcPerception.can_see(npc, guard):
+			result.append({"id": guard_id, "space": guard.world_space, "position": guard.global_position})
+	return result
+
+func _assess_scene(space: StringName, point: Vector2, id: String) -> StringName:
+	var guard: BaseNpc = _actor(id)
+	if guard == null or not NpcPerception.can_see_point(guard, space, point):
+		return &"unseen"
 	for npc: BaseNpc in get_tree().get_nodes_in_group(&"enemies"):
 		if npc.health > 0 and NpcPerception.can_see(guard, npc) and npc.global_position.distance_to(point) < 80:
 			guard.set_enforcement_target(npc)
-			return false
-	for id: String in life.resident_ids():
-		var npc: BaseNpc = _actor(id)
+			return &"danger"
+	for other_id: String in life.resident_ids():
+		var npc: BaseNpc = _actor(other_id)
 		if npc != null and npc.world_space == guard.world_space \
-			and npc.alert_response.active() and npc.global_position.distance_to(point) < 64:
-			return false
-	return not guard.has_enemy_target()
+				and npc.alert_response.active() and npc.global_position.distance_to(point) < 64:
+			return &"danger"
+	return &"danger" if guard.has_enemy_target() else &"clear"
 
-func _move(npc: BaseNpc, id: String, space: StringName, point: Vector2, activity: String, label: String) -> void:
-	life.encounters.interrupt(id)
-	var brain: NpcBrain = _brain(id)
-	if brain == null:
-		return
-	var previous: Dictionary = _tasks.get(id, {})
-	if not previous.is_empty() and previous.kind == "travel" and previous.space == space \
-		and previous.activity == activity and Vector2(previous.point).distance_to(point) < 20 \
-		and _live(brain, previous.task_id):
-		return
-	_forget(id)
-	var task := NpcDirectedTravelTask.create({"owner": OWNER, "activity": activity, "space": String(space),
-		"point": [point.x, point.y], "label": label, "priority": life.tuning.directed_travel_priority,
-		"hold_on_arrival": true})
-	if brain.request_task(task):
-		_tasks[id] = {"task_id": task.task_id, "kind": "travel", "space": space, "point": point,
-			"activity": activity}
+func _recovery_event(event: StringName, id: String, other: String, npc_id: String) -> void:
+	var npc: BaseNpc = _actor(npc_id)
+	match event:
+		&"reported":
+			var guard: BaseNpc = _actor(other)
+			if guard != null and npc != null:
+				guard.alert_response.notice(guard, {"danger_possible": true, "origin_id": "body:" + id})
+				_observe(guard, id, "body_reported", "%s told me they found %s dead. The cause is unconfirmed." % [
+					npc.get_npc_profile().profile_name, _name(id)], "hearing", null, npc)
+				npc.show_spoken_reaction("%s is dead. Please, come with me." % _name(id).get_slice(" ", 0))
+		&"preparing":
+			if npc != null:
+				npc.show_spoken_reaction("Give me some room, please.")
+		&"buried":
+			var plot: Vector2 = cemetery.plot_for(id)
+			for observer_id: String in life.resident_ids():
+				var observer: BaseNpc = _actor(observer_id)
+				if observer != null and NpcPerception.can_see_point(observer, &"outdoors", plot):
+					_deaths().mark_burial_known(id, observer_id)
+					_observe(observer, id, "body_buried", "I saw %s laid to rest in the town cemetery." % _name(id),
+						"sight", plot)
+			if npc != null:
+				npc.show_spoken_reaction("Rest easy.")
+	_refresh_visual(id)
+	life.save_snapshot()
 
-func _pause(_npc: BaseNpc, id: String) -> void:
-	life.encounters.interrupt(id)
-	var brain: NpcBrain = _brain(id)
-	if brain == null:
-		return
-	var previous: Dictionary = _tasks.get(id, {})
-	if not previous.is_empty() and previous.kind == "hold" and _live(brain, previous.task_id):
-		return
-	_forget(id)
-	var task := NpcHoldTask.create({"owner": OWNER, "reason": "absorbing a death",
-		"priority": life.tuning.directed_travel_priority})
-	if brain.request_task(task):
-		_tasks[id] = {"task_id": task.task_id, "kind": "hold", "space": &"", "point": Vector2.ZERO,
-			"activity": ""}
+# --- Queries ---
 
-func _resume(_npc: BaseNpc, id: String) -> void:
-	_forget(id)
-	life.save_game.life.interrupt(id)
+func _free(npc_id: String) -> bool:
+	return not is_assigned(npc_id) and float(_retry_at.get(npc_id, -INF)) <= life.save_game.life.minute
 
-# Ends the task funerals owns for this resident, if any; the brain then resumes its routine.
-func _forget(id: String) -> void:
-	var previous: Dictionary = _tasks.get(id, {})
-	_tasks.erase(id)
-	var brain: NpcBrain = _brain(id)
-	if not previous.is_empty() and brain != null:
-		brain.end_task(previous.task_id, &"released")
-
-## After a reload: keep a restored funerals errand only while this resident still has the duty.
-func reconcile(id: String, brain: NpcBrain) -> void:
-	for task: NpcTask in [brain.controller.current, brain.controller.suspended]:
-		if task == null or task.kind != &"directed_travel" or task.params.get("owner") != OWNER:
-			continue
-		if is_assigned(id) and not _tasks.has(id):
-			_brain(id)
-			_tasks[id] = {"task_id": task.task_id, "kind": "travel", "space": StringName(task.params.space),
-				"point": Vector2(float(task.params.point[0]), float(task.params.point[1])),
-				"activity": task.params.activity}
-		else:
-			brain.end_task(task.task_id, &"unowned")
-
-func _brain(id: String) -> NpcBrain:
-	var brain: NpcBrain = life.brain_for(id)
-	if brain != null and not _listening.has(id):
-		_listening[id] = true
-		brain.task_finished.connect(_on_task_finished.bind(id))
-	return brain
-
-func _on_task_finished(task_id: String, _status: String, _reason: StringName, id: String) -> void:
-	if _tasks.has(id) and _tasks[id].task_id == task_id:
-		_tasks.erase(id) # Displaced or unreachable: the next maintain asks again if still assigned.
-
-static func _live(brain: NpcBrain, task_id: String) -> bool:
-	return brain.task_state(task_id) in [NpcTask.status_name(NpcTask.Status.RUNNING),
-		NpcTask.status_name(NpcTask.Status.SUSPENDED)]
-
-func _busy(npc_id: String, except_body: String = "") -> bool:
-	for id: String in life.save_game.deaths.records:
-		if id == except_body:
-			continue
-		var entry: Dictionary = life.save_game.deaths.records[id]
+func is_assigned(npc_id: String) -> bool:
+	for id: String in _deaths().ids():
+		var entry: Dictionary = _deaths().snapshot(id)
 		if (entry.guard == npc_id and entry.stage in ["reported", "recovering", "carried"]) \
-			or (entry.reporter == npc_id and entry.stage == "discovered"):
+				or (entry.reporter == npc_id and entry.stage == "discovered"):
 			return true
 	return false
 
-func is_assigned(id: String) -> bool:
-	return _busy(id)
-
 func known_losses(npc_id: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	for id: String in life.save_game.deaths.records:
-		var entry: Dictionary = life.save_game.deaths.records[id]
+	for id: String in _deaths().ids():
+		var entry: Dictionary = _deaths().snapshot(id)
 		if not npc_id in entry.known_by and not npc_id in entry.burial_known_by:
 			continue
 		result.append({"id": id, "name": _name(id), "relationship":
@@ -301,18 +276,16 @@ func known_losses(npc_id: String) -> Array[Dictionary]:
 func _actor(id: String) -> BaseNpc:
 	return life.resident(id)
 
-func _point(entry: Dictionary) -> Vector2:
+static func _point(entry: Dictionary) -> Vector2:
 	return Vector2(entry.position[0], entry.position[1])
 
 func _name(id: String) -> String:
 	return life.save_game.population.people[id].name
 
-func _change(id: String, stage: String) -> void:
-	life.save_game.deaths.transition(id, stage, life.save_game.life.minute)
-	life.save_snapshot()
+# --- Visuals and observations ---
 
 func _refresh_visual(id: String) -> void:
-	var entry: Dictionary = life.save_game.deaths.records[id]
+	var entry: Dictionary = _deaths().snapshot(id)
 	if entry.stage == "buried":
 		if _bodies.has(id):
 			_bodies[id].queue_free()
@@ -329,8 +302,11 @@ func _refresh_visual(id: String) -> void:
 		body.configure(frames)
 		life.get_parent().add_child(body)
 		_bodies[id] = body
-	_bodies[id].global_position = _point(entry)
-	_bodies[id].set_carried(entry.stage == "carried")
+	var carried: bool = entry.stage == "carried"
+	var carrier: BaseNpc = _actor(entry.guard) if carried else null
+	# A covered body follows its carrier through the same doors, never teleports ahead.
+	_bodies[id].global_position = carrier.global_position + Vector2(0, -7) if carrier != null else _point(entry)
+	_bodies[id].set_carried(carried)
 
 func _observe(observer: BaseNpc, id: String, kind: String, text: String, sense: String,
 		point: Variant = null, reporter: BaseNpc = null) -> void:

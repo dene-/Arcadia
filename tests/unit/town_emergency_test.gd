@@ -20,17 +20,28 @@ func test_death_stages_round_trip_atomically_without_resurrecting_legacy_deaths(
 	var save := NpcWorldSave.new()
 	save.mark_dead(&"victim")
 	save.deaths.record("victim", "home:family", Vector2(22, 44), 1400)
-	save.deaths.records.victim.reporter = "witness"
-	save.deaths.records.victim.known_by.append("witness")
-	for stage: String in TownDeaths.STAGES:
-		save.deaths.transition("victim", stage, 1405)
+	var steps: Array[Callable] = [
+		func() -> StringName: return save.deaths.discover("victim", "witness", 1401),
+		func() -> StringName: return save.deaths.acknowledge_report("victim", "guard", "witness", 1402),
+		func() -> StringName: return save.deaths.begin_recovery("victim", "guard", 1403),
+		func() -> StringName: return save.deaths.pick_up("victim", "guard", "home:family", Vector2(22, 44), 1404),
+		func() -> StringName: return save.deaths.bury("victim", "guard", 1405),
+	]
+	var seen: Array[String] = [save.deaths.snapshot("victim").stage]
+	for step: Callable in steps:
 		var restored := NpcWorldSave.new()
 		assert_true(restored.from_data(save.to_data()))
-		assert_eq(restored.deaths.records.victim, save.deaths.records.victim)
+		assert_eq(restored.deaths.snapshot("victim"), save.deaths.snapshot("victim"))
+		assert_eq(step.call(), TownDeaths.OK_RESULT)
+		seen.append(save.deaths.snapshot("victim").stage)
+	assert_eq(seen, Array(TownDeaths.STAGES))
+	var restored := NpcWorldSave.new()
+	assert_true(restored.from_data(save.to_data()))
+	assert_eq(restored.deaths.snapshot("victim"), save.deaths.snapshot("victim"))
 	var corrupt: Dictionary = save.to_data()
 	corrupt.world.deaths.records.victim.position[0] = "invalid"
 	assert_false(save.from_data(corrupt))
-	assert_eq(save.deaths.records.victim.stage, "buried")
+	assert_eq(save.deaths.snapshot("victim").stage, "buried")
 	corrupt = save.to_data()
 	corrupt.world.dead_npcs.clear()
 	assert_false(save.from_data(corrupt))
@@ -40,7 +51,7 @@ func test_death_stages_round_trip_atomically_without_resurrecting_legacy_deaths(
 	var incomplete: Dictionary = save.to_data()
 	incomplete.world.erase("deaths")
 	assert_false(save.from_data(incomplete), "Defaults for missing deaths are the migration's job.")
-	assert_eq(save.deaths.records.victim.stage, "buried")
+	assert_eq(save.deaths.snapshot("victim").stage, "buried")
 	var legacy: Dictionary = JSON.parse_string(
 		FileAccess.get_file_as_string("res://tests/fixtures/cognition/v1_deaths.json"))
 	legacy.world.erase("deaths")
@@ -49,7 +60,7 @@ func test_death_stages_round_trip_atomically_without_resurrecting_legacy_deaths(
 	assert_true(save.from_data(upgraded.data))
 	assert_eq(save.dead_npcs.size(), legacy.world.dead_npcs.size())
 	assert_false(save.dead_npcs.is_empty())
-	assert_true(save.deaths.records.is_empty())
+	assert_true(save.deaths.ids().is_empty())
 
 func test_noise_has_distinct_waking_and_orientation_beats_without_timer_starvation() -> void:
 	var tree: SceneTree = Engine.get_main_loop()

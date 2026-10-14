@@ -96,7 +96,7 @@ func test_memory_only_legacy_file_loads_when_the_world_file_is_missing_and_migra
 		assert_eq(save.memory.snapshot(id).memories, source.npcs[id].memories, id)
 	assert_true(save.dead_npcs.is_empty())
 	assert_true(save.population.people.is_empty())
-	assert_true(save.deaths.records.is_empty())
+	assert_true(save.deaths.ids().is_empty())
 	assert_eq(save.region_seed, 0)
 	assert_eq(save.migration, {"source_version": NpcSaveMigration.SOURCE_MEMORY_ONLY,
 		"source_digest": NpcSaveMigration.digest(text), "revision": NpcSaveMigration.REVISION})
@@ -139,7 +139,7 @@ func test_existing_v2_wins_over_legacy_files() -> void:
 	loaded.legacy_memory_path = save.legacy_memory_path
 	assert_eq(loaded.load_file(), OK)
 	assert_eq(loaded.to_data(), save.to_data())
-	assert_eq(loaded.deaths.records.size(), 6)
+	assert_eq(loaded.deaths.ids().size(), 6)
 	var broken: String = FileAccess.get_file_as_string(save.path).replace("\"version\":2", "\"version\":7")
 	_write_text(save.path, broken)
 	assert_eq(loaded.load_file(), ERR_FILE_CORRUPT, "A bad v2 never falls back to legacy files.")
@@ -248,30 +248,31 @@ func test_unusual_but_valid_voices_survive_loading_unchanged() -> void:
 func test_deaths_fixture_has_one_body_in_every_stage_consistent_with_dead_npcs() -> void:
 	var save: NpcWorldSave = _load("v1_deaths")
 	var by_stage: Dictionary = {}
-	for id: String in save.deaths.records:
-		by_stage[save.deaths.records[id].stage] = id
+	var death_ids: Array[String] = save.deaths.ids()
+	for id: String in death_ids:
+		by_stage[save.deaths.snapshot(id).stage] = id
 		assert_true(save.is_dead(StringName(id)))
-	assert_eq(save.deaths.records.size(), 6)
+	assert_eq(death_ids.size(), 6)
 	assert_eq(by_stage.size(), 6)
 	assert_eq(save.dead_npcs.size(), 6)
 	for stage: String in TownDeaths.STAGES:
 		assert_true(by_stage.has(stage), stage)
-	var fallen: Dictionary = save.deaths.records[by_stage.fallen]
+	var fallen: Dictionary = save.deaths.snapshot(by_stage.fallen)
 	assert_true(fallen.reporter.is_empty() and fallen.guard.is_empty() and fallen.known_by.is_empty())
-	var discovered: Dictionary = save.deaths.records[by_stage.discovered]
+	var discovered: Dictionary = save.deaths.snapshot(by_stage.discovered)
 	assert_false(discovered.reporter.is_empty())
 	assert_true(discovered.guard.is_empty())
 	assert_true(discovered.reporter in discovered.known_by)
 	for stage: String in ["reported", "recovering", "carried", "buried"]:
-		var entry: Dictionary = save.deaths.records[by_stage[stage]]
+		var entry: Dictionary = save.deaths.snapshot(by_stage[stage])
 		assert_false(entry.reporter.is_empty(), stage)
 		assert_false(entry.guard.is_empty(), stage)
 		assert_true(entry.guard in entry.known_by, stage)
 		assert_false(save.is_dead(StringName(entry.guard)), stage + " carrier is alive")
-	var buried: Dictionary = save.deaths.records[by_stage.buried]
+	var buried: Dictionary = save.deaths.snapshot(by_stage.buried)
 	assert_false(buried.burial_known_by.is_empty())
 	for stage: String in ["fallen", "discovered", "reported", "recovering", "carried"]:
-		assert_true(save.deaths.records[by_stage[stage]].burial_known_by.is_empty(), stage)
+		assert_true(save.deaths.snapshot(by_stage[stage]).burial_known_by.is_empty(), stage)
 
 func test_observation_fixture_holds_every_status_and_applies_relationship_change_once() -> void:
 	var save: NpcWorldSave = _load("v1_observations")

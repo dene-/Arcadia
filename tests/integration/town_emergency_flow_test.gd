@@ -81,7 +81,7 @@ func _run() -> void:
 	victim.take_damage(99, player.hit_box)
 	_check(first.is_sleeping() and second.is_sleeping(), "The household woke instantly")
 	_check(cognition.save_game.is_dead(&"garrin_holt"), "Lethal hit was not immediately saved")
-	_check(cognition.save_game.deaths.records.garrin_holt.stage == "fallen", "Unseen death was already reported")
+	_check(cognition.save_game.deaths.snapshot("garrin_holt").stage == "fallen", "Unseen death was already reported")
 	_check(life.save_game.justice.known_to(guard_id).is_empty(), "Outside guard learned the attacker through a wall")
 	await _frames(50)
 	_check(first.is_sleeping() and second.is_sleeping(), "Noise skipped the stirring delay")
@@ -92,7 +92,7 @@ func _run() -> void:
 	var body_save: Dictionary = cognition.save_game.to_data()
 	var restored := NpcWorldSave.new()
 	_check(restored.from_data(body_save), "A body could not be reloaded")
-	_check(restored.deaths.records.garrin_holt.space == "home:garrin_holt", "Body lost its interior on reload")
+	_check(restored.deaths.snapshot("garrin_holt").space == "home:garrin_holt", "Body lost its interior on reload")
 	life.funerals.queue_free()
 	await process_frame
 	life.funerals = TownFunerals.new()
@@ -103,7 +103,7 @@ func _run() -> void:
 	var stages: Array[String] = []
 	for step: int in range(1400):
 		await _frames(6)
-		var entry: Dictionary = cognition.save_game.deaths.records.garrin_holt
+		var entry: Dictionary = cognition.save_game.deaths.snapshot("garrin_holt")
 		if not entry.stage in stages:
 			stages.append(entry.stage)
 			print("Recovery stage: ", entry.stage, " at ", life.save_game.life.clock_text())
@@ -114,7 +114,7 @@ func _run() -> void:
 			player.global_position = guard.global_position + Vector2(16, 0)
 			guard.set_enforcement_target(player)
 			life.funerals.advance(0.1)
-			_check(entry.stage == "reported", "Combat did not interrupt carrying")
+			_check(cognition.save_game.deaths.snapshot("garrin_holt").stage == "reported", "Combat did not interrupt carrying")
 			guard.clear_enforcement_target()
 			player.world_space = &"isolated"
 			player.global_position = Vector2(2000, 2000)
@@ -126,7 +126,7 @@ func _run() -> void:
 			life.add_child(life.funerals)
 		if entry.stage == "buried":
 			break
-	var entry: Dictionary = cognition.save_game.deaths.records.garrin_holt
+	var entry: Dictionary = cognition.save_game.deaths.snapshot("garrin_holt")
 	_check("reported" in stages, "Witness never reached a guard")
 	_check("recovering" in stages, "Guard did not reach the body")
 	_check("carried" in stages, "Body skipped physical recovery")

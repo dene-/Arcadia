@@ -28,6 +28,7 @@ func _run() -> void:
 	await _scenario_player_takes_over_session()
 	await _scenario_urgent_resident_refuses_player()
 	await _scenario_commitment_survives_reload()
+	await _scenario_death_recovery()
 	for failure: String in failures:
 		push_error(failure)
 	print("NPC cognition scenarios: ", "PASS" if failures.is_empty() else "FAIL")
@@ -619,7 +620,7 @@ func _scenario_urgent_resident_refuses_player() -> void:
 		"(f) The refused session left a trace: %s" % [_claims(sim, id)])
 	await sim.teardown()
 
-## (g) A commitment backed by a prospective memory completes once when its task arrives, across reloads.
+## (g) A commitment backed by a prospective memory completes once when its task ends, across reloads.
 func _scenario_commitment_survives_reload() -> void:
 	var sim: Simulation = await _start(480.0)
 	await sim.advance(2.0)
@@ -647,9 +648,8 @@ func _scenario_commitment_survives_reload() -> void:
 	var promise: String = commitments.create("report_discovery", [] as Array[String], evidence, minute)
 	_check(not promise.is_empty(), "(g) The commitment was not created")
 	var target: Vector2 = sim.life.navigation.nearest(free[0].global_position + Vector2(220.0, 0.0))
-	var errand := NpcDirectedTravelTask.create({"owner": "m4scenario", "activity": "report", "label": "Reporting",
-		"space": "outdoors", "point": [target.x, target.y], "priority": sim.life.tuning.directed_travel_priority,
-		"hold_on_arrival": false})
+	var errand := NpcRoutineTask.create({"activity": "report", "place": "outdoors", "label": "Reporting",
+		"space": "outdoors", "point": [target.x, target.y], "until_minute": minute + 6.0}, sim.life.tuning)
 	errand.commitment_ids = [promise] as Array[String]
 	_check(sim.life.brain_for(id).request_task(errand), "(g) The errand was refused")
 	await sim.advance(0.5)
@@ -760,3 +760,345 @@ func _check_idle_bounded(sim: Simulation, from: float, limit: float, label: Stri
 			idle_since.erase(entry.id)
 	for id: String in idle_since:
 		_check(end - float(idle_since[id]) <= limit, "%s %s still idle after %.1f minutes" % [label, id, end - float(idle_since[id])])
+
+# --- M5: watch and death recovery ---
+
+## One town: (h) a patrol resumes after an intervention; (i) a full report, recovery and burial
+## across a mid-carry reload; (j) a killed carrier leaves the body where it fell; (k) with no guard
+## left a witness defers. Later steps reuse the world the earlier ones changed.
+func _scenario_death_recovery() -> void:
+	var sim: Simulation = await _start(960.0)
+	await sim.advance(2.0)
+	await _patrol_after_intervention(sim)
+	if await _recovery_with_reload(sim) and await _carrier_killed(sim):
+		await _no_guard_left(sim)
+	await sim.teardown()
+
+## (h) A patrolling guard intervenes in an assault, stands down when the attacker surrenders and
+## then resumes the same patrol.
+func _patrol_after_intervention(sim: Simulation) -> void:
+	var guard_id: String = ""
+	for id: String in _guard_ids(sim):
+		var npc: BaseNpc = sim.resident(id)
+		var task: NpcTask = _task(sim, id)
+		if npc != null and npc.world_space == &"outdoors" and task is NpcGuardTask \
+				and task.phase == NpcGuardTask.PHASE_PATROL:
+			guard_id = id
+			break
+	_check(not guard_id.is_empty(), "(h) No guard is patrolling outdoors")
+	var free: Array[BaseNpc] = _free_residents(sim, 1)
+	_check(free.size() == 1, "(h) No free resident is outdoors")
+	if guard_id.is_empty() or free.is_empty():
+		return
+	var guard: BaseNpc = sim.resident(guard_id)
+	var patrol: NpcTask = _task(sim, guard_id)
+	var victim: BaseNpc = free[0]
+	victim.global_position = guard.global_position + Vector2(24.0, 0.0)
+	var player: BasePlayer = _place_player_near(sim, victim)
+	await sim.advance(0.1)
+	victim.take_damage(1, player.hit_box)
+	victim.take_damage(1, player.hit_box)
+	var intervened: bool = false
+	for frame: int in 60:
+		await sim.advance(1.0 / 60.0)
+		if patrol.phase in [NpcGuardTask.PHASE_INTERVENE, NpcGuardTask.PHASE_PURSUE]:
+			intervened = true
+			break
+	_check(intervened, "(h) The guard did not intervene (phase %s)" % patrol.phase)
+	player.surrender()
+	var health: int = player.health
+	var phases: Array[String] = []
+	for second: int in 16:
+		await sim.advance(0.5)
+		if not patrol.phase in phases:
+			phases.append(patrol.phase)
+		if second > 0 and patrol.phase == NpcGuardTask.PHASE_PATROL:
+			break
+	_check(NpcGuardTask.PHASE_SURRENDERED in phases, "(h) The guard never stood down: %s" % [phases])
+	_check(player.health == health, "(h) The guard attacked after the surrender")
+	player.world_space = &"isolated"
+	player.global_position = Vector2(4000.0, 4000.0)
+	await sim.advance_minutes(NpcGuardTask.STAND_DOWN_MINUTES + 1.0)
+	_check(_task(sim, guard_id) == patrol and patrol.phase == NpcGuardTask.PHASE_PATROL
+		and patrol.status == NpcTask.Status.RUNNING,
+		"(h) The patrol was not restored: %s" % [_task(sim, guard_id).checkpoint() if _task(sim, guard_id) != null else {}])
+	_check(not guard.has_enemy_target(), "(h) The guard kept its enemy target")
+
+## (i) Two witnesses find a body; one reports it to one guard while a second guard knows of it.
+## The witness only searches places its own knowledge holds. A reload mid-carry still ends in
+## exactly one burial, one grave and no remains.
+func _recovery_with_reload(sim: Simulation) -> bool:
+	var guards: Array[String] = _guard_ids(sim)
+	var free: Array[BaseNpc] = _free_residents(sim, 8)
+	_check(free.size() >= 3, "(i) Fewer than three free residents are outdoors")
+	if free.size() < 3:
+		return false
+	# The victim farthest from every guard, so a resident (not a guard) finds the body.
+	free.sort_custom(func(a: BaseNpc, b: BaseNpc) -> bool:
+		return _guard_distance(sim, a) > _guard_distance(sim, b))
+	var victim: BaseNpc = free[0]
+	var body: String = _resident_id(victim)
+	var point: Vector2 = victim.global_position
+	var witnesses: Array[String] = []
+	for index: int in 2:
+		var witness: BaseNpc = free[index + 1]
+		witness.global_position = point + Vector2(-14.0 + 28.0 * index, 12.0)
+		var id: String = _resident_id(witness)
+		witnesses.append(id)
+		# Forget every sighting: the witness knows no guard's location, only public help places.
+		_knowledge_of(sim, id).from_data(NpcKnowledge.new().to_data())
+		sim.life._bootstrap_knowledge([id] as Array[String])
+		for guard_id: String in guards:
+			_check(_knowledge_of(sim, id).known_locations(guard_id).is_empty(), "(i) %s still knows where %s is" % [id, guard_id])
+	victim.take_damage(999, null)
+	var stages: Array[String] = []
+	var reporters: Array[String] = []
+	var carriers: Array[String] = []
+	var checked_stops: Dictionary = {}
+	var reloaded: bool = false
+	var second_guard_placed: bool = false
+	var end: float = sim.save_game().life.minute + 240.0
+	while sim.save_game().life.minute < end:
+		await sim.advance(0.25)
+		var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+		if entry.is_empty():
+			continue
+		if stages.is_empty() or stages.back() != entry.stage:
+			stages.append(entry.stage)
+		if not entry.reporter.is_empty() and not entry.reporter in reporters:
+			reporters.append(entry.reporter)
+		if entry.stage in ["recovering", "carried"] and not entry.guard in carriers:
+			carriers.append(entry.guard)
+		_check_one_recovery(sim, body, "(i)")
+		_check_witness_search(sim, body, checked_stops)
+		_check(_remains_of(sim, body).size() <= 1, "(i) %s has more than one body" % body)
+		if entry.stage == "reported" and not second_guard_placed:
+			# A second guard learns of the reported body; the first guard keeps the only recovery job.
+			second_guard_placed = true
+			for guard_id: String in guards:
+				var other: BaseNpc = sim.resident(guard_id)
+				if guard_id != entry.guard and other != null and String(entry.space) == "outdoors" \
+						and other.world_space == &"outdoors":
+					other.global_position = Vector2(entry.position[0], entry.position[1]) + Vector2(0.0, 36.0)
+		if entry.stage == "carried" and not reloaded:
+			reloaded = true
+			await sim.advance(1.0)
+			await sim.reload_world()
+			_check(sim.problems.is_empty(), "(i) Reload problems: %s" % [sim.problems])
+			_check(sim.save_game().deaths.snapshot(body).stage == "carried", "(i) The reload lost the carry")
+		if entry.stage == "buried":
+			break
+	var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+	_check(reloaded, "(i) The body was never carried: %s" % [stages])
+	_check(entry.stage == "buried", "(i) The body was never buried: %s %s" % [stages, entry])
+	_check(stages == ["fallen", "discovered", "reported", "recovering", "carried", "buried"]
+		or stages == ["discovered", "reported", "recovering", "carried", "buried"],
+		"(i) Unexpected recovery stages: %s" % [stages])
+	_check(reporters.size() == 1 and reporters[0] in witnesses, "(i) Reporters: %s (witnesses %s)" % [reporters, witnesses])
+	_check(carriers.size() == 1 and carriers[0] in guards, "(i) Carriers: %s" % [carriers])
+	_check(not checked_stops.is_empty() or "reported" in stages, "(i) The witness never searched")
+	await sim.advance_minutes(3.0)
+	var effects: Dictionary = sim.effects()
+	_check(effects.graves == 1 and sim.life.funerals.cemetery.graves().keys() == [body],
+		"(i) Graves after burial: %s" % [sim.life.funerals.cemetery.graves()])
+	_check(_remains_of(sim, body).is_empty(), "(i) Remains stayed after burial")
+	_check(_recovery_holders(sim, body).is_empty(), "(i) A recovery task outlived the burial: %s" % [_recovery_holders(sim, body)])
+	_check(sim.save_game().deaths.snapshot(body).stage == "buried", "(i) The burial changed after completion")
+	return entry.stage == "buried"
+
+## (j) A carrier killed mid-carry leaves exactly one body where it fell; another guard who finds it
+## recovers it.
+func _carrier_killed(sim: Simulation) -> bool:
+	var carrier_id: String = ""
+	for id: String in _guard_ids(sim):
+		var npc: BaseNpc = sim.resident(id)
+		if npc != null and npc.world_space == &"outdoors" and not npc.is_sleeping() \
+				and not sim.life.funerals.is_assigned(id):
+			carrier_id = id
+			break
+	var free: Array[BaseNpc] = _free_residents(sim, 1)
+	_check(not carrier_id.is_empty() and free.size() == 1, "(j) No free guard and resident outdoors")
+	if carrier_id.is_empty() or free.is_empty():
+		return false
+	var victim: BaseNpc = free[0]
+	var body: String = _resident_id(victim)
+	victim.global_position = sim.resident(carrier_id).global_position + Vector2(20.0, 0.0)
+	victim.take_damage(999, null)
+	var pickup: Vector2 = Vector2.INF
+	var carrier: BaseNpc = null
+	var end: float = sim.save_game().life.minute + 120.0
+	while sim.save_game().life.minute < end:
+		await sim.advance(0.25)
+		_check_one_recovery(sim, body, "(j)")
+		var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+		if entry.stage != "carried":
+			continue
+		carrier = sim.resident(entry.guard)
+		if carrier == null:
+			break
+		if pickup == Vector2.INF:
+			pickup = carrier.global_position
+		elif carrier.global_position.distance_to(pickup) > 48.0:
+			break
+	var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+	_check(entry.stage == "carried" and carrier != null, "(j) The body was never carried: %s" % [entry])
+	if carrier == null:
+		return false
+	carrier_id = _resident_id(carrier)
+	var fell_at: Vector2 = carrier.global_position
+	var space: String = String(carrier.world_space)
+	carrier.take_damage(999, null)
+	await sim.advance(0.5)
+	entry = sim.save_game().deaths.snapshot(body)
+	var drop := Vector2(entry.position[0], entry.position[1])
+	_check(entry.stage == "reported" and entry.guard.is_empty(), "(j) The dead carrier still holds the body: %s" % [entry])
+	_check(entry.space == space and drop.distance_to(fell_at) <= 24.0,
+		"(j) The body is at %s %s, the carrier fell at %s %s" % [entry.space, drop, space, fell_at])
+	var remains: Array[NpcRemains] = _remains_of(sim, body)
+	_check(remains.size() == 1 and remains[0].global_position.distance_to(drop) <= 24.0,
+		"(j) Remains after the carrier died: %s" % [remains.map(func(node: NpcRemains) -> Vector2: return node.global_position)])
+	await sim.advance(2.0)
+	entry = sim.save_game().deaths.snapshot(body)
+	_check(entry.stage == "reported" and Vector2(entry.position[0], entry.position[1]) == drop,
+		"(j) The dropped body moved without a carrier: %s" % [entry])
+	# Another guard comes upon the body and takes the recovery up.
+	var finder_id: String = ""
+	for id: String in _guard_ids(sim):
+		var npc: BaseNpc = sim.resident(id)
+		if npc != null and npc.world_space == StringName(space) and not npc.is_sleeping():
+			finder_id = id
+			npc.global_position = drop + Vector2(0.0, 30.0)
+			break
+	_check(not finder_id.is_empty(), "(j) No guard is left to find the dropped body")
+	if finder_id.is_empty():
+		return false
+	var recovered: bool = false
+	end = sim.save_game().life.minute + 150.0
+	while sim.save_game().life.minute < end:
+		await sim.advance(0.25)
+		_check_one_recovery(sim, body, "(j)")
+		entry = sim.save_game().deaths.snapshot(body)
+		if entry.stage in ["carried", "buried"] and entry.guard in [finder_id, ""]:
+			recovered = true
+			break
+	_check(recovered, "(j) The dropped body was never recovered: %s" % [entry])
+	return recovered
+
+## (k) With no guard alive a witness searches every place it knows, defers the report and goes back
+## to ordinary life; the body stays where it is and a knower takes the report up again later.
+func _no_guard_left(sim: Simulation) -> void:
+	for id: String in _guard_ids(sim):
+		var guard: BaseNpc = sim.resident(id)
+		if guard != null:
+			guard.take_damage(999, null)
+	await sim.advance(2.0)
+	var free: Array[BaseNpc] = _free_residents(sim, 3)
+	_check(free.size() == 3, "(k) Fewer than three free residents are outdoors")
+	if free.size() < 3:
+		return
+	var victim: BaseNpc = free[0]
+	var body: String = _resident_id(victim)
+	free[1].global_position = victim.global_position + Vector2(14.0, 10.0)
+	var witness: String = ""
+	victim.take_damage(999, null)
+	var deferred_at: float = -1.0
+	var end: float = sim.save_game().life.minute + 360.0
+	while sim.save_game().life.minute < end:
+		await sim.advance(0.5)
+		var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+		if not entry.reporter.is_empty():
+			witness = entry.reporter
+		elif entry.stage == "discovered" and sim.life.funerals._retry_at.has(witness):
+			deferred_at = sim.save_game().life.minute
+			break
+	var entry: Dictionary = sim.save_game().deaths.snapshot(body)
+	_check(deferred_at >= 0.0, "(k) The witness never deferred: %s, reporter task %s" % [entry,
+		_task(sim, witness).checkpoint() if _task(sim, witness) != null else {}])
+	if deferred_at < 0.0:
+		return
+	await sim.advance_minutes(3.0)
+	var task: NpcTask = _task(sim, witness)
+	_check(task != null and task.kind != &"recovery" and task.status == NpcTask.Status.RUNNING,
+		"(k) Ordinary life did not resume: %s" % [task.checkpoint() if task != null else {}])
+	entry = sim.save_game().deaths.snapshot(body)
+	_check(entry.stage == "discovered" and _remains_of(sim, body).size() == 1, "(k) The deferred body changed: %s" % [entry])
+	_check(String(entry.space) == "outdoors", "(k) The body is no longer outdoors: %s" % [entry])
+	var reclaimed: bool = false
+	var retry_end: float = deferred_at + TownFunerals.RETRY_MINUTES + 60.0
+	while not reclaimed and sim.save_game().life.minute < retry_end:
+		await sim.advance_minutes(5.0)
+		entry = sim.save_game().deaths.snapshot(body)
+		reclaimed = entry.stage == "discovered" and not entry.reporter.is_empty()
+	_check(reclaimed and _remains_of(sim, body).size() == 1,
+		"(k) Nobody took the deferred report up again: %s" % [entry])
+
+func _guard_distance(sim: Simulation, npc: BaseNpc) -> float:
+	var nearest: float = INF
+	for id: String in _guard_ids(sim):
+		var guard: BaseNpc = sim.resident(id)
+		if guard != null:
+			nearest = minf(nearest, guard.global_position.distance_to(npc.global_position))
+	return nearest
+
+## Resident id -> live recovery task (running or suspended) for `body`.
+func _recovery_holders(sim: Simulation, body: String) -> Dictionary:
+	var holders: Dictionary = {}
+	for id: String in sim.resident_ids():
+		var brain: NpcBrain = sim.life.brain_for(id)
+		var task: NpcRecoveryTask = TownFunerals._recovery_task(brain) if brain != null else null
+		if task != null and task.body_id() == body:
+			holders[id] = task
+	return holders
+
+## At most one witness and one guard hold a recovery task for `body` at any time.
+func _check_one_recovery(sim: Simulation, body: String, label: String) -> void:
+	var witnesses: int = 0
+	var guards: int = 0
+	var holders: Dictionary = _recovery_holders(sim, body)
+	for id: String in holders:
+		if (holders[id] as NpcRecoveryTask).is_witness():
+			witnesses += 1
+		else:
+			guards += 1
+	_check(witnesses <= 1 and guards <= 1, "%s Several recovery jobs for %s: %s" % [label, body, holders.keys()])
+
+## A searching witness only walks to stops taken from its own knowledge, never to a live position.
+func _check_witness_search(sim: Simulation, body: String, checked: Dictionary) -> void:
+	var holders: Dictionary = _recovery_holders(sim, body)
+	for id: String in holders:
+		var task: NpcRecoveryTask = holders[id]
+		if not task.is_witness() or task.phase != NpcRecoveryTask.PHASE_SEEK_HELP or not task.progress.has("stops"):
+			continue
+		var stops: Array = task.progress["stops"]
+		if not checked.has(task.task_id):
+			checked[task.task_id] = true
+			var known: Array = []
+			var knowledge: NpcKnowledge = _knowledge_of(sim, id)
+			for fact: Dictionary in knowledge.known_help_places():
+				known.append(fact.value)
+			for guard_id: String in _guard_ids(sim):
+				for fact: Dictionary in knowledge.current(guard_id, "location"):
+					known.append(fact.value)
+			for stop: Array in stops:
+				_check(known.any(func(value: Dictionary) -> bool:
+					return String(value.get("space", "")) == String(stop[0]) \
+						and Vector2(float(value.get("x", 0.0)), float(value.get("y", 0.0))).distance_to(
+							Vector2(float(stop[1]), float(stop[2]))) < NpcRecoveryTask.SAME_STOP_DISTANCE),
+					"(i) %s searches %s, which its knowledge does not hold" % [id, stop])
+		var journey: Dictionary = sim.life.buildings._journeys.get(id, {})
+		if journey.get("state") != &"traveling" or journey.get("owner") != task.task_id:
+			continue
+		var target: Vector2 = journey.point
+		_check(stops.any(func(stop: Array) -> bool:
+			return String(stop[0]) == String(journey.space) \
+				and Vector2(float(stop[1]), float(stop[2])).distance_to(target) < NpcRecoveryTask.SAME_STOP_DISTANCE),
+			"(i) %s walks to %s %s, which is not a known stop" % [id, journey.space, target])
+
+## Physical remains of `id` in the world.
+func _remains_of(sim: Simulation, id: String) -> Array[NpcRemains]:
+	var result: Array[NpcRemains] = []
+	var prefix: String = id.to_pascal_case() + "Remains"
+	for node: Node in sim.life.get_parent().get_children():
+		if node is NpcRemains and not node.is_queued_for_deletion() and String(node.name).begins_with(prefix):
+			result.append(node)
+	return result

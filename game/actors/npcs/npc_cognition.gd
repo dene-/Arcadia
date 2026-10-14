@@ -59,7 +59,7 @@ func _on_world_event(event: WorldEvent) -> void:
 		observer.alert_response.notice(observer, legacy)
 		save_game.life.notice_perception(observer_id, legacy, String(observer.world_space))
 		# Knowledge is learned the moment evidence is perceived; no provider is involved.
-		learn(save_game.minds.get_mind(observer_id).knowledge, observation, positions)
+		perceive(save_game.minds.get_mind(observer_id), observation, positions)
 		var current: Dictionary = observer.get_cognitive_context()
 		current.world_minute = save_game.life.minute
 		events.observe(observer.get_npc_profile(), current, observation, observer)
@@ -111,6 +111,39 @@ static func _body_point(snapshot: WorldEventSnapshot) -> Variant:
 		return Vector2(float(raw[0]), float(raw[1]))
 	return null
 
+## A resident sees a grave: it learns who lies there, never how they died. Repeat sightings of
+## the same grave share one origin and add nothing.
+func see_grave(observer_id: String, deceased_id: String, point: Vector2) -> void:
+	var person: Variant = save_game.population.people.get(deceased_id)
+	var deceased_name: String = String(person.get("name", deceased_id)) if person is Dictionary else deceased_id
+	var observation: NpcObservation = grave_observation(observer_id, deceased_id, deceased_name,
+		save_game.life.minute, point)
+	if observation != null:
+		perceive(save_game.minds.get_mind(observer_id), observation, {})
+
+## Learns from one observation; the first evidence of a relative's death leaves a bereavement
+## concern. Kin are the resident's own family facts, so only informed relatives grieve.
+static func perceive(mind: NpcMindState, observation: NpcObservation, positions: Dictionary) -> void:
+	var deceased: String = _deceased(observation)
+	var knew: bool = deceased.is_empty() or _knows_dead(mind.knowledge, deceased)
+	learn(mind.knowledge, observation, positions)
+	if not knew and _knows_dead(mind.knowledge, deceased) and mind.knowledge.knows(deceased, "family_role"):
+		mind.add_bereavement(deceased, observation.observation_id, observation.observed_minute)
+
+## A grave seen in the cemetery: it shows who lies there and nothing about how they died.
+static func grave_observation(observer_id: String, deceased_id: String, deceased_name: String,
+		minute: float, point: Vector2) -> NpcObservation:
+	return NpcObservation.from_perception(observer_id, "grave:" + deceased_id, minute, &"outdoors",
+		{"kind": "body_buried", "sense": "sight", "text": "I saw the grave of %s." % deceased_name,
+		"topics": ["death", "town"], "participants": [{"id": deceased_id, "name": deceased_name,
+		"role": "deceased"}]}, point)
+
+static func _knows_dead(knowledge: NpcKnowledge, subject: String) -> bool:
+	for fact: Dictionary in knowledge.current(subject, "status"):
+		if fact["value"] == "dead":
+			return true
+	return false
+
 ## Personal knowledge from one observation. `positions` maps identity -> where the event placed
 ## that person. Unseen or anonymous people are never located, and the observer is never "seen".
 static func learn(knowledge: NpcKnowledge, observation: NpcObservation, positions: Dictionary) -> void:
@@ -121,15 +154,8 @@ static func learn(knowledge: NpcKnowledge, observation: NpcObservation, position
 			if id != observation.observer_id and positions.get(id) is Vector2:
 				knowledge.record_sighting(id, String(observation.space_id), positions[id], minute,
 					observation.observation_id)
-	var deceased: String = ""
-	match observation.kind:
-		&"actor_died":
-			if seen:
-				deceased = _participant_with_role(observation, "hurt_person")
-		&"body_found", &"body_reported", &"body_buried":
-			deceased = _participant_with_role(observation, "deceased")
-	# The player respawns; a resident never learns that "the player is dead".
-	if deceased.is_empty() or deceased == "player":
+	var deceased: String = _deceased(observation)
+	if deceased.is_empty():
 		return
 	var evidence_id: String = observation.observation_id
 	match observation.kind:
@@ -146,6 +172,18 @@ static func learn(knowledge: NpcKnowledge, observation: NpcObservation, position
 			else:
 				knowledge.record(deceased, "burial", "buried", NpcKnowledge.Status.OBSERVED,
 					NpcKnowledge.SELF_SOURCE, evidence_id, observation.origin_id, minute, 1.0)
+
+## Whose death or burial the observation establishes; empty when none (the player respawns, so a
+## resident never learns that "the player is dead").
+static func _deceased(observation: NpcObservation) -> String:
+	var deceased: String = ""
+	match observation.kind:
+		&"actor_died":
+			if observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]:
+				deceased = _participant_with_role(observation, "hurt_person")
+		&"body_found", &"body_reported", &"body_buried":
+			deceased = _participant_with_role(observation, "deceased")
+	return "" if deceased == "player" else deceased
 
 static func _participant_with_role(observation: NpcObservation, role: String) -> String:
 	for participant: Dictionary in observation.participants:

@@ -44,6 +44,13 @@ func plot_for(id: String) -> Vector2:
 	var index: int = maxi(0, residents.find(id))
 	return ORIGIN + Vector2((index % 6) * 24, (index / 6) * 24)
 
+## Deceased id -> world position of each grave dug so far.
+func graves() -> Dictionary[String, Vector2]:
+	var result: Dictionary[String, Vector2] = {}
+	for id: String in _graves:
+		result[id] = _graves[id].global_position
+	return result
+
 func bury(id: String, person_name: String) -> void:
 	if _graves.has(id):
 		return

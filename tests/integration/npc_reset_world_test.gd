@@ -46,7 +46,7 @@ func _run() -> void:
 	_check(save.region_seed == 274415, "Map seed changed")
 	_check(get_nodes_in_group("town_residents").size() == save.population.people.size(),
 		"Reset did not respawn every resident")
-	_check(save.deaths.records.is_empty(), "Bodies survived reset")
+	_check(save.deaths.ids().is_empty(), "Bodies survived reset")
 	for npc: BaseNpc in get_nodes_in_group("town_residents"):
 		var profile: NpcProfile = npc.get_npc_profile()
 		var id: String = String(profile.npc_id)

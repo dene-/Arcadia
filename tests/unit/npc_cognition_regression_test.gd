@@ -92,11 +92,19 @@ func test_provider_failure_defers_evidence_and_a_later_attempt_appraises_it_once
 	assert_false(inbox.enqueue(observation), "A replay of the processed id is refused")
 	assert_eq(inbox.ready_count(600.0), 0)
 
-# Flipped by M5: burial must pass through recovery and carrying stages.
-func test_characterize_fallen_body_can_be_buried_without_recovery_stages() -> void:
+func test_burial_requires_discovery_acknowledgment_and_pickup() -> void:
 	var deaths := TownDeaths.new()
 	deaths.record("garrin_holt", "outdoors", Vector2(12, 34), 480.0)
-	assert_eq(deaths.records.garrin_holt.stage, "fallen")
-	deaths.transition("garrin_holt", "buried", 500.0)
-	assert_eq(deaths.records.garrin_holt.stage, "buried")
-	assert_eq(deaths.records.garrin_holt.since, 500.0)
+	var fallen: Dictionary = deaths.snapshot("garrin_holt")
+	assert_eq(fallen.stage, "fallen")
+	assert_ne(deaths.bury("garrin_holt", "vale_guard", 500.0), TownDeaths.OK_RESULT, "Not even discovered")
+	assert_eq(deaths.snapshot("garrin_holt"), fallen)
+	assert_eq(deaths.discover("garrin_holt", "witness", 490.0), TownDeaths.OK_RESULT)
+	var discovered: Dictionary = deaths.snapshot("garrin_holt")
+	assert_ne(deaths.bury("garrin_holt", "vale_guard", 500.0), TownDeaths.OK_RESULT, "Not acknowledged")
+	assert_eq(deaths.snapshot("garrin_holt"), discovered)
+	assert_eq(deaths.acknowledge_report("garrin_holt", "vale_guard", "witness", 495.0), TownDeaths.OK_RESULT)
+	assert_eq(deaths.begin_recovery("garrin_holt", "vale_guard", 496.0), TownDeaths.OK_RESULT)
+	var recovering: Dictionary = deaths.snapshot("garrin_holt")
+	assert_ne(deaths.bury("garrin_holt", "vale_guard", 500.0), TownDeaths.OK_RESULT, "Not picked up")
+	assert_eq(deaths.snapshot("garrin_holt"), recovering)

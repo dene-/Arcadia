@@ -128,7 +128,7 @@ func from_data(data: Variant) -> bool:
 		or not validated_justice.from_data(world.justice) \
 		or not validated_deaths.from_data(world.deaths):
 		return false
-	for id: String in validated_deaths.records:
+	for id: String in validated_deaths.ids():
 		if not id in validated:
 			return false
 	if not NpcMemoryStore.new().from_save_data(data.memory, validated_life.minute):

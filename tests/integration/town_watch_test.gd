@@ -90,7 +90,7 @@ func _run() -> void:
 	victim.set_health(victim.max_health)
 	victim.take_damage(1, player.hit_box)
 	_check(cognition.save_game.justice.current("voss_guard", "player", 480).is_empty(), "Hearing through a wall identified attacker")
-	_check(life.watch._investigations.has("voss_guard"), "Guard ignored nearby fighting sounds")
+	_check(life.brain_for("voss_guard").current_activity().get("phase") == "investigate", "Guard ignored nearby fighting sounds")
 	wall.queue_free()
 	await physics_frame
 	await physics_frame

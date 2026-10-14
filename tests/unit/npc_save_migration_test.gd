@@ -122,8 +122,8 @@ func test_specific_fixture_facts_survive_migration() -> void:
 		_fixture("v1_town_rerolled").world.life.personalities.mirelle_voss)
 	var deaths: NpcWorldSave = _loaded(_migrated("v1_deaths"))
 	var stages: Array = []
-	for id: String in deaths.deaths.records:
-		var entry: Dictionary = deaths.deaths.records[id]
+	for id: String in deaths.deaths.ids():
+		var entry: Dictionary = deaths.deaths.snapshot(id)
 		stages.append(entry.stage)
 		assert_true(deaths.is_dead(StringName(id)))
 		if entry.stage in ["reported", "recovering", "carried", "buried"]:

@@ -35,6 +35,8 @@ var _save_elapsed: float = 0.0
 var _retry_elapsed: float = 0.0
 # (observer|target) -> {space, position, minute}: last sighting recorded, to throttle re-recording.
 var _sighted: Dictionary = {}
+# observer|deceased -> true once the observer has seen that grave this session.
+var _graves_seen: Dictionary = {}
 var _initialized: bool = false
 var _light: CanvasModulate
 var _clock: Label
@@ -84,7 +86,8 @@ func _ready() -> void:
 	add_child(encounters)
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
+		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"],
+			save_game.population, save_game.dead_npcs)
 		npc.daily_routine = NpcDailyRoutine.new()
 		npc.daily_routine.navigation = navigation
 		npc.daily_routine.npc_id = id
@@ -169,7 +172,8 @@ func _process(delta: float) -> void:
 	_record_sightings(ids)
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
-		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
+		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"],
+			save_game.population, save_game.dead_npcs)
 		# Each system only requests tasks; the brain's priorities settle who moves the resident.
 		var engaged: bool = watch.maintain(npc, id)
 		engaged = funerals.maintain(npc, id) or engaged
@@ -233,6 +237,7 @@ func _record_sightings(ids: Array[String]) -> void:
 		if player is BaseActor and (player as BaseActor).health > 0:
 			targets.append(player)
 			target_ids.append("player")
+	var graves: Dictionary[String, Vector2] = funerals.cemetery.graves()
 	for id: String in ids:
 		var observer: BaseNpc = _actors[id]
 		if observer.health <= 0 or observer.is_sleeping():
@@ -252,6 +257,13 @@ func _record_sightings(ids: Array[String]) -> void:
 					minute, "sighting:%s:%s:%d" % [id, target_id, int(minute * 10.0)]):
 				_sighted["%s|%s" % [id, target_id]] = {"space": target.world_space,
 					"position": target.global_position, "minute": minute}
+		if observer.world_space != &"outdoors":
+			continue
+		for deceased: String in graves:
+			var key: String = "%s|%s" % [id, deceased]
+			if not _graves_seen.has(key) and NpcPerception.can_see_point(observer, &"outdoors", graves[deceased]):
+				_graves_seen[key] = true
+				get_node("/root/NpcCognition").see_grave(id, deceased, graves[deceased])
 
 func _sighting_due(observer_id: String, target_id: String, target: BaseActor, minute: float) -> bool:
 	var last: Variant = _sighted.get("%s|%s" % [observer_id, target_id])
@@ -506,7 +518,7 @@ func _on_task_transition(entry: Dictionary, id: String) -> void:
 	if task == null or task.task_id != entry["task_id"] or not is_instance_valid(_actors.get(id)):
 		return
 	var routine: NpcDailyRoutine = _actors[id].daily_routine
-	if task.kind in [&"routine", &"directed_travel"]:
+	if task.kind in [&"routine", &"recovery"]:
 		routine.activity = task.params["activity"]
 		routine.place = task.params["label"]
 	elif task.kind == &"safety" and task.params["response"] == "SHELTER":

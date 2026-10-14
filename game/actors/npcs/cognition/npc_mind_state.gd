@@ -47,6 +47,20 @@ func set_condition(value: Dictionary) -> bool:
 	_condition_version += 1
 	return true
 
+## Records grief for `subject` once: a later learning of the same death adds nothing.
+func add_bereavement(subject: String, evidence_id: String, minute: float) -> bool:
+	if subject.is_empty() or not is_finite(minute):
+		return false
+	var concerns: Array = condition.get("concerns", []) if condition.get("concerns") is Array else []
+	for concern: Variant in concerns:
+		if concern is Dictionary and concern.get("kind") == "bereavement" and concern.get("subject") == subject:
+			return false
+	var next: Dictionary = condition.duplicate(true)
+	var updated: Array = concerns.duplicate(true)
+	updated.append({"kind": "bereavement", "subject": subject, "evidence_id": evidence_id, "minute": minute})
+	next["concerns"] = updated
+	return set_condition(next)
+
 func next_decision() -> int:
 	decision_sequence += 1
 	return decision_sequence

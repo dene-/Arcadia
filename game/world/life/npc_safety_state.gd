@@ -59,4 +59,5 @@ static func is_valid(value: Variant) -> bool:
 		if not (value.get(key) is float or value.get(key) is int) \
 			or not is_finite(float(value[key])) or value[key] < 0:
 			return false
-	return value.until >= value.observed_at and value.until - value.observed_at <= SHELTER_MINUTES
+	# JSON keeps ~15 significant digits, so a saved span can exceed its limit by rounding error.
+	return value.until >= value.observed_at and value.until - value.observed_at <= SHELTER_MINUTES + 0.001

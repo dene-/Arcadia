@@ -79,6 +79,10 @@ func _resident(id: String, position: Vector2) -> BaseNpc:
 	_brains[id] = brain
 	return npc
 
+func _caution_duty() -> NpcSafetyTask:
+	return NpcSafetyTask.create({"response": "CAUTION", "origin_id": "noise:1", "until_minute": 1000.0,
+		"label": "here", "refuge_space": "", "refuge_point": []}, _tuning)
+
 func _claims(id: String) -> Dictionary:
 	return (_brains[id] as NpcBrain).debug_snapshot().claims
 
@@ -128,8 +132,7 @@ func test_invitation_is_dropped_when_a_resident_becomes_unavailable() -> void:
 	_backend.hold_stage = "social"
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
-	var duty := NpcHoldTask.create({"owner": "funerals", "reason": "absorbing a death",
-		"priority": _tuning.caution_priority})
+	var duty := _caution_duty()
 	assert_true((_brains["social_b"] as NpcBrain).request_task(duty))
 	_encounters._process(0.01)
 	assert_false(_encounters.is_busy("social_a"))
@@ -140,8 +143,7 @@ func test_invitation_is_dropped_when_a_resident_becomes_unavailable() -> void:
 
 func test_refusing_participant_releases_the_other_immediately() -> void:
 	await _scene.get_tree().physics_frame
-	var duty := NpcHoldTask.create({"owner": "funerals", "reason": "absorbing a death",
-		"priority": _tuning.caution_priority})
+	var duty := _caution_duty()
 	assert_true((_brains["social_b"] as NpcBrain).request_task(duty))
 	_encounters.consider(_first, _second)
 	assert_false(_encounters.is_busy("social_a"))

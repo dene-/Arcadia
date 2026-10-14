@@ -29,7 +29,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M2 | done: `NpcObservation` evidence per observer in a per-mind `NpcEvidenceInbox` (fair 32-item window, noise coalescing, protected evidence never dropped, deferred retry); `NpcKnowledge` with provenance/contradiction rules, public bootstrap (runtime-only, not saved), throttled first-hand sightings; `WorldEventSnapshot`; migration revision 2 | see git log |
 | M3 | done: `NpcTaskController` (owner-checked claims, one suspended task, checkpoints), `NpcBrain` per resident, routine/safety tasks, directed-travel/hold adapter tasks; `TownBuildings` is a task-owned executor (no sleep/wake decisions); `NpcDailyRoutine.hold` and the `maintain` priority chain removed | see git log |
 | M4 | done: `NpcSocialTask`; encounter sessions invite (no claims, 8 s) → approach → converse → leave; player dialogue through the brain (urgent duties refuse with a short line); protected speech tokens; session id/minute/delivery in dialogue and social history (migration revision 3, legacy = unknown time); commitments resolved by task outcome, intentions completed only through commitments | see git log |
-| M5 | pending | |
+| M5 | done: `TownDeaths` intent API with private records (no `transition()`); `NpcRecoveryTask` (witness absorb → seek help from own knowledge → report, or defer with a 30-minute retry; guard acknowledge → reach body → assess → prepare → carry → cemetery → bury); `NpcGuardTask` (patrol/investigate/warn/intervene/pursue/surrendered, force only on own evidence); guard shifts from role data (no named-guard cases); bereavement concerns for informed kin; graves teach burial; directed-travel/hold adapters removed | see git log |
 | M6 | pending | |
 | M7 | pending | |
 | M8 | pending | |
@@ -58,12 +58,16 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 - Unit 406 passed; all 13 integrations passed (new world scenarios: crossing invitations, danger releases both participants and the late reply cannot deliver a rumor, the player takes over a session, an urgent resident refuses the player, a commitment completes once across a world reload); backend 64 passed with `GODOT` set.
 - Behavior changes: invitations take no claims until both agree; `NpcConversation` commits require a session id.
 
+### M5 evidence
+
+- Unit 433 passed (new: `town_deaths`, `npc_recovery_task`, `npc_guard_task`, `npc_bereavement`; regression probe 4 flipped: burial before discovery/acknowledgment/pickup fails and changes nothing); all 13 integrations passed (new world scenarios: patrol → intervention → surrender → same patrol; report/recovery/burial with a reload mid-carry, one body and one grave; carrier killed leaves the body where it fell; no surviving guard → the witness defers, resumes ordinary life and the report is taken up again later); backend 64 passed with `GODOT` set.
+- Behavior changes: a witness searches guards' last-known places then help places instead of walking to the nearest living guard; a deferred report is retried after 30 minutes; recovery tasks wake their resident; old-save `directed_travel`/`hold` checkpoints are cancelled on restore (`restore_invalid`); a safety record's saved span accepts 0.001 minutes of JSON rounding.
+
 ## Remaining migration adapters
 
 - `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
-- `NpcDirectedTravelTask` / `NpcHoldTask` adapters used by `TownWatch` (patrol, investigation) and `TownFunerals` (errands, pauses). Replaced by guard/recovery tasks in M5. Encounters now use `NpcSocialTask`.
 - `TownLifeState.select_activity` activity/place/until remain as a saved context projection of the current routine/safety task (M9).
 
 ## Next step
 
-M5: guard and recovery tasks over the `TownDeaths` intent API; knowledge-based reporting; role-derived guard shifts; bereavement concerns.
+M6: memory and appraisal on the evidence inbox; move player relationship/ties reads to cognition context.

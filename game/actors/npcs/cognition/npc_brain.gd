@@ -22,6 +22,8 @@ var _seed: int = 0
 var _minute: float = 0.0
 var _dead: bool = false
 var _services: Dictionary = {}
+# Town services handed to this brain's tasks; the brain's own services always win.
+var _provided: Dictionary = {}
 # task_id -> commitment ids of a live or restoring task, resolved once when it ends.
 var _task_commitments: Dictionary = {}
 
@@ -44,9 +46,9 @@ func setup(npc_id: String, mind: NpcMindState, actor: Object, executor: Object,
 	_seed = seed_value
 	controller.register_kind(&"routine", NpcRoutineTask)
 	controller.register_kind(&"safety", NpcSafetyTask)
-	controller.register_kind(&"directed_travel", NpcDirectedTravelTask)
-	controller.register_kind(&"hold", NpcHoldTask)
 	controller.register_kind(&"social", NpcSocialTask)
+	controller.register_kind(&"guard", NpcGuardTask)
+	controller.register_kind(&"recovery", NpcRecoveryTask)
 	if not controller.transitioned.is_connected(_on_transitioned):
 		controller.transitioned.connect(_on_transitioned)
 	_services = {
@@ -55,6 +57,18 @@ func setup(npc_id: String, mind: NpcMindState, actor: Object, executor: Object,
 		&"wake_for_danger": _wake_for_danger, &"is_sleeping": _is_sleeping,
 		&"alert_active": _alert_active, &"can_move": _can_move, &"tuning": get_tuning,
 	}
+	for service: StringName in _provided:
+		if not _services.has(service):
+			_services[service] = _provided[service]
+
+## Hands a town service to this brain's tasks. The brain's own services cannot be replaced.
+func provide_service(service: StringName, callable: Callable) -> bool:
+	if service.is_empty() or not callable.is_valid() \
+		or (_services.has(service) and not _provided.has(service)):
+		return false
+	_provided[service] = callable
+	_services[service] = callable
+	return true
 
 # `minute` is the world minute; it also timestamps later requests until the next advance.
 func advance(minute: float, minutes: float) -> void:
@@ -223,8 +237,6 @@ func _activity_of(task: NpcTask) -> String:
 	match task.kind:
 		&"safety":
 			return (task.params.get("response", "") as String).to_lower()
-		&"hold":
-			return task.params.get("reason", "") as String
 		&"social":
 			return "conversation"
 	return ""

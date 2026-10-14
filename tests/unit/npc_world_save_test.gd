@@ -120,7 +120,7 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	assert_true(save.npc_seed > 0)
 	assert_ne(save.get_npc_seed(), 731)
 	assert_true(save.dead_npcs.is_empty())
-	assert_true(save.deaths.records.is_empty())
+	assert_true(save.deaths.ids().is_empty())
 	assert_true(save.justice.reports.is_empty())
 	assert_true(save.memory.snapshot(ids[0]).is_empty())
 	assert_eq(save.life.to_data(), TownLifeState.new().to_data())

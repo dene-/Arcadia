@@ -83,6 +83,13 @@ func test_children_have_school_and_play_and_guards_have_off_duty_time() -> void:
 	assert_eq(NpcRoutinePlan.current(late, 600).kind, "rest")
 	assert_eq(NpcRoutinePlan.current(late, 1200).kind, "patrol")
 	assert_eq(NpcRoutinePlan.current(early, 1300).kind, "rest")
+	var dead_night: Array[String] = ["vale_guard"]
+	var survivor: Array[Dictionary] = TownResidentSchedule.generate(town, "voss_guard", 99, 0, ["square"], dead_night)
+	assert_eq(NpcRoutinePlan.current(survivor, 1200).kind, "patrol", "The survivor takes the night watch")
+	assert_eq(NpcRoutinePlan.current(survivor, 600).kind, "rest")
+	assert_eq(TownResidentSchedule.guard_shift(town, "vale_guard", []).name, "night")
+	assert_eq(TownResidentSchedule.guard_shift(town, "voss_guard", []).name, "day")
+	assert_eq(TownResidentSchedule.guard_shift(town, "voss_guard", dead_night).name, "night")
 
 func test_households_have_distinct_reachable_bed_anchors() -> void:
 	var town := TownPopulation.new()
