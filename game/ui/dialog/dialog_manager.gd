@@ -265,9 +265,12 @@ func _begin_player_session(source: Node) -> bool:
 	var session_id: String = "player:%d" % _dialog_generation
 	if not brain.request_conversation(session_id):
 		return false
-	if not brain.request_task(NpcSocialTask.create(session_id, "player", "partner", brain.get_tuning())):
+	var task := NpcSocialTask.create(session_id, "player", "partner", brain.get_tuning())
+	if not brain.request_task(task):
 		brain.finish_conversation(session_id)
 		return false
+	# The player is already beside the resident: the session starts in conversation.
+	task.converse()
 	_session_brain = brain
 	_session_id = session_id
 	if not brain.task_finished.is_connected(_on_session_task_finished):
