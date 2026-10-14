@@ -125,6 +125,16 @@ func accepts_conversation() -> bool:
 	return not _dead and _has_actor() and (controller.current == null
 		or controller.current.priority < _tuning.caution_priority)
 
+## True while the current or suspended task outranks routine; routine planning must then leave
+## the resident to it.
+func blocks_routine() -> bool:
+	if _tuning == null:
+		return false
+	for task: NpcTask in [controller.current, controller.suspended]:
+		if task != null and task.priority > _tuning.routine_priority:
+			return true
+	return false
+
 func request_conversation(session_id: String) -> bool:
 	if session_id.is_empty() or not accepts_conversation():
 		return false

@@ -22,7 +22,7 @@ const COGNITION_DEBUG_PROPERTIES: Dictionary[String, int] = {
 	"suspended_task": TYPE_DICTIONARY, "claims": TYPE_DICTIONARY, "perceived_threats": TYPE_ARRAY,
 	"knowledge_sources": TYPE_ARRAY, "condition": TYPE_DICTIONARY, "relationships": TYPE_DICTIONARY,
 	"commitments": TYPE_ARRAY, "pending_evidence": TYPE_DICTIONARY, "request_outcomes": TYPE_ARRAY,
-	"last_save_failure": TYPE_DICTIONARY, "trace": TYPE_ARRAY,
+	"last_save_failure": TYPE_DICTIONARY, "last_save_status": TYPE_DICTIONARY, "trace": TYPE_ARRAY,
 }
 const COGNITION_DEBUG_KNOWLEDGE: int = 32
 const COGNITION_DEBUG_REQUESTS: int = 8
@@ -563,6 +563,9 @@ func try_start_enemy_attack() -> bool:
 	_attack_cooldown_remaining = npc_data.attack_cooldown
 	return true
 
+## Physical steering for this frame. A resident (`daily_routine` set) is routed by its brain's
+## task; the patrol and direct-chase branches below are non-resident mechanics for NPCs outside
+## the town simulation (scene patrollers, monsters), which have no brain or task to ask.
 func get_routine_velocity(delta: float, running: bool = false) -> Vector2:
 	var speed: float = current_run_speed() if running else current_walk_speed()
 	var motion: Vector2
@@ -826,12 +829,18 @@ func _cognition_snapshot() -> Dictionary:
 		key.append_array([brain.get_instance_id(), brain.trace.version, controller.generation,
 			controller.claims(), _cognition_task_key(controller.current),
 			_cognition_task_key(controller.suspended)])
+	var saves: NpcSaveCoordinator = cognition.saves if cognition != null else null
+	if saves != null:
+		key.append_array([saves.writes, saves.failures, saves.last_status])
 	if key == _cognition_key and not _cognition_cache.is_empty():
 		return _cognition_cache
 	var snapshot: Dictionary = {"goal_scores": {}, "current_task": {}, "suspended_task": {},
 		"claims": {}, "perceived_threats": [], "knowledge_sources": [], "condition": {},
 		"relationships": {}, "commitments": [], "pending_evidence": {}, "request_outcomes": [],
-		"last_save_failure": {}, "trace": []}
+		"last_save_failure": {}, "last_save_status": {}, "trace": []}
+	if saves != null:
+		snapshot.last_save_status = {"status": saves.last_status, "reason": String(saves.last_reason),
+			"writes": saves.writes, "failures": saves.failures, "bytes_last": saves.bytes_last}
 	if not concern.is_empty():
 		var threat: Dictionary = concern.duplicate(true)
 		threat.source = "safety_concern"

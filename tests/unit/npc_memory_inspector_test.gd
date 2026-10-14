@@ -56,7 +56,7 @@ func test_inspection_does_not_initialize_or_serialize_runtime_state() -> void:
 				assert_true(property.usage & PROPERTY_USAGE_EDITOR != 0)
 				assert_true(property.usage & PROPERTY_USAGE_READ_ONLY != 0)
 				assert_eq(property.usage & PROPERTY_USAGE_STORAGE, 0)
-	assert_eq(counts, {"runtime_memory_": 7, "runtime_cognition_": 13})
+	assert_eq(counts, {"runtime_memory_": 7, "runtime_cognition_": 14})
 	assert_true("Cognition" in groups)
 	var packed := PackedScene.new()
 	assert_eq(packed.pack(_npc), OK)

@@ -27,7 +27,8 @@ var store: NpcMemoryStore
 var decisions: NpcDecisionService
 var tuning := NpcBehaviorTuning.new()
 var persist: bool = true
-var save_callback: Callable
+## Coalesces the world-save writes for appraised evidence; arrivals are saved by their publisher.
+var saves: NpcSaveCoordinator
 ## Monotonic milliseconds for the inbox retry ladder; replaceable in tests.
 var clock: Callable = Callable(Time, "get_ticks_msec")
 ## NPC id -> {profile, current, source}: residents with evidence to appraise.
@@ -51,11 +52,9 @@ func observe(profile: NpcProfile, current: Dictionary, observation: NpcObservati
 	if not inbox.enqueue(observation):
 		return # Invalid or already known: a replay must not appraise or display twice.
 	if not inbox.contains_pending(observation.observation_id):
-		_save() # Counted into an earlier noise item of the same incident; nothing to appraise.
-		return
+		return # Counted into an earlier noise item of the same incident; nothing to appraise.
 	_remember_arrival(observation.observation_id)
 	store.record_observation(profile, observation.to_event(), observation.observed_minute)
-	_save()
 	resume(profile, current, source)
 
 func resume(profile: NpcProfile, current: Dictionary, source: BaseNpc = null) -> void:
@@ -130,7 +129,7 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 	var current: Dictionary = NpcCognitiveContext.for_consumer(NpcCognitiveContext.REACTION, job.current)
 	if source != null:
 		current = source.get_cognitive_context(NpcCognitiveContext.REACTION, ["player"])
-	var state: Dictionary = store.snapshot(id)
+	var state: Dictionary = store.working_memory(id)
 	current.recent_events = []
 	current.past_observations = NpcCognitiveContext.observations(
 		state.get("observations", []).filter(func(item: Dictionary) -> bool:
@@ -148,9 +147,8 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 	ticket.read_versions = {"knowledge": mind.knowledge.version,
 		"relationships": mind.relationships.version,
 		"condition": mind.condition_version(store.world_minute)}
-	var memories: Array = NpcMemoryRetriever.new().retrieve(state.get("memories", []),
-		observation.text, current, job.profile.get_cognition(), store.world_minute,
-		NpcMemoryRetriever.links_for(current))
+	var memories: Array = store.recall(id, NpcMemoryRetriever.new(), observation.text, current,
+		job.profile.get_cognition(), NpcMemoryRetriever.links_for(current))
 	var result: NpcDecisionResult = await decisions.evaluate(ticket, {"evidence": [evidence],
 		"subjects": subjects, "state": _bounded_state({"npc": job.profile.to_backend_profile(),
 			"relationships": _relationships(mind, subjects), "current": current,
@@ -187,7 +185,7 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 		and not _speaking.has(id)
 	if not speaks:
 		_arrivals.erase(observation.observation_id)
-	_save()
+	_save(&"observation_assessed")
 	observation_assessed.emit()
 	if speaks:
 		# Optional speech must not hold up any NPC's memory assessment.
@@ -224,7 +222,7 @@ func _deliver_speech(id: String, job: Dictionary, observation: NpcObservation,
 		appraisal: NpcDecisionPolicy.Appraisal, diagnostic: Dictionary) -> void:
 	diagnostic.speech_result = await _speak(id, job, observation, appraisal)
 	store.annotate_observation(id, observation.observation_id, diagnostic)
-	_save()
+	_save(&"observation_spoken")
 	_speaking.erase(id)
 	_arrivals.erase(observation.observation_id)
 	progressed.emit()
@@ -422,12 +420,10 @@ static func _is_id(value: String) -> bool:
 	return value.length() >= 1 and value.length() <= 100 \
 		and RegEx.create_from_string("^[A-Za-z0-9_:-]+$").search(value) != null
 
-func _save() -> void:
+func _save(reason: StringName) -> void:
 	if not persist:
 		return
-	if not save_callback.is_valid():
-		push_error("NPC event processor cannot persist without a save callback.")
+	if saves == null:
+		push_error("NPC event processor cannot persist without a save coordinator.")
 		return
-	var error: Error = save_callback.call()
-	if error != OK:
-		push_warning("NPC observation could not be saved: %s" % error)
+	saves.request(reason)

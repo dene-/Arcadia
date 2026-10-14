@@ -12,7 +12,8 @@ extends NpcTask
 ## Town services: guard_on_duty() -> bool; guard_patrol(stop) -> {stop, space, x, y, label};
 ## guard_reports() -> Array of own TownJustice reports; guard_leads() -> Array of
 ## {subject, minute, until, space?, x?, y?}; guard_sees(subject) -> bool;
-## guard_engage(subject) -> bool; guard_disengage(); guard_duty(activity, label).
+## guard_engage(subject) -> bool; guard_disengage(). The activity and place label the guard shows
+## are `duty()`; the town projects them like it does a routine task's params.
 
 const PHASE_PATROL: String = "patrol"
 const PHASE_INVESTIGATE: String = "investigate"
@@ -58,10 +59,9 @@ func _on_suspend(context: NpcTaskContext) -> void:
 func confirmed_engagement() -> StringName:
 	return &"patrol" if _on_route and status == Status.RUNNING and phase == PHASE_PATROL else &""
 
-# Travel and the routine's activity label were lost while suspended or saved.
+# Travel was lost while suspended or saved.
 func _on_resume(context: NpcTaskContext) -> NpcTaskResult:
 	progress.erase("target")
-	progress.erase("duty")
 	return _decide(context)
 
 func _on_cancel(context: NpcTaskContext, _reason: StringName) -> void:
@@ -111,7 +111,7 @@ func _decide(context: NpcTaskContext) -> NpcTaskResult:
 		return _investigate(context, lead)
 	if _standing_down(reports, context.minute):
 		priority = tuning.caution_priority
-		_set_phase(context, PHASE_SURRENDERED, PHASE_INVESTIGATE)
+		_set_phase(context, PHASE_SURRENDERED)
 		_release_travel(context)
 		return NpcTaskResult.running()
 	if context.call_service(&"guard_on_duty") != true:
@@ -124,19 +124,18 @@ func _enforce(context: NpcTaskContext, report: Dictionary) -> NpcTaskResult:
 	var subject: String = report["suspect"] as String
 	progress["subject"] = subject
 	if report["status"] == "combat" and context.call_service(&"guard_sees", [subject]) == true:
-		_set_phase(context, PHASE_INTERVENE, PHASE_INVESTIGATE)
+		_set_phase(context, PHASE_INTERVENE)
 		_release_travel(context)
 		if context.call_service(&"guard_engage", [subject]) == true:
 			progress["engaged"] = true
 		return NpcTaskResult.running()
 	_disengage(context)
-	_set_phase(context, PHASE_PURSUE if report["status"] == "combat" else PHASE_WARN,
-		PHASE_INVESTIGATE)
+	_set_phase(context, PHASE_PURSUE if report["status"] == "combat" else PHASE_WARN)
 	_approach_known(context, subject)
 	return NpcTaskResult.running()
 
 func _investigate(context: NpcTaskContext, lead: Dictionary) -> NpcTaskResult:
-	_set_phase(context, PHASE_INVESTIGATE, PHASE_INVESTIGATE)
+	_set_phase(context, PHASE_INVESTIGATE)
 	if lead.has_all(["space", "x", "y"]):
 		_go(context, StringName(lead["space"] as String), Vector2(float(lead["x"]), float(lead["y"])))
 	elif not _approach_known(context, lead["subject"] as String):
@@ -146,7 +145,7 @@ func _investigate(context: NpcTaskContext, lead: Dictionary) -> NpcTaskResult:
 func _patrol(context: NpcTaskContext) -> NpcTaskResult:
 	if not progress.has("patrol") and not _next_stop(context):
 		return _finish(context, &"no_route")
-	_set_phase(context, PHASE_PATROL, PHASE_PATROL)
+	_set_phase(context, PHASE_PATROL)
 	var state: StringName = _go(context, _stop_space(), _stop_point())
 	if state == &"arrived" or state == &"failed":
 		if not _next_stop(context):
@@ -240,7 +239,7 @@ func _go(context: NpcTaskContext, space: StringName, point: Vector2) -> StringNa
 func _issue(context: NpcTaskContext, space: StringName, point: Vector2) -> StringName:
 	if context.call_service(&"can_move") != true:
 		return &"waiting"
-	var label: String = progress.get("duty_label", params["label"]) as String
+	var label: String = duty()[1]
 	if context.call_service(&"travel", [space, point, label, task_id]) != true:
 		return _arrive(context, &"failed")
 	return &"traveling"
@@ -264,8 +263,7 @@ func _next_stop(context: NpcTaskContext) -> bool:
 	progress["stop"] = int(data["stop"])
 	progress["patrol"] = {"space": String(data["space"]), "x": float(data["x"]),
 		"y": float(data["y"]), "label": String(data["label"])}
-	progress.erase("duty")
-	_set_phase(context, PHASE_PATROL, PHASE_PATROL)
+	_set_phase(context, PHASE_PATROL)
 	return true
 
 func _stop_space() -> StringName:
@@ -276,22 +274,24 @@ func _stop_point() -> Vector2:
 
 # --- Town effects ---
 
-func _set_phase(context: NpcTaskContext, next: String, activity: String) -> void:
+func _set_phase(context: NpcTaskContext, next: String) -> void:
 	if phase != next:
 		_release_travel(context)
 	phase = next
-	var label: String = params["label"] as String
-	if next == PHASE_PATROL and progress.has("patrol"):
-		label = progress["patrol"]["label"] as String
-	if progress.get("duty") != [activity, label]:
-		progress["duty"] = [activity, label]
-		progress["duty_label"] = label
-		context.call_service(&"guard_duty", [activity, label])
 
 func _disengage(context: NpcTaskContext) -> void:
 	if progress.get("engaged") == true:
 		progress.erase("engaged")
 		context.call_service(&"guard_disengage")
+
+## The activity and place label the guard shows: [activity, label]. A guard that has not decided
+## yet is on its patrol.
+func duty() -> Array[String]:
+	if phase.is_empty() or phase == PHASE_PATROL:
+		var stop: Variant = progress.get("patrol")
+		var label: String = stop["label"] as String if stop is Dictionary else params["label"] as String
+		return [PHASE_PATROL, label]
+	return [PHASE_INVESTIGATE, params["label"] as String]
 
 static func _list(value: Variant) -> Array:
 	return value if value is Array else []

@@ -163,7 +163,7 @@ func save_effects(save: NpcWorldSave) -> Dictionary:
 ## Returns {"error", "before", "after", "effects_before", "effects_after"}; before/after are JSON-normalized.
 func reload_save() -> Dictionary:
 	var save: NpcWorldSave = save_game()
-	var error: Error = save.save_file()
+	var error: Error = OK if _cognition.saves.flush(&"test_reload") else _cognition.saves.last_status
 	var before: Dictionary = _normalize(save.to_data())
 	var effects_before: Dictionary = _normalize(save_effects(save))
 	var reloaded := NpcWorldSave.new()
@@ -178,7 +178,7 @@ func reload_save() -> Dictionary:
 ## Awaitable. Writes the save, frees the world, reads the save file back into the live NpcWorldSave
 ## and loads a fresh world from it, as a restart would. Returns null if the reload failed.
 func reload_world() -> Node:
-	life.save_snapshot()
+	_cognition.saves.flush(&"test_checkpoint")
 	world.queue_free()
 	await tree.process_frame
 	await tree.process_frame

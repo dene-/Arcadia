@@ -62,7 +62,7 @@ func _ready() -> void:
 
 	var cognition: Node = get_node("/root/NpcCognition")
 	_conversation.store = cognition.store
-	_conversation.save_callback = cognition.save_game.save_file
+	_conversation.saves = cognition.saves
 	_decisions = cognition.decisions
 	_events = cognition.events
 	_npc_seed = cognition.save_game.get_npc_seed()
@@ -356,9 +356,7 @@ func record_npc_event(profile: NpcProfile, event: String) -> void:
 	if profile == null or profile.npc_id.is_empty():
 		return
 	_conversation.store.record_event(profile, event)
-	var error: Error = _conversation.save_callback.call()
-	if error != OK:
-		push_warning("NPC event could not be saved: %s" % error)
+	_conversation.saves.request(&"npc_event")
 
 func get_memory_store() -> NpcMemoryStore:
 	return _conversation.store

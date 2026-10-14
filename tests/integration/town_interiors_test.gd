@@ -93,7 +93,7 @@ func _run() -> void:
 		buildings.move_player(player, StringName("home:" + room.resident_id))
 		await physics_frame
 		await physics_frame
-	life._save()
+	cognition.saves.flush(&"test_checkpoint")
 	var sleeping_save: Dictionary = cognition.save_game.to_data()
 	var restored := NpcWorldSave.new()
 	restored.path = cognition.save_game.path

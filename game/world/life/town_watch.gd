@@ -130,7 +130,7 @@ func _notice(guard: BaseNpc, id: String, suspect: BaseActor, kind: String) -> vo
 		speech.say(guard, "warn", WARNING_EVENTS.get(kind, "The player is threatening townsfolk nearby."), "sight",
 			lines[abs(hash(id)) % lines.size()], null, true)
 	life.save_game.life.interrupt(id)
-	life.save_game.save_file()
+	life.saves.request(&"watch_notice")
 	_prompt(id)
 
 func _hear(id: String, source: BaseActor) -> void:
@@ -154,22 +154,16 @@ func _accept_surrender(player: BasePlayer) -> void:
 				SURRENDER_FALLBACK, null, true)
 			life.save_game.life.interrupt(id)
 			_prompt(id)
-	life.save_game.save_file()
+	life.saves.request(&"surrender")
 
-## Keeps an on-duty guard on its watch task. True while the guard is busy with the watch.
-func maintain(npc: BaseNpc, id: String) -> bool:
-	if not npc.is_in_group(&"town_guards"):
-		return false
-	if npc.alert_response.active():
-		return true
+## Requests the watch task for an on-duty guard that has none; the brain's priorities decide
+## whether it runs.
+func maintain(npc: BaseNpc, id: String) -> void:
+	if not npc.is_in_group(&"town_guards") or npc.alert_response.active():
+		return
 	var brain: NpcBrain = life.brain_for(id)
-	if brain == null:
-		return npc.has_enemy_target()
-	var on_duty: bool = _on_duty(id)
-	if on_duty and _guard_task(brain) == null and npc.can_follow_routine():
+	if brain != null and _on_duty(id) and _guard_task(brain) == null and npc.can_follow_routine():
 		_request(id, brain, false)
-	var current: NpcTask = brain.controller.current
-	return on_duty or npc.has_enemy_target() or (current != null and current.kind == &"guard")
 
 ## After a reload: a restored guard task continues from its saved stop.
 func reconcile(id: String, brain: NpcBrain) -> void:
@@ -227,7 +221,6 @@ func _provide(brain: NpcBrain, guard: BaseNpc, id: String) -> void:
 	brain.provide_service(&"guard_sees", _sees.bind(guard))
 	brain.provide_service(&"guard_engage", _engage.bind(guard))
 	brain.provide_service(&"guard_disengage", _disengage.bind(guard))
-	brain.provide_service(&"guard_duty", _duty.bind(guard))
 
 func _reports(id: String) -> Array[Dictionary]:
 	return life.save_game.justice.known_to(id)
@@ -265,11 +258,6 @@ func _engage(subject: String, guard: BaseNpc) -> bool:
 func _disengage(guard: BaseNpc) -> void:
 	if not guard.is_fighting_monster():
 		guard.clear_enforcement_target()
-
-func _duty(activity: String, label: String, guard: BaseNpc) -> void:
-	if guard.daily_routine != null:
-		guard.daily_routine.activity = activity
-		guard.daily_routine.place = label
 
 func _actor(subject: String) -> BaseActor:
 	if subject != "player":

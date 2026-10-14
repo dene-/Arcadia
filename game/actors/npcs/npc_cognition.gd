@@ -9,6 +9,8 @@ var backend: DialogBackendClient
 ## Owner of every v2 cognition and optional-speech request; its transport is `backend`.
 var decisions: NpcDecisionService
 var events: NpcEventProcessor
+## The only writer of `save_game`; every change asks it to save.
+var saves: NpcSaveCoordinator
 var perception := NpcPerceptionRouter.new()
 var ambient := NpcAmbientHistory.new()
 var _next_retry_msec: int = 0
@@ -18,6 +20,10 @@ func _ready() -> void:
 	var error: Error = save_game.load_file()
 	if error != OK:
 		push_warning("NPC memory save could not be loaded: %s" % error)
+	saves = NpcSaveCoordinator.new()
+	saves.name = "Saves"
+	saves.save_game = save_game
+	add_child(saves)
 	backend = DialogBackendClient.new()
 	add_child(backend)
 	decisions = NpcDecisionService.new()
@@ -26,7 +32,7 @@ func _ready() -> void:
 	events = NpcEventProcessor.new()
 	events.store = store
 	events.decisions = decisions
-	events.save_callback = save_game.save_file
+	events.saves = saves
 	events.perception_classified.connect(_on_perception_classified)
 	add_child(events)
 	get_node("/root/WorldEvents").occurred.connect(_on_world_event)
@@ -72,9 +78,11 @@ func _on_world_event(event: WorldEvent) -> void:
 		var current: Dictionary = observer.get_cognitive_context()
 		current.world_minute = save_game.life.minute
 		events.observe(observer.get_npc_profile(), current, observation, observer)
-	var error: Error = save_game.save_file()
-	if error != OK:
-		push_warning("NPC world could not be saved: %s" % error)
+	# Death is a critical transition; any other world event joins the pending write.
+	if event.kind == &"actor_died" and event.subject is BaseNpc:
+		saves.flush(&"death")
+	else:
+		saves.request(&"world_event")
 
 ## Drives the evidence retry ladder in real time, independent of simulation speed.
 func _process(_delta: float) -> void:

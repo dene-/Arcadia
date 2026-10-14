@@ -64,7 +64,6 @@ class FakeWatch extends RefCounted:
 	var leads: Array[Dictionary] = []
 	var visible: Array[String] = []
 	var engaged: String = ""
-	var duties: Array[Array] = []
 	var patrols: Array[int] = []
 
 	func provide(brain: NpcBrain) -> void:
@@ -75,8 +74,6 @@ class FakeWatch extends RefCounted:
 		brain.provide_service(&"guard_sees", func(subject: String) -> bool: return subject in visible)
 		brain.provide_service(&"guard_engage", _engage)
 		brain.provide_service(&"guard_disengage", func() -> void: engaged = "")
-		brain.provide_service(&"guard_duty", func(activity: String, label: String) -> void:
-			duties.append([activity, label]))
 
 	func _patrol(stop: int) -> Dictionary:
 		var index: int = posmod(stop, 4)
@@ -87,9 +84,6 @@ class FakeWatch extends RefCounted:
 	func _engage(subject: String) -> bool:
 		engaged = subject
 		return true
-
-	func activity() -> String:
-		return duties[duties.size() - 1][0] if not duties.is_empty() else ""
 
 class Rig extends RefCounted:
 	var brain := NpcBrain.new()
@@ -134,7 +128,7 @@ func test_patrol_continues_from_the_stop_after_the_origin_and_cycles() -> void:
 	assert_eq(rig.phase(), "patrol")
 	assert_eq(rig.watch.patrols, [3] as Array[int])
 	assert_eq(rig.executor.last_point(), Vector2(300.0, 10.0))
-	assert_eq(rig.watch.duties, [["patrol", "patrol stop 3"]] as Array[Array])
+	assert_eq(task.duty(), ["patrol", "patrol stop 3"] as Array[String])
 	rig.executor.arrive()
 	rig.tick(105.0)
 	assert_eq(rig.watch.patrols, [3, 0] as Array[int])
@@ -160,7 +154,7 @@ func test_a_warning_heads_for_the_last_perceived_location_not_the_live_one() -> 
 	rig.tick(100.0)
 	assert_eq(rig.phase(), "warn")
 	assert_eq(task.priority, rig.tuning.caution_priority)
-	assert_eq(rig.watch.activity(), "investigate")
+	assert_eq(task.duty(), ["investigate", "the watch"] as Array[String])
 	assert_eq(rig.executor.last_point(), Vector2(40.0, 50.0))
 	rig.watch.visible = ["player"]
 	rig.tick(101.0)
@@ -208,7 +202,7 @@ func test_surrender_stops_enforcement_and_the_patrol_resumes_at_its_stop() -> vo
 	assert_eq(task.priority, rig.tuning.routine_priority)
 	assert_eq(rig.watch.patrols, [2] as Array[int], "the interrupted stop is kept")
 	assert_eq(rig.executor.last_point(), Vector2(200.0, 10.0))
-	assert_eq(rig.watch.activity(), "patrol")
+	assert_eq(task.duty(), ["patrol", "patrol stop 2"] as Array[String])
 	rig.dispose()
 
 func test_a_heard_lead_is_investigated_where_it_was_heard_without_force() -> void:
@@ -258,7 +252,8 @@ func test_a_suspended_watch_releases_force_and_a_restored_patrol_resumes() -> vo
 	assert_eq(restored.brain.current_activity()["task_id"], task.task_id)
 	assert_eq(restored.watch.patrols, [] as Array[int], "continues to the saved stop")
 	assert_eq(restored.executor.last_point(), Vector2(100.0, 10.0))
-	assert_eq(restored.watch.activity(), "patrol")
+	assert_eq((restored.brain.controller.current as NpcGuardTask).duty(),
+		["patrol", "patrol stop 1"] as Array[String])
 	rig.dispose()
 	restored.dispose()
 

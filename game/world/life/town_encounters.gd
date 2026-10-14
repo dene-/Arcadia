@@ -26,7 +26,7 @@ var state: TownLifeState
 var store: NpcMemoryStore
 var decisions: NpcDecisionService
 var seed_value: int
-var save_callback: Callable
+var saves: NpcSaveCoordinator
 ## Returns the NpcBrain for a resident id (or null).
 var brains: Callable
 var tuning: NpcBehaviorTuning
@@ -360,13 +360,13 @@ func _state(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 	var other: NpcProfile = listener.get_npc_profile()
 	var other_id: String = String(other.npc_id)
 	store.ensure_npc(profile)
-	var memory: Dictionary = store.snapshot(String(profile.npc_id))
+	var memory: Dictionary = store.working_memory(String(profile.npc_id))
 	var raw: Dictionary = speaker.get_cognitive_context(NpcCognitiveContext.SOCIAL, [other_id])
 	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
 	current.participants = [String(profile.npc_id), other_id]
-	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
+	current.memories = store.recall(String(profile.npc_id), NpcMemoryRetriever.new(),
 		other.profile_name + " " + str(current.get("activity", "")), current,
-		profile.get_cognition(), store.world_minute, NpcMemoryRetriever.links_for(raw))
+		profile.get_cognition(), NpcMemoryRetriever.links_for(raw))
 	return {"npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
 		"listener": {"id": String(other.npc_id), "name": other.profile_name, "job": other.job,
 			"activity": listener.daily_routine.activity},
@@ -440,7 +440,5 @@ func _refresh_knowledge(npc: BaseNpc, id: String) -> void:
 	npc.life_context.town_rumors = state.rumors.get_known(id, state.minute).slice(-4)
 
 func _save() -> void:
-	if save_callback.is_valid():
-		var error: Error = save_callback.call()
-		if error != OK:
-			push_warning("Social exchange could not be saved: %s" % error)
+	if saves != null:
+		saves.request(&"social_exchange")

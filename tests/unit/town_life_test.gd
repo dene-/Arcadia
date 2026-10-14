@@ -488,3 +488,19 @@ func test_open_searches_survive_a_world_save_round_trip() -> void:
 	assert_eq(checks[0].place, "work:" + RELATIVE)
 	resumed.free()
 	town.free()
+
+func test_a_guard_is_shown_the_activity_its_watch_reports() -> void:
+	var town: TownLife = _town(600.0)
+	var routine := NpcDailyRoutine.new()
+	routine.activity = "rest"
+	var guard := NpcGuardTask.create(0, "the watch", town.tuning, false)
+	town._show_activity(guard, routine)
+	assert_eq([routine.activity, routine.place], ["patrol", "the watch"], "before its first decision")
+	guard.phase = NpcGuardTask.PHASE_WARN
+	town._show_activity(guard, routine)
+	assert_eq(routine.activity, "investigate")
+	guard.phase = NpcGuardTask.PHASE_PATROL
+	guard.progress["patrol"] = {"space": "outdoors", "x": 0.0, "y": 0.0, "label": "the bridge"}
+	town._show_activity(guard, routine)
+	assert_eq([routine.activity, routine.place], ["patrol", "the bridge"])
+	town.free()

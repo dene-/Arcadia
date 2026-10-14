@@ -14,6 +14,9 @@ var world_minute: float = 480.0
 var _states: Dictionary = {}
 var _next_memory_id: int = 1
 var _revisions: Dictionary[String, int] = {}
+# Per resident: {"keys": index key -> {memory id: true}, "memories": id -> archive memory,
+# "order": id -> archive position}. Kept on admit and rebuilt on consolidation and load.
+var _recall_index: Dictionary = {}
 ## Owner of directed relationships; NpcWorldSave shares one instance with TownLifeState.
 var minds: NpcMindStore = NpcMindStore.new()
 
@@ -40,11 +43,75 @@ func ensure_npc(profile: NpcProfile) -> void:
 		NpcMemory.anchor_legacy(memory, world_minute)
 	_states[id] = {"recent_dialogue": [], "memories": memories, "recent_events": [],
 		"observations": [], "next_observation_id": 1, "heard_origins": {}}
+	_reindex(id)
 	_changed(id)
 
-## A copy of the resident's memory state. Relationships live only in `minds`.
+## A copy of the resident's memory state, archive included. Diagnostics and tests only: decisions
+## use the bounded `working_memory` and `recall`.
 func snapshot(npc_id: String) -> Dictionary:
 	return _states.get(npc_id, {}).duplicate(true)
+
+## Copies of the bounded short-term windows (`recent_dialogue`, `recent_events`, `observations`)
+## that NpcCognitiveContext.build reads; {} for an unknown resident.
+func working_memory(npc_id: String) -> Dictionary:
+	if not _states.has(npc_id):
+		return {}
+	var state: Dictionary = _states[npc_id]
+	return {"recent_dialogue": state.recent_dialogue.duplicate(true),
+		"recent_events": state.recent_events.duplicate(),
+		"observations": state.observations.duplicate(true)}
+
+## `retriever.retrieve` over only the archive memories the cue can reach through the index,
+## which selects exactly what it selects over the whole archive, at the store's world minute.
+func recall(npc_id: String, retriever: NpcMemoryRetriever, message: String, current: Dictionary,
+		cognition: NpcCognitionProfile, links: NpcMemoryRetriever.Links = null) -> Array[Dictionary]:
+	if not _recall_index.has(npc_id):
+		return []
+	var index: Dictionary = _recall_index[npc_id]
+	var memories: Array = []
+	for id: String in recall_candidates(npc_id, retriever.cue_keys(message, current, links)):
+		memories.append(index.memories[id])
+	return retriever.retrieve(memories, message, current, cognition, world_minute, links)
+
+## Ids of the archive memories carrying one of `keys` (NpcMemoryRetriever.cue_keys) and of every
+## memory of their incidents, in archive order.
+func recall_candidates(npc_id: String, keys: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	if not _recall_index.has(npc_id):
+		return result
+	var index: Dictionary = _recall_index[npc_id]
+	var found: Dictionary = {}
+	for key: Variant in keys:
+		found.merge(index.keys.get(key, {}))
+	for id: String in found.keys():
+		var incident: String = NpcMemoryRetriever.incident_of(index.memories[id])
+		if not incident.is_empty():
+			found.merge(index.keys.get("i:" + incident, {}))
+	result.assign(found.keys())
+	var order: Dictionary = index.order
+	result.sort_custom(func(a: String, b: String) -> bool: return order[a] < order[b])
+	return result
+
+func _reindex(npc_id: String) -> void:
+	_recall_index[npc_id] = {"keys": {}, "memories": {}, "order": {}}
+	for memory: Dictionary in _states[npc_id].memories:
+		_index_memory(npc_id, memory)
+
+func _index_memory(npc_id: String, memory: Dictionary) -> void:
+	var index: Dictionary = _recall_index[npc_id]
+	index.order[memory.id] = index.memories.size()
+	index.memories[memory.id] = memory
+	var keys: PackedStringArray = NpcMemoryRetriever.memory_keys(memory)
+	var incident: String = NpcMemoryRetriever.incident_of(memory)
+	if not incident.is_empty():
+		keys.append("i:" + incident)
+	for key: String in keys:
+		_index_key(index, key, memory.id)
+
+static func _index_key(index: Dictionary, key: String, memory_id: String) -> void:
+	if not index.keys.has(key):
+		index.keys[key] = {}
+	index.keys[key][memory_id] = true
 
 ## Runtime invalidation token. Diagnostics and other NPCs cannot invalidate a response.
 func revision(npc_id: String) -> int:
@@ -107,6 +174,7 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 	memory.chain = _speakers(account.get("chain", []), String(profile.npc_id))
 	if NpcMemory.is_valid(memory):
 		state.memories.append(memory)
+		_index_memory(String(profile.npc_id), memory)
 
 # Rumor chain (originator first, listener last) as the speakers before `listener`, newest first.
 static func _speakers(chain: Variant, listener: String) -> Array[String]:
@@ -160,6 +228,7 @@ func maintain(live_origins: Dictionary, minute: float) -> Dictionary:
 		result.memories_merged += merged
 		# Only the archive feeds responses; forgotten receipts cannot invalidate one.
 		if merged > 0:
+			_reindex(npc_id)
 			_changed(npc_id)
 	return result
 
@@ -265,7 +334,7 @@ func commit_evidence(npc_id: String, observation: NpcObservation,
 		if topics.is_empty():
 			topics.append(String(observation.kind) if observation.kind != &"unknown" else "event")
 		var report: bool = observation.modality == NpcObservation.Modality.SPOKEN_REPORT
-		_admit(state.memories, {"type": "episodic",
+		_admit(npc_id, {"type": "episodic",
 			"source": "hearsay" if report else "observed_event",
 			"gist": observation.text, "topics": topics, "people": people.slice(0, 8),
 			"sensory_cues": observation.cues.slice(0, 8)},
@@ -376,7 +445,7 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 	var previous_count: int = state.memories.size()
 	if speech.remember:
 		for proposal: Variant in result.get("memory_writes", []):
-			_admit(state.memories, proposal, {"importance": speech.importance,
+			_admit(npc_id, proposal, {"importance": speech.importance,
 				"emotional_intensity": speech.emotional_intensity,
 				"update_belief": speech.update_belief})
 	# Only consume the events included in this exchange, preserving any arriving in flight.
@@ -437,9 +506,11 @@ func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 	for id: String in _revisions.keys():
 		_changed(id)
 	# Memory shapes are strict: saves from older versions are upgraded by NpcSaveMigration.
-	for state: Dictionary in _states.values():
-		for memory: Dictionary in state.memories:
+	_recall_index.clear()
+	for id: String in _states:
+		for memory: Dictionary in _states[id].memories:
 			NpcMemory.anchor_legacy(memory, load_minute)
+		_reindex(id)
 	turn = int(data.turn)
 	world_minute = load_minute
 	_next_memory_id = int(data.next_memory_id)
@@ -484,7 +555,7 @@ static func is_valid_result(result: Dictionary) -> bool:
 		and NpcMemory.is_text_list(result.get("recalled_memory_ids"))
 
 ## `evidence` holds the NpcMemory evidence fields of perceived evidence, never model output.
-func _admit(memories: Array, proposal: Variant, policy: Dictionary, evidence: Dictionary = {}) -> void:
+func _admit(npc_id: String, proposal: Variant, policy: Dictionary, evidence: Dictionary = {}) -> void:
 	if not proposal is Dictionary:
 		return
 	var memory: Dictionary = NpcMemory.create("mem:%d" % _next_memory_id,
@@ -510,6 +581,7 @@ func _admit(memories: Array, proposal: Variant, policy: Dictionary, evidence: Di
 	if not NpcMemory.is_valid(memory):
 		return
 	# Hearing a report and seeing the event stay distinct memories, as do separate incidents.
+	var memories: Array = _states[npc_id].memories
 	for existing: Dictionary in memories:
 		if existing.gist.to_lower() == memory.gist.to_lower() and existing.source == memory.source \
 				and existing.get("modality", "") == memory.get("modality", "") \
@@ -520,8 +592,10 @@ func _admit(memories: Array, proposal: Variant, policy: Dictionary, evidence: Di
 				if not evidence_id in ids and ids.size() < NpcMemory.MAX_EVIDENCE_IDS:
 					ids.append(evidence_id)
 					existing.evidence_ids = ids
+					_index_key(_recall_index[npc_id], "ev:" + evidence_id, existing.id)
 			return
 	memories.append(memory)
+	_index_memory(npc_id, memory)
 	_next_memory_id += 1
 
 func _valid_history(value: Variant) -> bool:

@@ -20,6 +20,8 @@ const GRAVE_STAND_OFFSET := Vector2(0, 12)
 @export_range(0.0, 10.0, 0.1) var minutes_per_second: float = 1.5
 @export_range(1, 12, 1) var max_decision_workers: int = 4
 var save_game: NpcWorldSave
+## Writes `save_game`; this node refreshes positions and task checkpoints before each write.
+var saves: NpcSaveCoordinator
 var decisions: NpcDecisionService
 var navigation := TownNavigation.new()
 var encounters: TownEncounters
@@ -37,7 +39,6 @@ var _public_people: Array[Dictionary] = []
 var _pending: Dictionary = {}
 var _revisions: Dictionary = {}
 var _tick: float = 0.0
-var _save_elapsed: float = 0.0
 # Game hour whose memory and receipt upkeep already ran.
 var _maintained_hour: int = -1
 # (observer|target) -> {space, position, minute}: last sighting recorded, to throttle re-recording.
@@ -57,6 +58,7 @@ func _ready() -> void:
 	save_game.population.ensure_population(save_game.region_seed)
 	save_game.economy.ensure_households(save_game.population, save_game.life.minute)
 	decisions = cognition.decisions
+	saves = cognition.saves
 	decisions.request_settled.connect(_on_request_settled)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -90,7 +92,7 @@ func _ready() -> void:
 	encounters.store = save_game.memory
 	encounters.decisions = decisions
 	encounters.seed_value = save_game.get_npc_seed()
-	encounters.save_callback = _save
+	encounters.saves = saves
 	encounters.brains = brain_for
 	encounters.tuning = tuning
 	add_child(encounters)
@@ -135,7 +137,9 @@ func _ready() -> void:
 	buildings.player_space_changed.connect(_update_environment)
 	_update_environment()
 	_initialized = true
-	_save()
+	saves.add_snapshot_hook(_snapshot)
+	saves.write_failed.connect(_on_write_failed)
+	saves.request(&"town_ready")
 	set_process(true)
 
 func _process(delta: float) -> void:
@@ -144,7 +148,6 @@ func _process(delta: float) -> void:
 	funerals.advance(delta)
 	save_game.economy.settle(save_game.life.minute, save_game.population, save_game.dead_npcs)
 	_tick += delta
-	_save_elapsed += delta
 	for id: String in _actors.keys():
 		if not is_instance_valid(_actors[id]):
 			navigation.release(id)
@@ -168,6 +171,9 @@ func _process(delta: float) -> void:
 		_advance_needs(npc, id, elapsed_minutes)
 		buildings.advance(npc, id)
 		_brains[id].advance(save_game.life.minute, elapsed_minutes)
+		var running: NpcTask = _brains[id].controller.current
+		if running is NpcGuardTask:
+			_show_activity(running, npc.daily_routine) # Its phase changes between transitions.
 		# Door transfers and scheduled waking belong to the running task, not an interruption.
 		_revisions[id] = npc.life_revision
 	if _tick < 1.0:
@@ -181,12 +187,12 @@ func _process(delta: float) -> void:
 		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"],
 			save_game.population, save_game.dead_npcs)
 		# Each system only requests tasks; the brain's priorities settle who moves the resident.
-		var engaged: bool = watch.maintain(npc, id)
-		engaged = funerals.maintain(npc, id) or engaged
-		engaged = _maintain_safety(npc, id) or engaged
+		watch.maintain(npc, id)
+		funerals.maintain(npc, id)
+		_maintain_safety(npc, id)
 		_maintain_commitments(id)
 		_update_context(npc, id)
-		if not engaged and _routine_due(id) and npc.can_follow_routine() and not encounters.is_busy(id) \
+		if _routine_due(id) and npc.can_follow_routine() and not encounters.is_busy(id) \
 			and not _pending.has(id) and _pending.size() < max_decision_workers:
 			_plan_routine(npc, id)
 	# Rotate ordering deterministically so low-ID residents do not always initiate.
@@ -208,9 +214,7 @@ func _process(delta: float) -> void:
 		_maintained_hour = hour
 		save_game.memory.maintain(save_game.life.rumors.live_origins(save_game.life.minute),
 			save_game.life.minute)
-	if _save_elapsed >= 15.0:
-		_save_elapsed = 0.0
-		_save()
+		saves.request(&"hourly_upkeep")
 
 func _update_environment() -> void:
 	_clock.text = save_game.life.clock_text()
@@ -226,7 +230,9 @@ func _exit_tree() -> void:
 	for request_id: String in _pending.values():
 		decisions.cancel(request_id)
 	if _initialized:
-		_save()
+		saves.flush(&"scene_exit")
+		saves.remove_snapshot_hook(_snapshot)
+		saves.write_failed.disconnect(_on_write_failed)
 	for id: String in _actors:
 		if is_instance_valid(_actors[id]):
 			_actors[id].daily_routine = null
@@ -319,15 +325,14 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, save_game.life.minute)
 	var options: Array[Dictionary] = _options(id, preferred)
 	save_game.memory.ensure_npc(npc.get_npc_profile())
-	var memory: Dictionary = save_game.memory.snapshot(id)
+	var memory: Dictionary = save_game.memory.working_memory(id)
 	var raw: Dictionary = npc.get_cognitive_context(NpcCognitiveContext.DECISION, ["player"])
 	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
 	current.participants = [id]
-	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
+	current.memories = save_game.memory.recall(id, NpcMemoryRetriever.new(),
 		str(current.get("activity", "")) + " " + preferred.kind + " "
 		+ str(current.get("safety_response", {}).get("concern", "")),
-		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute,
-		NpcMemoryRetriever.links_for(raw))
+		current, npc.get_npc_profile().get_cognition(), NpcMemoryRetriever.links_for(raw))
 	var mind: NpcMindState = save_game.minds.get_mind(id)
 	var ticket := NpcDecisionTicket.create(id, NpcDecisionTicket.SELECT_GOAL)
 	ticket.task_id = "routine:" + id
@@ -382,7 +387,7 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	save_game.life.select_activity(id, selected, duration)
 	_request_routine(npc, id, selected)
 	_update_context(npc, id)
-	_save()
+	saves.request(&"routine_planned")
 
 ## The resident's own reasons for each option, for `NpcDecisionPolicy.goal_choice`. `options`
 ## carry {id, kind, place} and, for a commitment, {commitment_id, subject}; `person` is the saved
@@ -429,9 +434,13 @@ static func goal_frame(options: Array[Dictionary], mind: NpcMindState, traits: D
 	return frame
 
 # A new ordinary routine is wanted when the brain is idle or its routine ran out (or was
-# invalidated through `save_game.life.interrupt`). Duties and safety tasks are never replanned.
+# invalidated through `save_game.life.interrupt`), and nothing in the brain outranks routine.
+# Duties and safety tasks are never replanned.
 func _routine_due(id: String) -> bool:
-	var controller: NpcTaskController = _brains[id].controller
+	var brain: NpcBrain = _brains[id]
+	if brain.blocks_routine():
+		return false
+	var controller: NpcTaskController = brain.controller
 	if controller.current == null:
 		return controller.suspended == null
 	return controller.current.kind == &"routine" \
@@ -463,14 +472,14 @@ func _request_routine(npc: BaseNpc, id: String, selected: Dictionary) -> bool:
 	return requested
 
 # Safety intent becomes one safety task per concern; the brain's priorities displace routines,
-# sessions and adapter duties. Returns true while the concern should keep routine planning away.
-func _maintain_safety(npc: BaseNpc, id: String) -> bool:
+# sessions and adapter duties.
+func _maintain_safety(npc: BaseNpc, id: String) -> void:
 	if npc.is_in_group(&"town_guards"):
-		return false
+		return
 	var person: Dictionary = save_game.life.get_person(id)
 	var minute: float = save_game.life.minute
 	if not NpcSafetyState.active(person.safety, minute):
-		return false
+		return
 	var concern: Dictionary = person.safety
 	var origin: String = String(concern.get("origin_id", ""))
 	if concern.response == "CAUTION" and minute - float(concern.observed_at) < tuning.caution_minutes:
@@ -483,16 +492,16 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 			_brains[id].request_task(NpcSafetyTask.create({"response": "CAUTION", "origin_id": origin,
 				"until_minute": minf(float(concern.until), float(concern.observed_at) + tuning.caution_minutes),
 				"label": "listening after a disturbance", "refuge_space": "", "refuge_point": []}, tuning))
-		return true
+		return
 	if not NpcSafetyState.sheltering(concern, minute):
-		return false
+		return
 	if not _safety_requested(id, origin, "SHELTER"):
-		return true
+		return
 	# Do not retreat into the room where the threat was perceived. Outdoors, home is
 	# a known refuge; a threat in one's own home calls for leaving for the public market.
 	var refuge: String = "home:" + id if concern.space != "home:" + save_game.population.household_for(id) else "market"
 	if not _places.has(refuge):
-		return false
+		return
 	var selected: Dictionary = {"kind": "shelter", "place": refuge}
 	var target: Dictionary = destination(id, selected)
 	var point: Vector2 = target.point
@@ -502,8 +511,7 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 	_brains[id].request_task(NpcSafetyTask.create({"response": "SHELTER", "origin_id": origin,
 		"until_minute": float(concern.until), "label": target.label,
 		"refuge_space": String(target.space), "refuge_point": [point.x, point.y]}, tuning))
-	_save()
-	return true
+	saves.request(&"safety_task")
 
 # True (and remembered) when this concern has not asked for this response yet.
 func _safety_requested(id: String, origin: String, response: String) -> bool:
@@ -758,13 +766,20 @@ func _on_task_transition(entry: Dictionary, id: String) -> void:
 	var task: NpcTask = _brains[id].controller.current
 	if task == null or task.task_id != entry["task_id"] or not is_instance_valid(_actors.get(id)):
 		return
-	var routine: NpcDailyRoutine = _actors[id].daily_routine
+	_show_activity(task, _actors[id].daily_routine)
+
+# What the resident is shown doing while the task runs: gait, work accounting, dialogue context.
+func _show_activity(task: NpcTask, routine: NpcDailyRoutine) -> void:
 	if task.kind in [&"routine", &"recovery"]:
 		routine.activity = task.params["activity"]
 		routine.place = task.params["label"]
 	elif task.kind == &"safety" and task.params["response"] == "SHELTER":
 		routine.activity = "shelter"
 		routine.place = task.params["label"]
+	elif task is NpcGuardTask:
+		var duty: Array[String] = (task as NpcGuardTask).duty()
+		routine.activity = duty[0]
+		routine.place = duty[1]
 
 func _update_context(npc: BaseNpc, id: String) -> void:
 	var person: Dictionary = save_game.life.get_person(id)
@@ -791,18 +806,17 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 	if npc.is_in_group(&"town_guards"):
 		npc.life_context.enforcement = save_game.justice.known_to(id)
 
-func _save() -> Error:
+# Snapshot hook: live positions and task checkpoints join every write of the world save.
+func _snapshot() -> void:
 	for id: String in _actors:
 		if is_instance_valid(_actors[id]) and _actors[id].health > 0:
 			save_game.life.remember_position(id, _actors[id].global_position, String(_actors[id].world_space))
 			if not _brains[id].save_checkpoint():
 				_trace(id, NpcDecisionTrace.SAVE_FAILURE, {"reason": "task_checkpoint_rejected"})
-	var error: Error = save_game.save_file()
-	if error != OK:
-		push_warning("Town life could not be saved: %s" % error)
-		for id: String in _brains:
-			_trace(id, NpcDecisionTrace.SAVE_FAILURE, {"reason": "save_error:%d" % error})
-	return error
+
+func _on_write_failed(_reason: StringName, error: Error) -> void:
+	for id: String in _brains:
+		_trace(id, NpcDecisionTrace.SAVE_FAILURE, {"reason": "save_error:%d" % error})
 
 # Records a trace entry in resident `id`'s brain at the current world minute.
 func _trace(id: String, kind: String, fields: Dictionary) -> void:
@@ -813,9 +827,6 @@ func _on_request_settled(entry: Dictionary) -> void:
 	var fields: Dictionary = entry.duplicate()
 	fields.erase("npc_id")
 	_trace(String(entry.npc_id), NpcDecisionTrace.REQUEST, fields)
-
-func save_snapshot() -> Error:
-	return _save()
 
 func resident_ids() -> Array[String]:
 	return _actors.keys()

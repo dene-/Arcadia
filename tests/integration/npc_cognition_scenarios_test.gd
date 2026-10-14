@@ -61,7 +61,9 @@ func _scenario_isolation() -> void:
 	_check(sim.backend.call_count("select_goal") <= sim.resident_ids().size() * 2,
 		"Unexpected request volume for 5 seconds: %d" % sim.backend.call_count("select_goal"))
 	_check(not sim.trace().is_empty(), "No trace recorded")
-	_check(FileAccess.file_exists(sim.save_path), "Fixture save was not written to the temp path")
+	# Writes are debounced in real time; flushing proves where the coordinator writes.
+	_check(root.get_node("NpcCognition").saves.flush(&"test_isolation") and FileAccess.file_exists(sim.save_path),
+		"Fixture save was not written to the temp path")
 	await sim.teardown()
 	_check(not FileAccess.file_exists(sim.save_path), "Temp save survived teardown")
 	for path: String in REAL_SAVES:

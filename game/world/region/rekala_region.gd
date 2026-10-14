@@ -42,9 +42,7 @@ func rebuild() -> void:
 		var cognition: Node = get_node("/root/NpcCognition")
 		if cognition.save_game.region_seed == 0:
 			cognition.save_game.region_seed = randi_range(1, 2147483646)
-			var error: Error = cognition.save_game.save_file()
-			if error != OK:
-				push_warning("Region seed could not be saved: %s" % error)
+			cognition.saves.flush(&"region_seed")
 		world_seed = cognition.save_game.region_seed
 	layout.generate(world_seed)
 	RegionTerrain.new().build(generated, layout)

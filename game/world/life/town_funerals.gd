@@ -53,7 +53,7 @@ func _on_event(event: WorldEvent) -> void:
 		return
 	_settled[id] = true
 	_refresh_visual(id)
-	life.save_snapshot()
+	life.saves.flush(&"body_settled")
 
 func advance(delta: float) -> void:
 	for id: String in _bodies.keys():
@@ -101,18 +101,18 @@ func _scan(id: String) -> void:
 				and deaths.claim_report(id, witness, minute) == TownDeaths.OK_RESULT:
 			return
 
-## Starts or keeps this resident's recovery duty. True while funerals engages the resident.
-func maintain(npc: BaseNpc, npc_id: String) -> bool:
+## Starts or keeps this resident's recovery duty; the brain's priorities settle who moves it.
+func maintain(npc: BaseNpc, npc_id: String) -> void:
 	if npc.alert_response.active():
-		return true
+		return
 	var brain: NpcBrain = life.brain_for(npc_id)
 	if brain == null:
-		return false
+		return
 	var minute: float = life.save_game.life.minute
 	var live: NpcRecoveryTask = _recovery_task(brain)
 	if live != null:
 		if live.phase != NpcRecoveryTask.PHASE_DEFERRED:
-			return true
+			return
 		# No guard found anywhere the witness knew of: every report this witness holds stays open
 		# for a later try, and the witness returns to ordinary life meanwhile.
 		brain.end_task(live.task_id, &"deferred")
@@ -121,27 +121,30 @@ func maintain(npc: BaseNpc, npc_id: String) -> bool:
 			if held.stage == "discovered" and held.reporter == npc_id:
 				_deaths().release_assignment(id, npc_id, minute)
 		_retry_at[npc_id] = minute + RETRY_MINUTES
-		return false
+		return
 	if float(_retry_at.get(npc_id, -INF)) > minute:
-		return false
+		return
 	var guard: bool = npc.is_in_group(&"town_guards")
 	for id: String in _deaths().ids():
 		var entry: Dictionary = _deaths().snapshot(id)
 		if entry.stage == "discovered" and entry.reporter == npc_id:
 			if not guard:
-				return _start(brain, npc_id, id, NpcRecoveryTask.WITNESS)
+				_start(brain, npc_id, id, NpcRecoveryTask.WITNESS)
+				return
 			# A discovering guard acknowledges its own report.
 			if _deaths().acknowledge_report(id, npc_id, npc_id, minute) == TownDeaths.OK_RESULT:
-				return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+				_start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+				return
 		if entry.guard == npc_id and entry.stage in ["reported", "recovering", "carried"]:
-			return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+			_start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+			return
 	if not guard or npc.is_sleeping():
-		return false
+		return
 	for id: String in _deaths().ids():
 		var entry: Dictionary = _deaths().snapshot(id)
 		if entry.stage == "reported" and entry.guard.is_empty() and npc_id in entry.known_by:
-			return _start(brain, npc_id, id, NpcRecoveryTask.GUARD)
-	return false
+			_start(brain, npc_id, id, NpcRecoveryTask.GUARD)
+			return
 
 func _start(brain: NpcBrain, npc_id: String, id: String, role: String) -> bool:
 	var witness: bool = role == NpcRecoveryTask.WITNESS
@@ -259,7 +262,7 @@ func _recovery_event(event: StringName, id: String, other: String, npc_id: Strin
 			if npc != null:
 				speech.say(npc, "grieve", "I have buried %s in the town cemetery." % _name(id), "sight")
 	_refresh_visual(id)
-	life.save_snapshot()
+	life.saves.flush(&"funeral_stage")
 
 # --- Queries ---
 

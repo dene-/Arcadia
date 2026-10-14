@@ -9,7 +9,7 @@ var store: NpcMemoryStore = NpcMemoryStore.new()
 var retriever: NpcMemoryRetriever = NpcMemoryRetriever.new()
 var tuning := NpcBehaviorTuning.new()
 var persist: bool = true
-var save_callback: Callable
+var saves: NpcSaveCoordinator
 ## The player session exchanges belong to, and the store minute it started at.
 var session_id: String = ""
 var session_start: float = -1.0
@@ -37,12 +37,12 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 		message = OPENING_GREETINGS[greeting.randi_range(0, OPENING_GREETINGS.size() - 1)]
 	store.ensure_npc(profile)
 	var id: String = String(profile.npc_id)
-	var state: Dictionary = store.snapshot(id)
+	var state: Dictionary = store.working_memory(id)
 	var revision: int = store.revision(id)
 	var perception: Dictionary = NpcCognitiveContext.build(state, current)
 	# Judgments and speech get the same imperfect recollections, never the archive.
-	var candidates: Array[Dictionary] = retriever.retrieve(state.memories, message,
-		perception, profile.get_cognition(), store.world_minute, NpcMemoryRetriever.links_for(current))
+	var candidates: Array[Dictionary] = store.recall(id, retriever, message, perception,
+		profile.get_cognition(), NpcMemoryRetriever.links_for(current))
 	var turns: Array[Dictionary] = []
 	for entry: Dictionary in state.recent_dialogue:
 		turns.append({"speaker": entry.speaker, "text": entry.text})
@@ -76,12 +76,10 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 			session_id):
 		return {}
 	if persist:
-		if not save_callback.is_valid():
-			push_error("NPC conversation cannot persist without a save callback.")
+		if saves == null:
+			push_error("NPC conversation cannot persist without a save coordinator.")
 		else:
-			var error: Error = save_callback.call()
-			if error != OK:
-				push_warning("NPC memory could not be saved: %s" % error)
+			saves.request(&"player_exchange")
 	# Only Godot's reading of the message can end a completed exchange, never generated metadata.
 	result["end_conversation"] = speech.end_conversation
 	result["surrender"] = speech.surrender

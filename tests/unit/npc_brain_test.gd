@@ -64,6 +64,25 @@ func test_sleep_caution_shelter_then_the_routine_resumes_and_reroutes() -> void:
 	assert_true(rig.actor.sleeping)
 	rig.dispose()
 
+func test_only_a_task_that_outranks_routine_blocks_routine_planning() -> void:
+	var rig := Routine.Rig.new()
+	assert_false(rig.brain.blocks_routine(), "an idle brain wants a routine")
+	var routine := _routine(rig, "work", "bakery", 900.0)
+	assert_true(rig.start(routine, 100.0))
+	assert_false(rig.brain.blocks_routine(), "a routine does not block its own replanning")
+	var caution := _caution(rig, 500.0)
+	assert_true(rig.start(caution, 110.0))
+	assert_eq(rig.brain.task_state(routine.task_id), "SUSPENDED")
+	assert_true(rig.brain.blocks_routine(), "a concern outranks the routine")
+	rig.brain.end_task(caution.task_id)
+	assert_false(rig.brain.blocks_routine(), "the resumed routine blocks nothing")
+	var shelter := _shelter(rig, 600.0)
+	assert_true(rig.start(shelter, 120.0))
+	assert_true(rig.brain.blocks_routine(), "sheltering outranks the routine")
+	rig.brain.end_task(shelter.task_id)
+	assert_false(rig.brain.blocks_routine())
+	rig.dispose()
+
 func test_conversation_claims_are_owned_and_urgent_duties_refuse() -> void:
 	var rig := Routine.Rig.new()
 	assert_true(rig.brain.request_conversation("a"))

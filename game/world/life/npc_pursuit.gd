@@ -1,7 +1,9 @@
 class_name NpcPursuit
 extends RefCounted
 
-## Combat owns the target; this component owns its route and a leased approach slot.
+## Combat owns the target; this component owns its route and a leased approach slot. This is a
+## physical combat mechanic, not a resident intention: whoever fights (resident, monster or
+## guard enforcing) approaches its combat target here, and the brain's tasks never plan it.
 var _route := ActorRoute.new()
 var _target_id: int = 0
 var _goal := Vector2.INF

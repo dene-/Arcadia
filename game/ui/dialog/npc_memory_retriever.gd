@@ -29,8 +29,8 @@ class Links extends RefCounted:
 
 ## Empty disables topic normalization (the lexical baseline).
 var topic_aliases: Dictionary[String, String] = TOPIC_ALIASES
-var _word_pattern: RegEx
-var _separator_pattern: RegEx
+static var _word_pattern: RegEx
+static var _separator_pattern: RegEx
 
 ## Links from the people the resident knows (`known_townspeople`, `family_members`: {id, name})
 ## and its `open_commitments` ({evidence_ids}) in a cognitive context.
@@ -70,6 +70,71 @@ static func entity_aliases(people: Array) -> Dictionary[String, String]:
 	for alias: String in ambiguous:
 		aliases.erase(alias)
 	return aliases
+
+## Index keys of one archive memory (NpcMemoryStore keeps an index of them). Any memory that
+## `retrieve` could select for a cue shares a key with `cue_keys` of that cue or an incident with
+## such a memory; the keys never depend on aliases or links, so the index survives their changes.
+static func memory_keys(memory: Dictionary) -> PackedStringArray:
+	var keys: PackedStringArray = []
+	for word: String in _words(memory.gist + " " + " ".join(memory.topics)):
+		keys.append("g:" + word)
+	for word: String in _words(" ".join(memory.people + memory.places)):
+		keys.append("e:" + word)
+	for person: String in memory.people:
+		keys.append("pe:" + person)
+		keys.append("p:" + person.to_lower())
+	for token: String in _tokens(memory.gist):
+		keys.append("t:" + token)
+	if memory.source == "observed_event" and memory.gist.contains("the player"):
+		keys.append("player")
+	for word: String in _words(" ".join(memory.sensory_cues)):
+		keys.append("s:" + word)
+	if memory.type == "prospective":
+		keys.append("prospective")
+	var evidence: Variant = memory.get("evidence_ids", [])
+	for id: Variant in evidence if evidence is Array else []:
+		if id is String:
+			keys.append("ev:" + id)
+	return keys
+
+## The index keys of a cue: `retrieve(memories, message, current, ...)` only selects memories
+## carrying one of them, or sharing an incident with one that does.
+func cue_keys(message: String, current: Dictionary, links: Links = null) -> Dictionary[String, bool]:
+	if links == null:
+		links = Links.new()
+	var keys: Dictionary[String, bool] = {"prospective": true}
+	var words: PackedStringArray = _words(message + " " + str(current.get("location", "")))
+	for word: String in words:
+		keys["e:" + word] = true
+	var concepts: Dictionary[String, bool] = {}
+	for concept: String in _concepts(words):
+		concepts[concept] = true
+		keys["g:" + concept] = true
+	for word: String in topic_aliases:
+		if concepts.has(topic_aliases[word]):
+			keys["g:" + word] = true
+	var named: Array[String] = _named_entities(message + " " + str(current.get("location", "")),
+		links.entity_aliases)
+	for id: String in named:
+		keys["pe:" + id] = true
+	for alias: String in links.entity_aliases:
+		if links.entity_aliases[alias] in named:
+			keys["p:" + alias] = true
+			keys["t:" + alias.get_slice(" ", 0)] = true
+	for participant: Variant in current.get("participants", []):
+		if participant is String:
+			keys["pe:" + participant] = true
+			if participant == "player":
+				keys["player"] = true
+	for word: String in _words(" ".join(current.get("sensory_cues", []))):
+		keys["s:" + word] = true
+	for id: String in links.commitment_evidence:
+		keys["ev:" + id] = true
+	return keys
+
+## The incident `retrieve` links a memory through ("" for none).
+static func incident_of(memory: Dictionary) -> String:
+	return _incident(memory)
 
 func retrieve(memories: Array, message: String, current: Dictionary,
 		cognition: NpcCognitionProfile, minute: float, links: Links = null) -> Array[Dictionary]:
@@ -189,7 +254,7 @@ func _without_names(text: String, people: Array) -> String:
 			result = result.replacen(person, "someone")
 	return result
 
-func _words(text: String) -> PackedStringArray:
+static func _words(text: String) -> PackedStringArray:
 	if _word_pattern == null:
 		_word_pattern = RegEx.create_from_string("[\\p{L}\\p{N}]{3,}")
 	var words: PackedStringArray = []
@@ -232,13 +297,17 @@ func _named_entities(text: String, aliases: Dictionary[String, String]) -> Array
 	var ids: Array[String] = []
 	if aliases.is_empty():
 		return ids
-	if _separator_pattern == null:
-		_separator_pattern = RegEx.create_from_string("[^\\p{L}\\p{N}]+")
-	var padded: String = " " + _separator_pattern.sub(text.to_lower(), " ", true) + " "
+	var padded: String = " " + " ".join(_tokens(text)) + " "
 	for alias: String in aliases:
 		if padded.contains(" " + alias + " ") and not aliases[alias] in ids:
 			ids.append(aliases[alias])
 	return ids
+
+# Lower-case words of `text` split at every non-letter, non-digit run.
+static func _tokens(text: String) -> PackedStringArray:
+	if _separator_pattern == null:
+		_separator_pattern = RegEx.create_from_string("[^\\p{L}\\p{N}]+")
+	return _separator_pattern.sub(text.to_lower(), " ", true).split(" ", false)
 
 ## The memory's people as resident ids (names map through the aliases), plus residents its
 ## gist names.
