@@ -12,6 +12,11 @@ const PHASE_LEAVE: String = "leave"
 const ROLES: Array[String] = ["initiator", "partner"]
 const APPROACH_MINUTES: float = 1.0
 
+# Runtime only: the resident's mind and tuning, captured when the session starts.
+var _mind: NpcMindState
+var _tuning: NpcBehaviorTuning
+var _delivered: bool = false
+
 func _init() -> void:
 	kind = &"social"
 
@@ -40,9 +45,22 @@ func leave() -> void:
 	if status == Status.RUNNING:
 		phase = PHASE_LEAVE
 
+## A meaningful exchange reached this resident: it eases their social need, once per
+## session. Refused (false) before the conversation starts, once delivered, or after the task ends.
+func deliver_exchange() -> bool:
+	if _delivered or status != Status.RUNNING or phase != PHASE_CONVERSE \
+			or _mind == null or _tuning == null:
+		return false
+	_delivered = true
+	_mind.complete_exchange(_tuning)
+	return true
+
 func _on_start(context: NpcTaskContext) -> NpcTaskResult:
 	progress = {}
 	phase = PHASE_APPROACH
+	_mind = context.mind
+	_tuning = context.call_service(&"tuning") as NpcBehaviorTuning
+	_delivered = false
 	context.call_service(&"cancel_travel", [task_id])
 	return NpcTaskResult.running()
 

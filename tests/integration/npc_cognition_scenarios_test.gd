@@ -29,6 +29,7 @@ func _run() -> void:
 	await _scenario_player_takes_over_session()
 	await _scenario_urgent_resident_refuses_player()
 	await _scenario_commitment_survives_reload()
+	await _scenario_m8_exit()
 	await _scenario_death_recovery()
 	for failure: String in failures:
 		push_error(failure)
@@ -383,6 +384,7 @@ func _scenario_safety_ends_session() -> void:
 		{"remember": true, "importance": 1.0}, life_state.minute)
 	sim.backend.queue_response("social", {"topic": "test:m4b", "tone": "friendly"})
 	sim.backend.hold("listen")
+	_eager_initiator(first)
 	sim.life.encounters.consider(first, second)
 	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
 		and sim.life.encounters.session_phase(second_id) == TownEncounters.PHASE_CONVERSE,
@@ -445,6 +447,14 @@ func _free_residents(sim: Simulation, count: int) -> Array[BaseNpc]:
 			break
 	return found
 
+## Gives `npc` the most sociable, curious temperament so its seeded initiative roll opens the
+## session; the session scenarios exercise the lifecycle, not who feels like talking.
+func _eager_initiator(npc: BaseNpc) -> void:
+	var traits: Dictionary = npc.get_npc_profile().social_traits.duplicate()
+	traits.sociability = 1.0
+	traits.curiosity = 1.0
+	npc.get_npc_profile().social_traits = traits
+
 func _resident_id(npc: BaseNpc) -> String:
 	return String(npc.get_npc_profile().npc_id)
 
@@ -486,6 +496,7 @@ func _scenario_crossing_invitations() -> void:
 	var tasks: Dictionary = {first_id: _task(sim, first_id), second_id: _task(sim, second_id)}
 	var judgments: int = sim.backend.call_count("social")
 	sim.backend.hold("social")
+	_eager_initiator(pair[0])
 	encounters.consider(pair[0], pair[1])
 	encounters.consider(pair[1], pair[0])
 	for id: String in [first_id, second_id]:
@@ -539,6 +550,7 @@ func _scenario_player_takes_over_session() -> void:
 	sim.backend.queue_response("social", {"topic": "test:m4e", "tone": "friendly"})
 	sim.backend.queue_response("life/say", {"response": late_line})
 	sim.backend.hold("life/say")
+	_eager_initiator(first)
 	sim.life.encounters.consider(first, second)
 	var session_owner: String = String(_claims(sim, second_id).conversation)
 	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
@@ -813,6 +825,190 @@ func _scenario_routine_goal_choice() -> void:
 			"(routine) %s did not keep the plan on low confidence: %s" % [id, person.decision])
 		kept += 1
 	_check(kept > 0, "(routine) No resident decided under low confidence")
+	await sim.teardown()
+
+# --- M8: needs, personality and commitments choose; the model does not jitter ---
+
+func _scenario_m8_exit() -> void:
+	await _m8_personality_breaks_ties()
+	await _m8_a_day_of_needs()
+	await _m8_hurt_relative()
+
+## Interrupts `ids` and runs the simulation until each has chosen again (or 10 seconds pass).
+func _m8_rechoose(sim: Simulation, ids: Array[String]) -> void:
+	var life_state: TownLifeState = sim.save_game().life
+	var from: float = life_state.minute
+	for id: String in ids:
+		life_state.interrupt(id)
+	for _step: int in 20:
+		await sim.advance(0.5)
+		var pending: bool = false
+		for id: String in ids:
+			pending = pending or float(life_state.get_person(id).until) <= from
+		if not pending:
+			return
+
+## (A) The same model answers and the same needs give a sociable and a shy resident different
+## goals: only SOCIAL and REST are eligible and personality decides between them.
+func _m8_personality_breaks_ties() -> void:
+	var sim: Simulation = await _start(600.0)
+	sim.backend.set_default("select_goal", {"suitability:SOCIAL": 4.0, "suitability:REST": 4.0,
+		"suitability:PLAN": 1.0})
+	await sim.advance(2.0)
+	var life_state: TownLifeState = sim.save_game().life
+	var guards: Array[String] = _guard_ids(sim)
+	var shy: Array[String] = []
+	var sociable: Array[String] = []
+	for id: String in sim.resident_ids():
+		var person: Dictionary = life_state.get_person(id)
+		var plan_kind: String = NpcRoutinePlan.current(person.plan, life_state.minute).kind
+		if id in guards or person.activity == "rest" or plan_kind in ["meal", "school", "patrol", "rest"] \
+				or sim.resident(id).is_sleeping() or sim.life.encounters.is_busy(id) or _task(sim, id) == null:
+			continue
+		var sociability: float = float(life_state.personality_for(id,
+			sim.save_game().get_npc_seed()).traits.get("sociability", 0.5))
+		if sociability < 0.35 and shy.size() < 4:
+			shy.append(id)
+		elif sociability > 0.65 and sociable.size() < 4:
+			sociable.append(id)
+	var ids: Array[String] = shy + sociable
+	for id: String in ids:
+		var needs: Dictionary = sim.save_game().minds.get_mind(id).needs
+		needs["hunger"] = 0.2
+		needs["fatigue"] = 0.3
+		needs["social"] = 0.3
+	await _m8_rechoose(sim, ids)
+	# A crowded venue withdraws the SOCIAL option; only residents offered both are compared.
+	var compared: Dictionary = {"SOCIAL": 0, "REST": 0}
+	for group: Array[String] in [sociable, shy]:
+		var expected: String = "SOCIAL" if group == sociable else "REST"
+		for id: String in group:
+			var choice: Dictionary = life_state.get_person(id).decision
+			if not choice.get("scores", {}).has("SOCIAL") or not choice.get("scores", {}).has("REST"):
+				continue
+			compared[expected] += 1
+			_check(choice.get("candidate") == expected, "(A) %s chose %s, expected %s" % [id, choice, expected])
+	_check(compared.SOCIAL > 0 and compared.REST > 0,
+		"(A) Too few residents were offered both goals: %s of shy %s, sociable %s" % [compared, shy, sociable])
+	await sim.teardown()
+
+## (B) A day and a half of equal model answers: nobody flips between work and socializing, every
+## goal is held at least the commitment minimum, everyone eats and everyone who sleeps rests.
+func _m8_a_day_of_needs() -> void:
+	var sim: Simulation = await _start(360.0)
+	sim.backend.set_default("select_goal", {"suitability:PLAN": 3.0, "suitability:WORK": 3.0,
+		"suitability:SOCIAL": 3.0})
+	var life_state: TownLifeState = sim.save_game().life
+	var tuning := NpcBehaviorTuning.new()
+	var ids: Array[String] = sim.resident_ids()
+	var last_goal: Dictionary = {}
+	var last_activity: Dictionary = {}
+	var last_switch: Dictionary = {}
+	var last_fatigue: Dictionary = {}
+	var switches: Dictionary = {}
+	var meals: Dictionary = {}
+	var slept: Dictionary = {}
+	var shortest_gap: float = INF
+	var resolution: float = 0.0
+	var previous_sample: float = life_state.minute
+	Engine.time_scale = 16.0
+	var frame: int = 0
+	while life_state.minute < 1800.0:
+		sim.life._process(16.0 / 60.0)
+		await sim.tree.physics_frame
+		frame += 1
+		if frame % 6 != 0:
+			continue
+		var minute: float = life_state.minute
+		resolution = maxf(resolution, minute - previous_sample)
+		previous_sample = minute
+		for id: String in ids:
+			var person: Dictionary = life_state.get_person(id)
+			var activity: String = person.activity
+			if activity != last_activity.get(id, activity):
+				if activity == "meal":
+					meals[id] = int(meals.get(id, 0)) + 1
+				if activity in ["work", "socialize"] and last_goal.get(id, activity) != activity:
+					switches[id] = int(switches.get(id, 0)) + 1
+					shortest_gap = minf(shortest_gap, minute - float(last_switch.get(id, -INF)))
+					last_switch[id] = minute
+			if activity in ["work", "socialize"]:
+				last_goal[id] = activity
+			last_activity[id] = activity
+			var fatigue: float = float(sim.save_game().minds.get_mind(id).needs.get("fatigue", 0.0))
+			slept[id] = float(slept.get(id, 0.0)) + maxf(float(last_fatigue.get(id, fatigue)) - fatigue, 0.0)
+			last_fatigue[id] = fatigue
+	Engine.time_scale = 1.0
+	var worst: int = 0
+	var eaten: int = 99
+	for id: String in ids:
+		worst = maxi(worst, int(switches.get(id, 0)))
+		eaten = mini(eaten, int(meals.get(id, 0)))
+		_check(int(switches.get(id, 0)) <= 8, "(B) %s changed between work and socializing %d times" % [id, switches.get(id, 0)])
+		_check(int(meals.get(id, 0)) >= 1, "(B) %s never ate" % id)
+		_check(float(slept.get(id, 0.0)) >= 0.05, "(B) %s only slept %.3f of fatigue away" % [id, slept.get(id, 0.0)])
+	_check(shortest_gap >= tuning.commitment_minimum_minutes - resolution,
+		"(B) A goal was dropped after %.1f minutes (minimum %.1f, sampled every %.1f)" % [
+			shortest_gap, tuning.commitment_minimum_minutes, resolution])
+	print("M8 (B): %d residents, most work/social switches %d, fewest meals %d, shortest held goal %.1f min" % [
+		ids.size(), worst, eaten, shortest_gap])
+	await sim.teardown()
+
+## (C) A relative seen being hurt opens a check; the resident then chooses to look for them and the
+## resident's concerns mention it. The sighting of the injury itself does not end the check.
+func _m8_hurt_relative() -> void:
+	var sim: Simulation = await _start(1080.0) # Evening: many residents are outdoors and the check may be offered.
+	sim.backend.set_default("select_goal", {"suitability:CHECK_RELATIVE": 3.0, "suitability:PLAN": 3.0})
+	await sim.advance(2.0)
+	var free: Array[BaseNpc] = _free_residents(sim, 40)
+	var victim: BaseNpc = null
+	var witness: BaseNpc = null
+	for candidate: BaseNpc in free:
+		for other: BaseNpc in free:
+			if other != candidate and _knowledge_of(sim, _resident_id(other)).knows(_resident_id(candidate), "family_role"):
+				victim = candidate
+				witness = other
+				break
+		if victim != null:
+			break
+	_check(victim != null, "(C) No free resident has a free family witness")
+	if victim == null:
+		await sim.teardown()
+		return
+	var victim_id: String = _resident_id(victim)
+	var witness_id: String = _resident_id(witness)
+	var mind: NpcMindState = sim.save_game().minds.get_mind(witness_id)
+	witness.global_position = victim.global_position + Vector2(-40.0, 0.0)
+	var player: BasePlayer = _place_player_near(sim, victim)
+	await sim.advance(0.1)
+	victim.take_damage(1, player.hit_box)
+	var away: Vector2 = witness.global_position + Vector2(witness.npc_data.vision_radius * 4.0, 0.0)
+	victim.global_position = away
+	var commitment: Dictionary = {}
+	for frame: int in 600:
+		await sim.advance(1.0 / 60.0)
+		commitment = mind.commitments.find("check_relative", victim_id)
+		if not commitment.is_empty():
+			break
+	_check(not commitment.is_empty(), "(C) %s opened no check on hurt %s" % [witness_id, victim_id])
+	if commitment.is_empty():
+		await sim.teardown()
+		return
+	await sim.advance(2.0)
+	_check(mind.commitments.get_commitment(commitment.id).get("status") == "open",
+		"(C) The check ended without finding %s: %s" % [victim_id, mind.commitments.get_commitment(commitment.id)])
+	await _m8_rechoose(sim, [witness_id] as Array[String])
+	var decision: Dictionary = sim.save_game().life.get_person(witness_id).decision
+	_check(decision.get("candidate") == "CHECK_RELATIVE",
+		"(C) %s did not go looking for %s: %s" % [witness_id, victim_id, decision])
+	sim.save_game().memory.ensure_npc(witness.get_npc_profile())
+	var context: Dictionary = NpcCognitiveContext.build(sim.save_game().memory.snapshot(witness_id),
+		witness.get_cognitive_context())
+	var kinds: Array[String] = []
+	for concern: Dictionary in context.get("current_concerns", []):
+		kinds.append(String(concern.get("kind", "")))
+	_check("commitment" in kinds or "feeling" in kinds,
+		"(C) The concerns of %s do not mention the check: %s" % [witness_id, kinds])
 	await sim.teardown()
 
 ## One town: (h) a patrol resumes after an intervention; (i) a full report, recovery and burial

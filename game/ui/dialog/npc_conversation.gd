@@ -24,7 +24,9 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 		return {}
 	# An empty message is the interaction action opening a conversation.
 	if message.is_empty():
-		message = OPENING_GREETINGS.pick_random()
+		var greeting := NpcRoutinePlan.random_for(0, "%s:greeting:%d:%s" % [profile.npc_id,
+			int(store.world_minute), session_id])
+		message = OPENING_GREETINGS[greeting.randi_range(0, OPENING_GREETINGS.size() - 1)]
 	store.ensure_npc(profile)
 	var id: String = String(profile.npc_id)
 	var state: Dictionary = store.snapshot(id)

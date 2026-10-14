@@ -5,12 +5,16 @@ extends RefCounted
 const WORKING_MEMORY_MINUTES: float = 180.0
 const LEGACY_WORKING_MEMORY_SECONDS: float = 120.0
 const MAX_CONCERNS: int = 3
+## Felt emotion causes carried into context (strongest first).
+const MAX_EMOTION_CAUSES: int = 3
 ## Task kinds that are the resident's duty rather than ordinary routine.
 const DUTY_TASKS: Array[String] = ["guard", "recovery"]
 
 ## The resident's own unresolved state for `get_cognitive_context`: grief (`personal_concerns`)
-## and open commitments (`open_commitments`, with the evidence they rest on).
-static func mind_context(mind: NpcMindState) -> Dictionary:
+## and open commitments (`open_commitments`, with the evidence they rest on). Given the world
+## `minute`, also its semantic `condition` bands (needs, emotions and, with the `actor`, pain) and
+## the `emotion_causes` still felt, with the subject and evidence each rests on.
+static func mind_context(mind: NpcMindState, minute: float = NAN, actor: Object = null) -> Dictionary:
 	var personal: Array[Dictionary] = []
 	var concerns: Variant = mind.condition.get("concerns", [])
 	for concern: Variant in concerns if concerns is Array else []:
@@ -23,18 +27,34 @@ static func mind_context(mind: NpcMindState) -> Dictionary:
 		commitments.append({"id": item["id"], "kind": item["kind"], "other_ids": item["other_ids"],
 			"evidence_ids": item["evidence_ids"], "deadline_minute": item["deadline_minute"],
 			"priority": item["priority"]})
-	return {"personal_concerns": personal, "open_commitments": commitments}
+	var result: Dictionary = {"personal_concerns": personal, "open_commitments": commitments}
+	if not is_finite(minute):
+		return result
+	var condition: Dictionary = mind.condition_band(minute)
+	if actor != null:
+		condition["pain"] = NpcMindState.pain_band(NpcMindState.pain_of(actor), mind.tuning)
+	var causes: Array[Dictionary] = []
+	for cause: Dictionary in mind.emotion_causes(minute).slice(0, MAX_EMOTION_CAUSES):
+		causes.append({"emotion": cause["emotion"],
+			"band": NpcMindState.emotion_band(float(cause["intensity"]), mind.tuning),
+			"subject": cause["subject"], "evidence_id": cause["evidence_id"],
+			"incident_id": cause["incident_id"]})
+	result["condition"] = condition
+	result["emotion_causes"] = causes
+	return result
 
 ## Concerns, at most MAX_CONCERNS, in this order: a personal injury, recent personally relevant
-## observations (newest first), bereavements (newest first), the current duty, open commitments
-## (highest priority first). Relevance comes from the player, the resident itself, or a subject
-## of its grief, family or commitments; `player_involved` is not required.
+## observations (newest first), strong feelings (strongest first), bereavements (newest first),
+## the current duty, open commitments (highest priority first). Relevance comes from the player,
+## the resident itself, or a subject of its feelings, grief, family or commitments;
+## `player_involved` is not required. Semantic `condition` bands pass through unchanged.
 static func build(state: Dictionary, current: Dictionary) -> Dictionary:
 	var result: Dictionary = current.duplicate(true)
 	result.erase("routine_decision")
 	result.erase("social_status")
 	result.erase("personal_concerns")
 	result.erase("open_commitments")
+	result.erase("emotion_causes")
 	result.recent_events = state.recent_events.duplicate()
 	result.participants = ["player"]
 	var past: Array[Dictionary] = []
@@ -58,6 +78,7 @@ static func build(state: Dictionary, current: Dictionary) -> Dictionary:
 	concerns.sort_custom(by_age)
 	observed.sort_custom(by_age)
 	concerns.append_array(observed)
+	concerns.append_array(_feelings(current))
 	concerns.append_array(_bereavements(current))
 	var duty: Dictionary = _duty(current)
 	if not duty.is_empty():
@@ -116,8 +137,30 @@ static func _personal_subjects(current: Dictionary) -> Dictionary[String, bool]:
 		for other: Variant in others if others is Array else []:
 			if other is String:
 				subjects[other] = true
+	for cause: Dictionary in _list(current, "emotion_causes"):
+		if cause.get("subject") is String:
+			subjects[cause["subject"]] = true
 	subjects.erase("")
 	return subjects
+
+# Strong feelings with their subject; grief for a known bereavement is that concern instead.
+static func _feelings(current: Dictionary) -> Array[Dictionary]:
+	var mourned: Dictionary[String, bool] = {}
+	for concern: Dictionary in _list(current, "personal_concerns"):
+		if concern.get("kind") == "bereavement" and concern.get("subject") is String:
+			mourned[concern["subject"]] = true
+	var result: Array[Dictionary] = []
+	for cause: Dictionary in _list(current, "emotion_causes"):
+		var subject: String = String(cause.get("subject", ""))
+		if cause.get("band") != "strong" or not cause.get("emotion") is String \
+				or (cause["emotion"] == "grief" and mourned.has(subject)):
+			continue
+		var entry: Dictionary = {"kind": "feeling", "emotion": cause["emotion"], "band": "strong"}
+		if not subject.is_empty():
+			var name: String = _name_of(current, subject)
+			entry["subject"] = name if not name.is_empty() else subject
+		result.append(entry)
+	return result
 
 static func _bereavements(current: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

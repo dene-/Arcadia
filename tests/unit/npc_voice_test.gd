@@ -116,3 +116,15 @@ func test_procedural_profiles_reflect_work_age_and_saved_temperament() -> void:
 	PROCEDURAL_PROFILE.apply(guard, population.people.voss_guard, guard_temperament)
 	assert_true(guard.values.contains("evidence"))
 	assert_true(guard.goals.contains("children"))
+
+func test_traits_shape_initiative_attention_and_persistence() -> void:
+	var reserved: Dictionary = {"sociability": 0.0, "curiosity": 0.0, "patience": 0.0}
+	var outgoing: Dictionary = {"sociability": 1.0, "curiosity": 1.0, "patience": 1.0}
+	assert_true(NpcTemperament.social_initiative(outgoing) > NpcTemperament.social_initiative(reserved))
+	assert_eq(NpcTemperament.social_initiative(outgoing), 1.0)
+	assert_eq(NpcTemperament.social_initiative(reserved), 0.25)
+	assert_eq(NpcTemperament.attention_range(outgoing, 100.0), 100.0)
+	assert_eq(NpcTemperament.attention_range(reserved, 100.0), 60.0)
+	assert_true(NpcTemperament.persistence(outgoing) > NpcTemperament.persistence(reserved))
+	assert_eq(NpcTemperament.social_initiative({}), NpcTemperament.social_initiative(
+		{"sociability": 0.5, "curiosity": 0.5}), "missing traits are neutral")

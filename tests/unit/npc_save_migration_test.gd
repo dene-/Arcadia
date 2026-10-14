@@ -180,6 +180,9 @@ func test_relationships_move_into_the_mind_store() -> void:
 			if not name == "v1_observations":
 				assert_eq(mind.evidence, NpcEvidenceInbox.new().to_data(), name + " " + id)
 			assert_eq(mind.decision_sequence, 0, name + " " + id)
+			var loaded: NpcMindState = save.minds.get_mind(id)
+			assert_eq(loaded.needs, NpcMindState.neutral_needs(loaded.tuning), name + " " + id)
+			assert_eq(loaded.emotion_causes(0.0), [] as Array[Dictionary], name + " " + id)
 
 func test_upgrade_is_deterministic_idempotent_and_never_mutates_the_source() -> void:
 	for name: String in V1 + ["memory_only_legacy"]:

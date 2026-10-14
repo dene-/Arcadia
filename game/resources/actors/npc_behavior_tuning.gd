@@ -37,3 +37,52 @@ extends Resource
 @export_range(1.0, 480.0, 1.0) var brief_goal_minutes: float = 20.0
 @export_range(1.0, 480.0, 1.0) var ordinary_goal_minutes: float = 45.0
 @export_range(1.0, 480.0, 1.0) var extended_goal_minutes: float = 75.0
+## Game minutes a kept plan or schedule fallback lasts before the next goal decision.
+@export_range(1.0, 480.0, 1.0) var plan_kept_minutes: float = 20.0
+
+## Weights (0..1) of named goal components added to normalized suitability (suitability / 4).
+@export_range(0.0, 1.0, 0.01) var goal_need_weight: float = 0.4
+@export_range(0.0, 1.0, 0.01) var goal_obligation_weight: float = 0.2
+@export_range(0.0, 1.0, 0.01) var goal_concern_weight: float = 0.4
+@export_range(0.0, 1.0, 0.01) var goal_commitment_weight: float = 0.5
+@export_range(0.0, 1.0, 0.01) var goal_personality_weight: float = 0.3
+## Game minutes an absent relative's search waits after every known place was searched.
+@export_range(1.0, 1440.0, 1.0) var search_defer_minutes: float = 180.0
+## Fear intensity (0..1) at or above which goal inertia is bypassed.
+@export_range(0.0, 1.0, 0.01) var urgent_fear: float = 0.6
+
+## Needs run from 0 (satisfied) to 1 (pressing). Rates are per game minute.
+@export_range(0.0, 0.1, 0.00001) var hunger_per_minute: float = 1.0 / 480.0
+@export_range(0.0, 0.1, 0.00001) var fatigue_awake_per_minute: float = 1.0 / 960.0
+@export_range(0.0, 0.1, 0.00001) var fatigue_sleep_relief_per_minute: float = 1.0 / 480.0
+## Social need rises by this rate multiplied by (social_rate_base + sociability).
+@export_range(0.0, 0.1, 0.00001) var social_per_minute: float = 1.0 / 2880.0
+@export_range(0.0, 2.0, 0.01) var social_rate_base: float = 0.5
+## Hunger after a completed meal.
+@export_range(0.0, 1.0, 0.01) var meal_hunger: float = 0.15
+## Social need removed by one delivered meaningful exchange.
+@export_range(0.0, 1.0, 0.01) var exchange_social_relief: float = 0.1
+## Neutral needs of a new or legacy mind (not reconstructed history).
+@export_range(0.0, 1.0, 0.01) var initial_hunger: float = 0.25
+@export_range(0.0, 1.0, 0.01) var initial_fatigue: float = 0.2
+@export_range(0.0, 1.0, 0.01) var initial_social: float = 0.3
+## Need bands: below moderate is "low"; at or above pressing is "pressing".
+@export_range(0.0, 1.0, 0.01) var need_moderate: float = 0.4
+@export_range(0.0, 1.0, 0.01) var need_pressing: float = 0.75
+
+## Emotion half-lives in game minutes, measured from the cause's onset.
+@export_range(1.0, 10080.0, 1.0) var fear_half_life_minutes: float = 15.0
+@export_range(1.0, 10080.0, 1.0) var anger_half_life_minutes: float = 60.0
+@export_range(1.0, 10080.0, 1.0) var relief_half_life_minutes: float = 20.0
+@export_range(1.0, 10080.0, 1.0) var grief_half_life_minutes: float = 2880.0
+## Emotion bands: below mild is "none" (and the cause is no longer listed); at or above strong is "strong".
+@export_range(0.0, 1.0, 0.01) var emotion_mild: float = 0.1
+@export_range(0.0, 1.0, 0.01) var emotion_strong: float = 0.5
+## Pain (1 - health ratio) bands, same shape as need bands.
+@export_range(0.0, 1.0, 0.01) var pain_moderate: float = 0.25
+@export_range(0.0, 1.0, 0.01) var pain_pressing: float = 0.6
+
+## Priorities (0..1) of commitments opened by known family events.
+@export_range(0.0, 1.0, 0.01) var endangered_check_priority: float = 0.8
+@export_range(0.0, 1.0, 0.01) var bereaved_check_priority: float = 0.5
+@export_range(0.0, 1.0, 0.01) var visit_grave_priority: float = 0.4

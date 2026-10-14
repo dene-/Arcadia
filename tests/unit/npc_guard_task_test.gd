@@ -11,6 +11,7 @@ class FakeActor extends RefCounted:
 	var alert_response := FakeAlert.new()
 	var sleeping: bool = false
 	var log: Array[String] = []
+	var can_follow: bool = true
 
 	func is_sleeping() -> bool:
 		return sleeping
@@ -23,7 +24,7 @@ class FakeActor extends RefCounted:
 		wake_from_noise("danger")
 
 	func can_follow_routine() -> bool:
-		return true
+		return can_follow
 
 class FakeExecutor extends RefCounted:
 	var begun: Array[Dictionary] = []
@@ -284,4 +285,32 @@ func test_invalid_params_are_rejected() -> void:
 		task.params = params
 		assert_false(rig.brain.request_task(task), str(params))
 	assert_true(rig.executor.begun.is_empty())
+	rig.dispose()
+
+func test_patrol_engagement_only_while_walking_the_route_and_never_when_suspended() -> void:
+	var rig := Rig.new()
+	var task: NpcGuardTask = rig.start(0, false, 100.0)
+	assert_eq(task.confirmed_engagement(), &"patrol", "walking toward a stop is on patrol")
+	rig.executor.arrive()
+	rig.tick(105.0)
+	assert_eq(task.confirmed_engagement(), &"patrol")
+	var other := NpcSafetyTask.create({"response": "SHELTER", "origin_id": "noise:1", "until_minute": 10000.0,
+		"label": "Taking cover", "refuge_space": "", "refuge_point": []}, rig.tuning)
+	assert_true(rig.brain.request_task(other))
+	assert_eq(task.confirmed_engagement(), &"", "a suspended watch earns nothing")
+	rig.brain.end_task(other.task_id)
+	rig.tick(106.0)
+	assert_eq(task.confirmed_engagement(), &"patrol")
+	rig.watch.visible = ["player"]
+	rig.report("combat", 107.0)
+	rig.tick(107.0)
+	assert_eq(rig.phase(), "intervene")
+	assert_eq(task.confirmed_engagement(), &"", "enforcement is not patrolling")
+	rig.dispose()
+
+func test_a_guard_unable_to_move_is_not_patrolling() -> void:
+	var rig := Rig.new()
+	rig.actor.can_follow = false
+	var task: NpcGuardTask = rig.start(0, false, 100.0)
+	assert_eq(task.confirmed_engagement(), &"")
 	rig.dispose()

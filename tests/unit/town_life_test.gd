@@ -280,3 +280,199 @@ func test_expired_accounts_are_not_known_and_stale_assessments_cannot_transfer_n
 	updated.text = "I saw a different person."
 	rumors.observe("a", "Mirelle", updated, policy, 501)
 	assert_true(rumors.hear("b", "a", "Mirelle", topic, policy, 502).is_empty())
+
+# --- Goal options, relative searches and grave visits (TownLife without a scene tree) ---
+
+const Routine = preload("res://tests/unit/npc_routine_task_test.gd")
+const SEEKER: String = "mirelle_voss"
+const RELATIVE: String = "voss_nephew"
+const WORLD_SEED: int = 274415
+
+func _town(minute: float) -> TownLife:
+	var town := TownLife.new()
+	town.save_game = NpcWorldSave.new()
+	town.save_game.region_seed = WORLD_SEED
+	town.save_game.population.ensure_population(WORLD_SEED)
+	var ids: Array[String] = [SEEKER, RELATIVE]
+	for id: String in ids:
+		town.save_game.life.ensure_person(id, WORLD_SEED, ids, ["square"] as Array[String])
+		town._places["home:" + id] = {"label": id + " home", "position": Vector2(1, 1)}
+		town._places["work:" + id] = {"label": id + " work", "position": Vector2(2, 2)}
+	for place: String in ["square", "market", "garden"]:
+		town._places[place] = {"label": place, "position": Vector2(3, 3)}
+	town.save_game.life.minute = minute
+	return town
+
+func _open_check(town: TownLife, created: float = 0.0) -> String:
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	return mind.commitments.create(TownLife.CHECK_RELATIVE, [RELATIVE] as Array[String],
+		["ev:worry"] as Array[String], created, -1.0, 0.7)
+
+## The seeker is on the way to `place` for the commitment, as the goal choice records it.
+func _searching(town: TownLife, commitment: String, place: String, kind: String = TownLife.CHECK_RELATIVE) -> void:
+	town.save_game.life.select_activity(SEEKER, {"kind": kind, "place": place}, 30.0,
+		{"commitment_id": commitment})
+
+## A brain for the seeker with no task yet, driven by a fake actor and executor.
+func _brain(town: TownLife, executor: Routine.FakeExecutor) -> NpcBrain:
+	var brain := NpcBrain.new()
+	var actor := Routine.FakeActor.new()
+	executor.actor = actor
+	brain.setup(SEEKER, town.save_game.minds.get_mind(SEEKER), actor, executor, town.tuning, 7)
+	town._brains[SEEKER] = brain
+	brain.advance(town.save_game.life.minute, 0.0)
+	return brain
+
+func _ids(options: Array[Dictionary]) -> Array[String]:
+	var ids: Array[String] = []
+	for option: Dictionary in options:
+		ids.append(option.id)
+	return ids
+
+func test_commitment_options_exist_only_between_six_and_nine_in_the_evening() -> void:
+	var plan: Dictionary = {"kind": "rest", "place": "home:" + SEEKER}
+	var cases: Dictionary = {359.0: false, 360.0: true, 600.0: true, 1259.0: true, 1260.0: false, 1500.0: false}
+	for minute: float in cases:
+		var town: TownLife = _town(minute)
+		_open_check(town)
+		town.save_game.minds.get_mind(SEEKER).knowledge.record_sighting(RELATIVE, "outdoors",
+			Vector2(10, 10), 5.0, "ev:seen")
+		var options: Array[Dictionary] = town._options(SEEKER, plan)
+		assert_eq("CHECK_RELATIVE" in _ids(options), cases[minute], "minute %d" % int(minute))
+		assert_true("PLAN" in _ids(options))
+		for option: Dictionary in options:
+			if option.id == "CHECK_RELATIVE":
+				assert_eq(option.subject, RELATIVE)
+				assert_false(String(option.commitment_id).is_empty())
+				assert_eq(option.place, "seen:" + RELATIVE, "the last seen place is searched first")
+		town.free()
+
+func test_search_visits_seen_then_home_then_work_defers_and_resumes_from_the_start() -> void:
+	var town: TownLife = _town(600.0)
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	mind.knowledge.record_sighting(RELATIVE, "outdoors", Vector2(10, 10), 5.0, "ev:seen")
+	var commitment: String = _open_check(town)
+	var sequence: Array[String] = [TownLife.SEEN_PREFIX + RELATIVE, "home:" + RELATIVE, "work:" + RELATIVE]
+	assert_eq(town._search_places(SEEKER, RELATIVE), sequence)
+	var plan: Dictionary = {"kind": "rest", "place": "home:" + SEEKER}
+	for step: int in range(sequence.size()):
+		var offered: Array[Dictionary] = town._options(SEEKER, plan).filter(
+			func(option: Dictionary) -> bool: return option.id == "CHECK_RELATIVE")
+		assert_eq(offered.size(), 1, "step %d" % step)
+		assert_eq(offered[0].place, sequence[step])
+		_searching(town, commitment, offered[0].place)
+		town._search_failed(SEEKER)
+		var person: Dictionary = town.save_game.life.get_person(SEEKER)
+		assert_false(person.decision.has("commitment_id"), "a stale routine never searches again")
+		assert_eq(person.until, town.save_game.life.minute, "the finished stop is interrupted")
+		assert_eq(person.decision.search, "%s:%d" % [commitment, step + 1])
+	var deferred: Dictionary = town.save_game.life.search_for(SEEKER, commitment)
+	assert_eq(deferred.step, 0)
+	assert_eq(deferred.deferred_until, 600.0 + town.tuning.search_defer_minutes)
+	assert_false("CHECK_RELATIVE" in _ids(town._options(SEEKER, plan)), "the search waits out its deferral")
+	town.save_game.life.minute = deferred.deferred_until
+	var resumed: Array[Dictionary] = town._options(SEEKER, plan).filter(
+		func(option: Dictionary) -> bool: return option.id == "CHECK_RELATIVE")
+	assert_eq(resumed.size(), 1, "after the deferral the search resumes")
+	assert_eq(resumed[0].place, sequence[0], "from the first place again")
+	assert_eq(mind.commitments.get_commitment(commitment).status, "open")
+	town.free()
+
+func test_a_search_without_a_known_sighting_starts_at_the_relatives_home() -> void:
+	var town: TownLife = _town(600.0)
+	_open_check(town)
+	assert_eq(town._search_places(SEEKER, RELATIVE), ["home:" + RELATIVE, "work:" + RELATIVE] as Array[String])
+	town.free()
+
+func test_seeing_the_relative_completes_the_check_and_ends_the_search() -> void:
+	var town: TownLife = _town(600.0)
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	var commitment: String = _open_check(town, 590.0)
+	town.save_game.life.set_search(SEEKER, commitment, 1, 0.0)
+	_searching(town, commitment, "home:" + RELATIVE)
+	mind.knowledge.record_sighting(RELATIVE, "outdoors", Vector2(10, 10), 580.0, "ev:before")
+	var brain: NpcBrain = _brain(town, Routine.FakeExecutor.new())
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "open",
+		"a sighting from before the worry does not count")
+	mind.knowledge.record_sighting(RELATIVE, "outdoors", Vector2(12, 10), 599.0, "ev:now")
+	town.save_game.life.minute = 601.0
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "completed")
+	assert_eq(town.save_game.life.search_for(SEEKER, commitment), {"step": 0, "deferred_until": 0.0})
+	assert_false(town.save_game.life.to_data().people[SEEKER].searches.has(commitment))
+	assert_eq(town.save_game.life.get_person(SEEKER).until, 601.0, "the finished search is interrupted")
+	assert_false("CHECK_RELATIVE" in _ids(town._options(SEEKER, {"kind": "rest", "place": "home:" + SEEKER})))
+	brain.free()
+	town.free()
+
+func test_the_sighting_that_raised_the_worry_does_not_complete_the_check() -> void:
+	var town: TownLife = _town(600.0)
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	var commitment: String = _open_check(town, 600.0)
+	mind.knowledge.record_sighting(RELATIVE, "outdoors", Vector2(10, 10), 600.0, "ev:hurt")
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "open",
+		"seeing the relative hurt at the minute of the worry is not finding them")
+	mind.knowledge.record_sighting(RELATIVE, "outdoors", Vector2(12, 10), 601.0, "ev:later")
+	town.save_game.life.minute = 601.0
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "completed")
+	town.free()
+
+func test_learning_the_relative_died_cancels_the_check() -> void:
+	var town: TownLife = _town(600.0)
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	var commitment: String = _open_check(town, 500.0)
+	town.save_game.life.set_search(SEEKER, commitment, 2, 0.0)
+	_searching(town, commitment, "work:" + RELATIVE)
+	mind.knowledge.record(RELATIVE, "status", "dead", NpcKnowledge.Status.OBSERVED,
+		NpcKnowledge.SELF_SOURCE, "ev:death", "death:" + RELATIVE, 590.0, 1.0)
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "cancelled")
+	assert_false(town.save_game.life.to_data().people[SEEKER].searches.has(commitment))
+	town.free()
+
+func test_a_grave_visit_completes_on_arrival_and_not_while_travelling() -> void:
+	var town: TownLife = _town(600.0)
+	var mind: NpcMindState = town.save_game.minds.get_mind(SEEKER)
+	var commitment: String = mind.commitments.create(TownLife.VISIT_GRAVE, [RELATIVE] as Array[String],
+		["ev:funeral"] as Array[String], 590.0, -1.0, 0.8)
+	_searching(town, commitment, TownLife.GRAVE_PREFIX + RELATIVE, TownLife.VISIT_GRAVE)
+	var executor: Routine.FakeExecutor = Routine.FakeExecutor.new()
+	var brain: NpcBrain = _brain(town, executor)
+	var task: NpcRoutineTask = NpcRoutineTask.create({"activity": TownLife.VISIT_GRAVE,
+		"place": TownLife.GRAVE_PREFIX + RELATIVE, "label": "Visiting the grave", "space": "town",
+		"point": [40.0, 24.0], "until_minute": 630.0}, town.tuning)
+	assert_true(brain.request_task(task))
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "open", "still on the way")
+	executor.arrive()
+	brain.advance(601.0, 1.0)
+	town._maintain_commitments(SEEKER)
+	assert_eq(mind.commitments.get_commitment(commitment).status, "completed")
+	brain.free()
+	town.free()
+
+func test_open_searches_survive_a_world_save_round_trip() -> void:
+	var town: TownLife = _town(600.0)
+	var commitment: String = _open_check(town, 500.0)
+	town.save_game.life.set_search(SEEKER, commitment, 1, 0.0)
+	var second: String = town.save_game.minds.get_mind(SEEKER).commitments.create(TownLife.CHECK_RELATIVE,
+		["cassian_vale"] as Array[String], [] as Array[String], 500.0, -1.0, 0.4)
+	town.save_game.life.set_search(SEEKER, second, 0, 780.0)
+	var loaded := NpcWorldSave.new()
+	assert_true(loaded.from_data(JSON.parse_string(JSON.stringify(town.save_game.to_data()))))
+	assert_eq(loaded.life.search_for(SEEKER, commitment), {"step": 1, "deferred_until": 0.0})
+	assert_eq(loaded.life.search_for(SEEKER, second), {"step": 0, "deferred_until": 780.0})
+	assert_eq(loaded.minds.get_mind(SEEKER).commitments.get_commitment(commitment).status, "open")
+	var resumed: TownLife = _town(600.0)
+	resumed.save_game = loaded
+	var offered: Array[Dictionary] = resumed._options(SEEKER, {"kind": "rest", "place": "home:" + SEEKER})
+	var checks: Array[Dictionary] = offered.filter(
+		func(option: Dictionary) -> bool: return option.id == "CHECK_RELATIVE")
+	assert_eq(checks.size(), 1)
+	assert_eq(checks[0].commitment_id, commitment, "the deferred search is not offered, the saved step is")
+	assert_eq(checks[0].place, "work:" + RELATIVE)
+	resumed.free()
+	town.free()

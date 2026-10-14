@@ -74,11 +74,20 @@ func diagnostics(id: String) -> Dictionary:
 func consider(first: BaseNpc, second: BaseNpc) -> void:
 	var a: String = String(first.get_npc_profile().npc_id)
 	var b: String = String(second.get_npc_profile().npc_id)
+	# Cheap position checks first: every resident pair is considered each tick, and a saved
+	# person record is copied on every read.
 	if a == b or _busy.size() >= MAX_SESSIONS * 2 or _busy.has(a) or _busy.has(b) \
-		or _sheltering(a) or _sheltering(b) \
 		or first.daily_routine.activity == "rest" or second.daily_routine.activity == "rest" \
-		or not _near(first, second) or state.get_person(a).social_after > state.minute \
+		or not _near(first, second) or _sheltering(a) or _sheltering(b) \
+		or state.get_person(a).social_after > state.minute \
 		or state.get_person(b).social_after > state.minute:
+		return
+	# Sociable, curious residents open conversations more readily; one deterministic roll per
+	# pair and game minute keeps the choice reproducible for a given world seed.
+	var traits: Dictionary = first.get_npc_profile().social_traits
+	if first.global_position.distance_to(second.global_position) > NpcTemperament.attention_range(traits, RANGE) \
+		or NpcRoutinePlan.random_for(seed_value, "%s:initiate:%s:%d" % [a, b, int(state.minute)]).randf() \
+			>= NpcTemperament.social_initiative(traits):
 		return
 	var brain_a: NpcBrain = _brain(a)
 	var brain_b: NpcBrain = _brain(b)
@@ -144,6 +153,10 @@ func _live(token: int) -> bool:
 
 func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev_b: int, token: int) -> void:
 	var start: int = Time.get_ticks_msec()
+	# Patient residents stay with a conversation longer, impatient ones drift off sooner.
+	var session_ms: float = SESSION_MS * 0.5 * (
+		NpcTemperament.persistence(first.get_npc_profile().social_traits)
+		+ NpcTemperament.persistence(second.get_npc_profile().social_traits))
 	var session_id: String = _sessions[token].id
 	var brain_a: NpcBrain = _sessions[token].brains[a]
 	var brain_b: NpcBrain = _sessions[token].brains[b]
@@ -152,7 +165,7 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 			or _busy.get(a) != token or _busy.get(b) != token \
 			or first.life_revision != rev_a or second.life_revision != rev_b \
 			or _sheltering(a) or _sheltering(b) or not _near(first, second) \
-			or Time.get_ticks_msec() - start >= SESSION_MS:
+			or Time.get_ticks_msec() - start >= session_ms:
 			return false
 		if _sessions[token].phase != PHASE_INVITE:
 			return true
@@ -230,6 +243,11 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 			else "Discussed %s's account: %s" % [topic.originator_name, topic.text])
 		state.remember_exchange(speaker_id, listener_id, summary, session_id, speaker_id, listener_id)
 		state.remember_exchange(listener_id, speaker_id, summary, session_id, speaker_id, listener_id)
+		# The exchange reached both residents, so each one's need for company eases once.
+		for id: String in [a, b]:
+			var task: NpcSocialTask = _sessions[token].tasks.get(id) as NpcSocialTask
+			if task != null:
+				task.deliver_exchange()
 		_refresh_knowledge(listener, listener_id)
 		_save()
 		if not line.is_empty():

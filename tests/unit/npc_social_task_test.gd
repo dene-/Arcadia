@@ -131,3 +131,31 @@ func test_invalid_params_are_rejected() -> void:
 		assert_false(rig.brain.request_task(task), str(task.params))
 	assert_true(rig.brain.current_activity().is_empty())
 	rig.dispose()
+
+func test_a_delivered_exchange_eases_social_need_once_and_only_while_talking() -> void:
+	var rig := Routine.Rig.new()
+	rig.mind.needs.social = 0.6
+	var task := _social(rig)
+	assert_true(_join(rig, task, 100.0))
+	assert_false(task.deliver_exchange(), "nothing is said while still approaching")
+	assert_eq(rig.mind.needs.social, 0.6)
+	task.converse()
+	assert_true(task.deliver_exchange())
+	assert_true(is_equal_approx(rig.mind.needs.social, 0.6 - rig.tuning.exchange_social_relief))
+	assert_false(task.deliver_exchange(), "one exchange per session")
+	assert_true(is_equal_approx(rig.mind.needs.social, 0.6 - rig.tuning.exchange_social_relief))
+	assert_true(rig.brain.end_task(task.task_id))
+	assert_false(task.deliver_exchange(), "a finished session delivers nothing")
+	rig.dispose()
+
+func test_conversation_suspends_work_engagement() -> void:
+	var rig := Routine.Rig.new()
+	var routine := NpcRoutineTask.create(Routine.routine_params("work", "bakery", 900.0), rig.tuning)
+	assert_true(rig.start(routine, 100.0))
+	rig.executor.arrive()
+	rig.tick(101.0)
+	assert_eq(routine.confirmed_engagement(), &"work")
+	var task := _social(rig, "social:1", "garrin_holt", "partner")
+	assert_true(_join(rig, task, 102.0))
+	assert_eq(routine.confirmed_engagement(), &"")
+	rig.dispose()

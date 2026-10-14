@@ -168,3 +168,22 @@ func test_commitment_whose_task_was_not_saved_stays_open_after_reload() -> void:
 	assert_eq(_status(loaded, promise), "completed")
 	assert_true(_intention_done(store))
 	loaded.dispose()
+
+func test_find_returns_the_newest_commitment_of_a_kind_about_someone_in_any_status() -> void:
+	var commitments := NpcCommitments.new()
+	commitments.owner_id = NPC
+	var evidence: Array[String] = ["obs:1"]
+	var first: String = commitments.create("check_relative", ["tess"] as Array[String], evidence, 10.0)
+	commitments.create("visit_grave", ["tess"] as Array[String], evidence, 10.0)
+	commitments.create("check_relative", ["mira"] as Array[String], evidence, 10.0)
+	assert_eq(commitments.find("check_relative", "tess").id, first)
+	assert_true(commitments.resolve(first, "completed", 20.0))
+	assert_eq(commitments.find("check_relative", "tess").status, "completed",
+		"A resolved commitment is still found, so it is never reopened")
+	var second: String = commitments.create("check_relative", ["tess"] as Array[String], evidence, 30.0)
+	assert_eq(commitments.find("check_relative", "tess").id, second)
+	assert_eq(commitments.find("visit_grave", "mira"), {})
+	assert_eq(commitments.find("unknown", "tess"), {})
+	var found: Dictionary = commitments.find("visit_grave", "tess")
+	found.status = "failed"
+	assert_eq(commitments.find("visit_grave", "tess").status, "open", "find returns a copy")

@@ -69,6 +69,23 @@ static func apply(profile: NpcProfile, temperament: Dictionary) -> void:
 	profile.cognition = profile.get_cognition().duplicate()
 	profile.cognition.verbal_reactivity = lerpf(0.2, 0.9, temperament.traits.sociability)
 
+## Social initiative in 0.25..1: how readily the resident opens a conversation. Mostly
+## sociability, tempered by curiosity. Existing traits only; nothing is rolled.
+static func social_initiative(traits: Dictionary) -> float:
+	return lerpf(0.25, 1.0, 0.7 * _trait(traits, "sociability") + 0.3 * _trait(traits, "curiosity"))
+
+## The farthest distance (up to `base`) at which the resident notices someone worth
+## approaching: an incurious person only engages those close by.
+static func attention_range(traits: Dictionary, base: float) -> float:
+	return base * lerpf(0.6, 1.0, _trait(traits, "curiosity"))
+
+## Multiplier on how long the resident stays with an interaction before drifting off.
+static func persistence(traits: Dictionary) -> float:
+	return lerpf(0.8, 1.25, _trait(traits, "patience"))
+
+static func _trait(traits: Dictionary, tendency: String) -> float:
+	return clampf(float(traits.get(tendency, 0.5)), 0.0, 1.0)
+
 static func is_valid(value: Variant) -> bool:
 	if not value is Dictionary or not value.get("personality") is String \
 		or value.personality.length() > 2000 or not value.get("speech_style") is String \

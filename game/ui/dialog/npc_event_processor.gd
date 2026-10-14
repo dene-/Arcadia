@@ -145,9 +145,9 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 	var ticket := NpcDecisionTicket.create(id, NpcDecisionTicket.APPRAISE, _urgency(observation))
 	ticket.evidence_ids.append(evidence.id)
 	ticket.created_minute = int(store.world_minute)
-	var versions: Dictionary = mind.versions()
-	ticket.read_versions = {"knowledge": versions.knowledge,
-		"relationships": versions.relationships, "condition": versions.condition}
+	ticket.read_versions = {"knowledge": mind.knowledge.version,
+		"relationships": mind.relationships.version,
+		"condition": mind.condition_version(store.world_minute)}
 	var memories: Array = NpcMemoryRetriever.new().retrieve(state.get("memories", []),
 		observation.text, current, job.profile.get_cognition(), store.world_minute,
 		NpcMemoryRetriever.links_for(current))
@@ -175,6 +175,7 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 		else store.commit_evidence(id, observation, appraisal)
 	var committed: bool = failure.is_empty()
 	if committed:
+		feel_appraisal(mind, observation, appraisal)
 		_wake_backoff()
 	else:
 		mind.evidence.fail(observation.observation_id, failure, _now())
@@ -192,6 +193,32 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void
 		# Optional speech must not hold up any NPC's memory assessment.
 		_speaking[id] = true
 		_deliver_speech(id, job, observation, appraisal, diagnostic)
+
+## The appraisal's emotions as impulses of their cause (the incident, else this evidence), from
+## when it was observed. Reappraising the same cause refines but never adds a second impulse.
+static func feel_appraisal(mind: NpcMindState, observation: NpcObservation,
+		appraisal: NpcDecisionPolicy.Appraisal) -> void:
+	for emotion: String in appraisal.emotions:
+		var intensity: float = appraisal.emotions[emotion]
+		if intensity > 0.0:
+			mind.feel(emotion, intensity, _emotion_subject(emotion, observation),
+				observation.observation_id, observation.incident_id, observation.observed_minute)
+
+# Whom the feeling is about: the lost or hurt person for grief and relief, the aggressor for
+# fear and anger, else whoever the evidence came from. Never the observer itself.
+static func _emotion_subject(emotion: String, observation: NpcObservation) -> String:
+	var roles: Array[String] = ["aggressor", "hurt_person"]
+	match emotion:
+		"grief":
+			roles = ["deceased", "hurt_person"]
+		"relief":
+			roles = ["hurt_person", "deceased"]
+	for role: String in roles:
+		for participant: Dictionary in observation.participants:
+			var id: String = String(participant.get("id", ""))
+			if participant.get("role") == role and not id.is_empty() and id != observation.observer_id:
+				return id
+	return observation.source_id if observation.source_id != observation.observer_id else ""
 
 func _deliver_speech(id: String, job: Dictionary, observation: NpcObservation,
 		appraisal: NpcDecisionPolicy.Appraisal, diagnostic: Dictionary) -> void:

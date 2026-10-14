@@ -72,6 +72,7 @@ class FakeExecutor extends RefCounted:
 	func arrive() -> void:
 		states[_journey_owner] = &"arrived"
 		actor.world_space = _journey_space
+		actor.global_position = begun[begun.size() - 1]["point"]
 
 	func fail() -> void:
 		states[_journey_owner] = &"failed"
@@ -334,4 +335,74 @@ func test_invalid_params_are_rejected() -> void:
 		assert_false(rig.start(NpcRoutineTask.create(params, rig.tuning), 100.0), str(params))
 	assert_true(rig.executor.begun.is_empty())
 	assert_true(rig.start(_routine(rig, "work", "bakery", 200.0), 100.0))
+	rig.dispose()
+
+func test_engagement_begins_only_after_arrival_and_ends_when_suspended() -> void:
+	var rig := Rig.new()
+	var task: NpcRoutineTask = _routine(rig, "work", "bakery", 900.0)
+	assert_true(rig.start(task, 100.0))
+	assert_eq(task.confirmed_engagement(), &"", "travelling is not working")
+	rig.executor.arrive()
+	assert_eq(task.confirmed_engagement(), &"", "an arrival nobody has observed yet")
+	rig.tick(110.0)
+	assert_eq(task.confirmed_engagement(), &"work")
+	rig.brain.interrupt(NpcTask.Interrupt.CONVERSATION)
+	assert_eq(task.confirmed_engagement(), &"", "suspended work earns nothing")
+	rig.tick(120.0)
+	assert_eq(task.confirmed_engagement(), &"work", "still in place on resume")
+	rig.brain.interrupt(NpcTask.Interrupt.HURT)
+	rig.actor.global_position = Vector2(400.0, 400.0)
+	rig.tick(130.0)
+	assert_eq(task.confirmed_engagement(), &"", "displaced residents travel back first")
+	assert_eq(rig.phase(), "travel")
+	rig.executor.arrive()
+	rig.tick(140.0)
+	assert_eq(task.confirmed_engagement(), &"work")
+	rig.tick(900.0)
+	assert_eq(task.confirmed_engagement(), &"", "a finished task confirms nothing")
+	rig.dispose()
+
+func test_sleeping_and_cancelled_tasks_are_not_engaged() -> void:
+	var rig := Rig.new()
+	rig.executor.bed = Vector2(8.0, 9.0)
+	var task: NpcRoutineTask = _routine(rig, "rest", "home", 400.0)
+	assert_true(rig.start(task, 100.0))
+	rig.executor.arrive()
+	rig.tick(110.0)
+	assert_eq(rig.phase(), "sleep")
+	assert_eq(task.confirmed_engagement(), &"")
+	var other := Rig.new()
+	var work: NpcRoutineTask = _routine(other, "work", "bakery", 900.0)
+	assert_true(other.start(work, 100.0))
+	other.executor.arrive()
+	other.tick(110.0)
+	other.brain.interrupt(NpcTask.Interrupt.DANGER)
+	assert_eq(work.confirmed_engagement(), &"")
+	rig.dispose()
+	other.dispose()
+
+func test_a_meal_taken_at_its_place_feeds_only_once_completed() -> void:
+	var rig := Rig.new()
+	rig.mind.needs.hunger = 0.8
+	var task: NpcRoutineTask = _routine(rig, "meal", "bakery", 200.0)
+	assert_true(rig.start(task, 100.0))
+	rig.tick(150.0)
+	assert_eq(rig.mind.needs.hunger, 0.8, "not eaten while walking")
+	rig.executor.arrive()
+	rig.tick(160.0)
+	assert_eq(task.confirmed_engagement(), &"meal")
+	assert_eq(rig.mind.needs.hunger, 0.8, "still eating")
+	rig.tick(200.0)
+	assert_eq(rig.last_finished()["reason"], &"until")
+	assert_eq(rig.mind.needs.hunger, rig.tuning.meal_hunger)
+	rig.dispose()
+
+func test_a_meal_that_never_reached_its_place_does_not_feed() -> void:
+	var rig := Rig.new()
+	rig.mind.needs.hunger = 0.8
+	var task: NpcRoutineTask = _routine(rig, "meal", "bakery", 200.0)
+	assert_true(rig.start(task, 100.0))
+	rig.tick(200.0)
+	assert_eq(rig.last_finished()["reason"], &"until")
+	assert_eq(rig.mind.needs.hunger, 0.8)
 	rig.dispose()

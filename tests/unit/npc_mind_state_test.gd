@@ -349,6 +349,8 @@ func test_mind_state_survives_json_round_trip_with_canonical_types() -> void:
 	mind.set_condition({"energy": 0.25})
 	mind.knowledge.record_sighting("tess", "market", Vector2(4, 5), 12.0, "ev:1")
 	mind.next_decision()
+	mind.advance_needs(30.0, false, 0.5, mind.tuning)
+	assert_true(mind.feel("fear", 0.7, "voss", "ev:2", "incident:1", 12.0))
 	var restored := NpcMindState.new("vale")
 	assert_true(restored.from_data(_round_trip(mind.to_data())))
 	assert_false(restored.relationships.apply_delta("player", {"suspicion": 0.1}, "r1"))
@@ -364,6 +366,12 @@ func test_mind_state_survives_json_round_trip_with_canonical_types() -> void:
 	assert_eq(restored.knowledge.to_data(), mind.knowledge.to_data())
 	assert_eq(restored.knowledge.known_locations("tess").size(), 1)
 	assert_true(NpcMindState.is_valid_data(restored.to_data(), "vale"))
+	for need: String in NpcMindState.NEEDS:
+		assert_true(is_equal_approx(restored.needs[need], mind.needs[need]))
+	assert_eq(restored.emotion("fear", 20.0), mind.emotion("fear", 20.0))
+	assert_eq(restored.emotion_causes(20.0), mind.emotion_causes(20.0))
+	assert_false(restored.feel("fear", 0.7, "voss", "ev:2", "incident:1", 30.0),
+		"A restored cause is not felt again")
 	assert_false(NpcMindState.is_valid_data(restored.to_data(), "holt"))
 
 func test_malformed_mind_data_changes_nothing() -> void:
@@ -386,6 +394,18 @@ func test_malformed_mind_data_changes_nothing() -> void:
 		func(d: Dictionary) -> void: d.condition = {"o": RefCounted.new()},
 		func(d: Dictionary) -> void: d.task = {"task_id": "x"},
 		func(d: Dictionary) -> void: d.relationships = {"subjects": {}, "receipts": [""]},
+		func(d: Dictionary) -> void: d.needs = {"hunger": 0.2, "fatigue": 0.2},
+		func(d: Dictionary) -> void: d.needs = {"hunger": 1.5, "fatigue": 0.2, "social": 0.3},
+		func(d: Dictionary) -> void: d.needs = {"hunger": "x", "fatigue": 0.2, "social": 0.3},
+		func(d: Dictionary) -> void: d.emotions = [{"emotion": "joy", "cause": "c", "subject": "",
+			"evidence_id": "", "incident_id": "", "intensity": 0.5, "onset_minute": 0.0}],
+		func(d: Dictionary) -> void: d.emotions = [{"emotion": "fear", "cause": "", "subject": "",
+			"evidence_id": "", "incident_id": "", "intensity": 0.5, "onset_minute": 0.0}],
+		func(d: Dictionary) -> void: d.emotions = [{"emotion": "fear", "cause": "c", "subject": "",
+			"evidence_id": "", "incident_id": "", "intensity": 0.0, "onset_minute": 0.0}],
+		func(d: Dictionary) -> void: d.emotions = [{"emotion": "fear", "cause": "c", "subject": "",
+			"evidence_id": "", "incident_id": "", "intensity": 0.5}],
+		func(d: Dictionary) -> void: d.emotions = {},
 	]:
 		var candidate: Dictionary = good.duplicate(true)
 		mutate.call(candidate)

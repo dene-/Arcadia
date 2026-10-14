@@ -140,13 +140,51 @@ func see_grave(observer_id: String, deceased_id: String, point: Vector2) -> void
 		perceive(save_game.minds.get_mind(observer_id), observation, {})
 
 ## Learns from one observation; the first evidence of a relative's death leaves a bereavement
-## concern. Kin are the resident's own family facts, so only informed relatives grieve.
+## concern. Kin are the resident's own family facts, so only informed relatives grieve. Known kin
+## loss or a kin seen/heard hurt opens a `check_relative` commitment for each living relative it
+## concerns; a known relative's known grave opens one `visit_grave` commitment.
 static func perceive(mind: NpcMindState, observation: NpcObservation, positions: Dictionary) -> void:
 	var deceased: String = _deceased(observation)
 	var knew: bool = deceased.is_empty() or _knows_dead(mind.knowledge, deceased)
 	learn(mind.knowledge, observation, positions)
-	if not knew and _knows_dead(mind.knowledge, deceased) and mind.knowledge.knows(deceased, "family_role"):
-		mind.add_bereavement(deceased, observation.observation_id, observation.observed_minute)
+	var evidence: Array[String] = [observation.observation_id]
+	var minute: float = observation.observed_minute
+	var bereaved: bool = not knew and _knows_dead(mind.knowledge, deceased) \
+		and mind.knowledge.knows(deceased, "family_role")
+	if bereaved:
+		mind.add_bereavement(deceased, observation.observation_id, minute)
+		for relative: String in _kin(mind):
+			if relative != deceased:
+				_open_check(mind, relative, evidence, minute, mind.tuning.bereaved_check_priority)
+	var hurt: String = _participant_with_role(observation, "hurt_person")
+	if not hurt.is_empty() and hurt != mind.npc_id and mind.knowledge.knows(hurt, "family_role") \
+			and not _knows_dead(mind.knowledge, hurt):
+		_open_check(mind, hurt, evidence, minute, mind.tuning.endangered_check_priority)
+	if not deceased.is_empty() and mind.knowledge.knows(deceased, "family_role") \
+			and _knows_dead(mind.knowledge, deceased) and mind.knowledge.knows(deceased, "burial") \
+			and mind.commitments.find("visit_grave", deceased).is_empty():
+		var other: Array[String] = [deceased]
+		mind.commitments.create("visit_grave", other, evidence, minute, -1.0,
+			mind.tuning.visit_grave_priority)
+
+# Living relatives the resident knows of (family facts about the people it has ties with).
+static func _kin(mind: NpcMindState) -> Array[String]:
+	var result: Array[String] = []
+	for subject: String in mind.relationships.subjects():
+		if subject != mind.npc_id and mind.knowledge.knows(subject, "family_role") \
+				and not _knows_dead(mind.knowledge, subject):
+			result.append(subject)
+	result.sort()
+	return result
+
+# At most one open check per relative: a further reason never stacks a second one.
+static func _open_check(mind: NpcMindState, relative: String, evidence: Array[String],
+		minute: float, priority: float) -> void:
+	var existing: Dictionary = mind.commitments.find("check_relative", relative)
+	if not existing.is_empty() and existing["status"] == "open":
+		return
+	var other: Array[String] = [relative]
+	mind.commitments.create("check_relative", other, evidence, minute, -1.0, priority)
 
 ## A grave seen in the cemetery: it shows who lies there and nothing about how they died.
 static func grave_observation(observer_id: String, deceased_id: String, deceased_name: String,

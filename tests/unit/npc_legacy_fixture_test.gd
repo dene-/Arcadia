@@ -73,8 +73,10 @@ func _with_load_defaults(data: Dictionary) -> Dictionary:
 		for memory: Dictionary in npc.memories:
 			_undated(memory)
 	for mind: Dictionary in data.minds.minds.values():
-		if not mind.has("incident_budget"):
-			mind.incident_budget = NpcIncidentBudget.new().to_data()
+		var defaults: Dictionary = NpcMindState.new().to_data()
+		for key: String in ["incident_budget", "needs", "emotions"]:
+			if not mind.has(key):
+				mind[key] = defaults[key]
 	return data
 
 func test_v1_world_file_migrates_on_load_and_only_save_writes_v2() -> void:

@@ -65,6 +65,14 @@ func open_commitments() -> Array[Dictionary]:
 			result.append(item.duplicate(true))
 	return result
 
+## The most recent commitment of `kind` about `other_id` in any status, or {} when none.
+func find(kind: String, other_id: String) -> Dictionary:
+	for index: int in range(_items.size() - 1, -1, -1):
+		var item: Dictionary = _items[index]
+		if item["kind"] == kind and other_id in (item["other_ids"] as Array):
+			return item.duplicate(true)
+	return {}
+
 func to_data() -> Dictionary:
 	var items: Array = []
 	for item: Dictionary in _items:

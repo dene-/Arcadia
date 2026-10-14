@@ -8,6 +8,14 @@ extends Node
 ## A repeat sighting of the same target is recorded only after it moved, changed space or this long.
 const SIGHTING_MOVE_PIXELS: float = 16.0
 const SIGHTING_REFRESH_MINUTES: float = 30.0
+## Commitment-driven activities: a search for a relative and a visit to a known grave.
+const CHECK_RELATIVE: String = "check_relative"
+const VISIT_GRAVE: String = "visit_grave"
+## Ad-hoc places: where a relative was last seen, and the grave of a deceased resident.
+const SEEN_PREFIX: String = "seen:"
+const GRAVE_PREFIX: String = "grave:"
+## A visitor stands this far below the grave marker.
+const GRAVE_STAND_OFFSET := Vector2(0, 12)
 
 @export_range(0.0, 10.0, 0.1) var minutes_per_second: float = 1.5
 @export_range(1, 12, 1) var max_decision_workers: int = 4
@@ -37,6 +45,8 @@ var _sighted: Dictionary = {}
 # observer|deceased -> true once the observer has seen that grave this session.
 var _graves_seen: Dictionary = {}
 var _initialized: bool = false
+# id -> sociability trait, read once: needs advance every frame.
+var _sociability: Dictionary[String, float] = {}
 var _light: CanvasModulate
 var _clock: Label
 
@@ -152,9 +162,9 @@ func _process(delta: float) -> void:
 			_revisions[id] = npc.life_revision
 			save_game.life.interrupt(id)
 		npc.daily_routine.update(npc.global_position, delta, not npc.can_follow_routine())
-		if npc.daily_routine.activity in ["work", "patrol", "school"] and npc.can_follow_routine() \
-			and (npc.daily_routine.activity == "patrol" or npc.global_position.distance_to(npc.daily_routine.destination) <= 4):
+		if npc.earns_work_credit():
 			save_game.economy.record_work(id, elapsed_minutes)
+		_advance_needs(npc, id, elapsed_minutes)
 		buildings.advance(npc, id)
 		_brains[id].advance(save_game.life.minute, elapsed_minutes)
 		# Door transfers and scheduled waking belong to the running task, not an interruption.
@@ -173,6 +183,7 @@ func _process(delta: float) -> void:
 		var engaged: bool = watch.maintain(npc, id)
 		engaged = funerals.maintain(npc, id) or engaged
 		engaged = _maintain_safety(npc, id) or engaged
+		_maintain_commitments(id)
 		_update_context(npc, id)
 		if not engaged and _routine_due(id) and npc.can_follow_routine() and not encounters.is_busy(id) \
 			and not _pending.has(id) and _pending.size() < max_decision_workers:
@@ -316,12 +327,14 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 		+ str(current.get("safety_response", {}).get("concern", "")),
 		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute,
 		NpcMemoryRetriever.links_for(raw))
+	var mind: NpcMindState = save_game.minds.get_mind(id)
 	var ticket := NpcDecisionTicket.create(id, NpcDecisionTicket.SELECT_GOAL)
 	ticket.task_id = "routine:" + id
 	ticket.task_generation = revision
 	ticket.created_minute = int(save_game.life.minute)
-	ticket.read_versions = {"life": revision,
-		"task": int(save_game.minds.get_mind(id).versions().task)}
+	ticket.read_versions = {"life": revision, "task": int(mind.versions().task),
+		"condition": mind.condition_version(save_game.life.minute),
+		"commitments": mind.commitments.version}
 	var candidates: Array[Dictionary] = []
 	for option: Dictionary in options:
 		ticket.candidate_ids.append(option.id)
@@ -342,23 +355,78 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	if NpcRoutinePlan.current(save_game.life.get_person(id).plan, save_game.life.minute) != preferred:
 		save_game.life.interrupt(id)
 		return # A delayed nighttime decision cannot overwrite the morning routine.
-	# Without a confident suitable candidate (or a provider) the resident keeps today's plan entry.
-	var choice: NpcDecisionPolicy.GoalChoice = NpcDecisionPolicy.goal_choice(result, tuning)
+	if mind.condition_version(save_game.life.minute) != ticket.read_versions.condition \
+			or mind.commitments.version != ticket.read_versions.commitments:
+		save_game.life.interrupt(id)
+		return # The resident's needs, feelings or commitments moved on while it was judged.
+	var frame: NpcDecisionPolicy.GoalFrame = goal_frame(options, mind,
+		save_game.life.personality_for(id, save_game.get_npc_seed()).traits,
+		save_game.life.get_person(id), save_game.life.minute, save_game.get_npc_seed(), tuning)
+	var choice: NpcDecisionPolicy.GoalChoice = NpcDecisionPolicy.goal_choice(result, tuning, frame)
+	# Without an eligible candidate (or a provider) the resident keeps today's plan entry.
 	var selected: Dictionary = options[0]
-	var duration: float = 20.0
+	var duration: float = tuning.plan_kept_minutes
 	var service: String = "schedule_fallback" if not result.is_success() else "plan_kept"
 	for option: Dictionary in options:
 		if option.id == choice.candidate_id:
 			selected = option
 			duration = choice.duration_minutes
-			service = "jev"
+			# "priority": the resident's own needs or commitments chose what the judgment did not.
+			service = "jev" if choice.endorsed else "priority"
 			break
-	save_game.life.select_activity(id, selected, duration, {"service": service,
+	var diagnostic: Dictionary = {"service": service,
 		"outcome": NpcDecisionResult.Outcome.keys()[result.outcome], "candidate": selected.id,
-		"duration": duration})
+		"duration": duration, "scores": choice.scores}
+	if selected.has("commitment_id"):
+		diagnostic.commitment_id = selected.commitment_id
+	save_game.life.select_activity(id, selected, duration, diagnostic)
 	_request_routine(npc, id, selected)
 	_update_context(npc, id)
 	_save()
+
+## The resident's own reasons for each option, for `NpcDecisionPolicy.goal_choice`. `options`
+## carry {id, kind, place} and, for a commitment, {commitment_id, subject}; `person` is the saved
+## life record (activity, place, since). Draws the tie-break seed from the mind's decision sequence.
+static func goal_frame(options: Array[Dictionary], mind: NpcMindState, traits: Dictionary,
+		person: Dictionary, minute: float, seed_value: int,
+		source: NpcBehaviorTuning) -> NpcDecisionPolicy.GoalFrame:
+	var frame := NpcDecisionPolicy.GoalFrame.new()
+	var fear: float = mind.emotion("fear", minute)
+	var causes: Array[Dictionary] = mind.emotion_causes(minute)
+	frame.urgent = fear >= source.urgent_fear
+	for option: Dictionary in options:
+		var kind: String = option.kind
+		var parts: Dictionary = {"need": 0.0, "obligation": 0.0, "concern": 0.0,
+			"commitment": 0.0, "personality": 0.0}
+		var need: String = {"meal": "hunger", "rest": "fatigue", "socialize": "social",
+			"visit": "social"}.get(kind, "")
+		if not need.is_empty():
+			parts.need = float(mind.needs.get(need, 0.0))
+		if kind in ["work", "patrol", "school"]:
+			parts.obligation = 1.0 if option.id == "PLAN" else 0.5
+		if option.has("commitment_id"):
+			var record: Dictionary = mind.commitments.get_commitment(option.commitment_id)
+			parts.commitment = float(record.get("priority", 0.0))
+			for cause: Dictionary in causes:
+				if cause.emotion in (["fear", "grief"] if kind == CHECK_RELATIVE else ["grief"]) \
+						and (cause.subject == option.subject or kind == CHECK_RELATIVE):
+					parts.concern = maxf(parts.concern, float(cause.intensity))
+		elif kind == "rest":
+			parts.concern = fear # Home is the refuge a frightened resident knows.
+		var trait_name: String = {"socialize": "sociability", "visit": "sociability",
+			"walk": "curiosity", "rest": "sociability"}.get(kind, "")
+		if not trait_name.is_empty():
+			var signed: float = (float(traits.get(trait_name, 0.5)) - 0.5) * 2.0
+			parts.personality = -signed if kind == "rest" else signed
+		frame.components[option.id] = parts
+		if frame.incumbent.is_empty() and kind == person.get("activity") \
+				and option.place == person.get("place"):
+			frame.incumbent = option.id
+	# Older saves do not know when the current goal began: no inertia protects it.
+	if not frame.incumbent.is_empty() and person.has("since"):
+		frame.incumbent_minutes = minute - float(person.since)
+	frame.tie_seed = hash("%d:%s:goal:%d" % [seed_value, mind.npc_id, mind.next_decision()])
+	return frame
 
 # A new ordinary routine is wanted when the brain is idle or its routine ran out (or was
 # invalidated through `save_game.life.interrupt`). Duties and safety tasks are never replanned.
@@ -444,9 +512,94 @@ func _safety_requested(id: String, origin: String, response: String) -> bool:
 	_safety_keys[id] = key
 	return true
 
+# Needs drift every frame; fatigue eases only while the resident actually sleeps.
+func _advance_needs(npc: BaseNpc, id: String, minutes: float) -> void:
+	if not _sociability.has(id):
+		_sociability[id] = float(save_game.life.personality_for(id,
+			save_game.get_npc_seed()).traits.get("sociability", 0.5))
+	save_game.minds.get_mind(id).advance_needs(minutes, npc.is_sleeping(), _sociability[id], tuning)
+
+# Checks on relatives end when the resident sees them (or learns they died); grave visits end on
+# arrival. A search place reached without finding the relative leads to the next known place,
+# and after the last one the search waits `search_defer_minutes`.
+func _maintain_commitments(id: String) -> void:
+	var mind: NpcMindState = save_game.minds.get_mind(id)
+	var minute: float = save_game.life.minute
+	for record: Dictionary in mind.commitments.open_commitments():
+		if record.kind != CHECK_RELATIVE:
+			continue
+		var relative: String = record.other_ids[0]
+		var outcome: String = "cancelled" if _known_dead(mind.knowledge, relative) \
+			else "completed" if _found(id, relative, float(record.created_minute)) else ""
+		if not outcome.is_empty() and mind.commitments.resolve(record.id, outcome, minute):
+			save_game.life.end_search(id, record.id)
+	var person: Dictionary = save_game.life.get_person(id)
+	var commitment_id: String = String(person.decision.get("commitment_id", ""))
+	if commitment_id.is_empty() or not person.activity in [CHECK_RELATIVE, VISIT_GRAVE]:
+		return
+	var record: Dictionary = mind.commitments.get_commitment(commitment_id)
+	if record.is_empty() or record.status != "open":
+		if String(record.get("kind", "")) == CHECK_RELATIVE and float(person.until) > minute:
+			save_game.life.interrupt(id) # Found: the search is over.
+		return
+	var task: NpcTask = _brains[id].controller.current
+	if not task is NpcRoutineTask or task.params.get("activity") != person.activity \
+			or (task as NpcRoutineTask).confirmed_engagement() == &"":
+		return
+	if record.kind == VISIT_GRAVE:
+		mind.commitments.resolve(commitment_id, "completed", minute) # Stays until its time is up.
+		return
+	_search_failed(id)
+
+# The current search place did not show the relative (or could not be reached): move on to the
+# next place, or defer the search after the last one. A grave that cannot be reached defers too.
+func _search_failed(id: String) -> void:
+	var person: Dictionary = save_game.life.get_person(id)
+	var commitment_id: String = String(person.get("decision", {}).get("commitment_id", ""))
+	if commitment_id.is_empty() or not person.get("activity") in [CHECK_RELATIVE, VISIT_GRAVE]:
+		return
+	var record: Dictionary = save_game.minds.get_mind(id).commitments.get_commitment(commitment_id)
+	if record.is_empty() or record.status != "open":
+		return
+	var minute: float = save_game.life.minute
+	var step: int = save_game.life.search_for(id, commitment_id).step + 1
+	if record.kind == VISIT_GRAVE or step >= _search_places(id, record.other_ids[0]).size():
+		save_game.life.set_search(id, commitment_id, 0, minute + tuning.search_defer_minutes)
+	else:
+		save_game.life.set_search(id, commitment_id, step, 0.0)
+	# Clears the commitment from the record, so a stale routine never searches the same place twice.
+	var diagnostic: Dictionary = person.decision.duplicate(true)
+	diagnostic.erase("commitment_id")
+	diagnostic.search = "%s:%d" % [commitment_id, step]
+	save_game.life.select_activity(id, {"kind": person.activity, "place": person.place}, 5.0,
+		diagnostic)
+	save_game.life.interrupt(id)
+
+static func _known_dead(knowledge: NpcKnowledge, subject: String) -> bool:
+	for fact: Dictionary in knowledge.current(subject, "status"):
+		if fact.value is String and fact.value == "dead":
+			return true
+	return false
+
+# The resident saw the relative itself after the reason to check arose (the reason's own sighting
+# of a hurt relative does not count), or sees them right now.
+func _found(id: String, relative: String, since: float) -> bool:
+	for fact: Dictionary in save_game.minds.get_mind(id).knowledge.known_locations(relative):
+		if fact.source_id == NpcKnowledge.SELF_SOURCE and float(fact.observed_minute) > since:
+			return true
+	var observer: BaseNpc = resident(id)
+	var target: BaseNpc = resident(relative)
+	return observer != null and target != null and not observer.is_sleeping() \
+		and observer.world_space == target.world_space \
+		and observer.global_position.distance_to(target.global_position) <= observer.npc_data.vision_radius \
+		and NpcPerception.can_see(observer, target)
+
 func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
 	_add_option(options, "PLAN", preferred.kind, preferred.place, "Follow today's planned activity.")
+	var hour: int = int(save_game.life.minute / 60.0) % 24
+	if hour >= 6 and hour < 21:
+		_add_commitment_options(options, id)
 	if preferred.kind in ["school", "patrol", "meal"]:
 		return options
 	var resident: Dictionary = save_game.population.people[id]
@@ -454,7 +607,6 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 		return options
 	if preferred.kind == "rest" or save_game.life.get_person(id).activity != "rest":
 		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
-	var hour: int = int(save_game.life.minute / 60.0) % 24
 	if hour >= 6 and hour < 21:
 		var venues: Array[String] = ["square", "market", "garden"]
 		var random_venue := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
@@ -476,6 +628,73 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 				_add_option(options, "VISIT", "visit", "work:" + other, "Visit this neighbor if they are available.")
 	return options
 
+# The most pressing open check on a relative and grave visit become candidates; a search that
+# found nobody waits out its deferral.
+func _add_commitment_options(options: Array[Dictionary], id: String) -> void:
+	var mind: NpcMindState = save_game.minds.get_mind(id)
+	var best: Dictionary = {}
+	for record: Dictionary in mind.commitments.open_commitments():
+		if record.kind in [CHECK_RELATIVE, VISIT_GRAVE] \
+				and float(record.priority) > float(best.get(record.kind, {}).get("priority", -1.0)) \
+				and save_game.life.search_for(id, record.id).deferred_until <= save_game.life.minute \
+				and not _commitment_place(id, record).is_empty():
+			best[record.kind] = record
+	for kind: String in [CHECK_RELATIVE, VISIT_GRAVE]:
+		if not best.has(kind):
+			continue
+		var record: Dictionary = best[kind]
+		var subject: String = record.other_ids[0]
+		var place: String = _commitment_place(id, record)
+		var label: String = _place(id, place).label
+		var description: String = "Look for %s at %s to see that they are all right." \
+			% [_name_of(subject), label] if kind == CHECK_RELATIVE \
+			else "Visit %s at the cemetery and pay respects." % label
+		options.append({"id": kind.to_upper(), "kind": kind, "place": place,
+			"commitment_id": record.id, "subject": subject, "description": description})
+
+# Where the commitment leads now: the current search place, or the known grave.
+func _commitment_place(id: String, record: Dictionary) -> String:
+	var subject: String = record.other_ids[0]
+	if record.kind == VISIT_GRAVE:
+		var grave: String = GRAVE_PREFIX + subject
+		return grave if not _place(id, grave).is_empty() else ""
+	var places: Array[String] = _search_places(id, subject)
+	var step: int = save_game.life.search_for(id, record.id).step
+	return places[step] if step < places.size() else ""
+
+## Where a resident looks for a relative, in order: where it last saw them, then their home and
+## workplace (public knowledge of every neighbor).
+func _search_places(id: String, relative: String) -> Array[String]:
+	var places: Array[String] = []
+	if not _place(id, SEEN_PREFIX + relative).is_empty():
+		places.append(SEEN_PREFIX + relative)
+	for place: String in ["home:" + relative, "work:" + relative]:
+		if _places.has(place):
+			places.append(place)
+	return places
+
+## A named place as {label, position, space?}: fixed town places, where `id` last saw someone
+## (seen:<other>, from its own knowledge) or a dug grave (grave:<deceased>); {} when unknown.
+func _place(id: String, place: String) -> Dictionary:
+	if _places.has(place):
+		return _places[place]
+	if place.begins_with(SEEN_PREFIX):
+		var other: String = place.trim_prefix(SEEN_PREFIX)
+		for fact: Dictionary in save_game.minds.get_mind(id).knowledge.known_locations(other):
+			var value: Variant = fact.value
+			if value is Dictionary and value.get("space") is String:
+				return {"label": "where %s was last seen" % _name_of(other),
+					"position": Vector2(float(value.x), float(value.y)), "space": value.space}
+	elif place.begins_with(GRAVE_PREFIX) and funerals != null:
+		var deceased: String = place.trim_prefix(GRAVE_PREFIX)
+		if funerals.cemetery.graves().has(deceased):
+			return {"label": "the grave of %s" % _name_of(deceased),
+				"position": funerals.cemetery.plot_for(deceased) + GRAVE_STAND_OFFSET}
+	return {}
+
+func _name_of(id: String) -> String:
+	return String(save_game.population.people.get(id, {}).get("name", id))
+
 func _add_option(options: Array[Dictionary], id: String, kind: String, place: String, reason: String) -> void:
 	if _places.has(place):
 		var crowd: int = 0
@@ -490,12 +709,16 @@ func _add_option(options: Array[Dictionary], id: String, kind: String, place: St
 ## Where an activity at a named place happens: {space, point, label}. Outdoor gatherings get a
 ## per-day spot so neighbors do not stack; meals use the household table.
 func destination(id: String, selected: Dictionary) -> Dictionary:
-	var place: Dictionary = _places.get(selected.place, _places["home:" + id])
+	var place: Dictionary = _place(id, selected.place)
+	if place.is_empty():
+		place = _places["home:" + id]
 	var space := StringName(place.get("space", "outdoors"))
 	var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 		"%s:spot:%s:%s" % [id, save_game.life.day(), selected.place])
 	var offset := Vector2(random.randi_range(-2, 2), random.randi_range(-1, 1)) * 8.0
-	var point: Vector2 = place.position + (offset if space == &"outdoors" else Vector2.ZERO)
+	# Only shared town places spread their visitors; a grave or a sighting is one exact spot.
+	var spread: bool = space == &"outdoors" and _places.has(selected.place)
+	var point: Vector2 = place.position + (offset if spread else Vector2.ZERO)
 	if selected.kind == "meal" and buildings.rooms.has(space):
 		point = buildings.rooms[space].meal_for(id)
 	return {"space": space, "point": point, "label": place.label}
@@ -520,11 +743,14 @@ func _restore_brain(npc: BaseNpc, id: String) -> void:
 	watch.reconcile(id, brain)
 	funerals.reconcile(id, brain)
 	var saved: Dictionary = save_game.life.get_person(id)
-	if brain.controller.current == null and brain.controller.suspended == null and _places.has(saved.place):
+	if brain.controller.current == null and brain.controller.suspended == null \
+			and not _place(id, saved.place).is_empty():
 		_request_routine(npc, id, {"kind": saved.activity, "place": saved.place})
 
 # The route's activity label drives gait, work accounting and dialogue context.
 func _on_task_transition(entry: Dictionary, id: String) -> void:
+	if entry["to"] == NpcTask.status_name(NpcTask.Status.FAILED) and String(entry["kind"]) == "routine":
+		_search_failed(id) # An unreachable search place counts as searched.
 	if entry["to"] != NpcTask.status_name(NpcTask.Status.RUNNING) or not _brains.has(id):
 		return
 	var task: NpcTask = _brains[id].controller.current

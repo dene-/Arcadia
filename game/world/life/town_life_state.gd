@@ -5,6 +5,7 @@ extends RefCounted
 signal time_changed(minute: float)
 
 const VERSION: int = 2
+const MAX_SEARCHES: int = 64
 
 var minute: float = 480.0:
 	set(value):
@@ -94,10 +95,13 @@ func get_person(id: String) -> Dictionary:
 	person.ties = ties
 	return person
 
+## `since` records when the activity or place last changed: how long the current goal has run.
 func select_activity(id: String, activity: Dictionary, duration: float, diagnostic: Dictionary) -> void:
 	if not _people.has(id):
 		return
 	var person: Dictionary = _people[id]
+	if person.activity != activity.kind or person.place != activity.place or not person.has("since"):
+		person.since = minute
 	person.activity = activity.kind
 	person.place = activity.place
 	person.until = minute + clampf(duration, 5, 120)
@@ -106,6 +110,27 @@ func select_activity(id: String, activity: Dictionary, duration: float, diagnost
 	else:
 		person.until = minf(person.until, NpcRoutinePlan.next_change(person.plan, minute))
 	person.decision = diagnostic.duplicate(true)
+
+## Progress of the search a commitment asks for: {step: index of the place being searched,
+## deferred_until: minute before which the search is not resumed}.
+func search_for(id: String, commitment_id: String) -> Dictionary:
+	var searches: Dictionary = _people.get(id, {}).get("searches", {})
+	var search: Dictionary = searches.get(commitment_id, {"step": 0, "deferred_until": 0.0})
+	return {"step": int(search.step), "deferred_until": float(search.deferred_until)}
+
+func set_search(id: String, commitment_id: String, step: int, deferred_until: float) -> void:
+	if not _people.has(id):
+		return
+	var searches: Dictionary = _people[id].get("searches", {})
+	if not searches.has(commitment_id) and searches.size() >= MAX_SEARCHES:
+		return
+	searches[commitment_id] = {"step": maxi(step, 0), "deferred_until": maxf(deferred_until, 0.0)}
+	_people[id].searches = searches
+
+## Forgets a finished search.
+func end_search(id: String, commitment_id: String) -> void:
+	if _people.has(id) and _people[id].has("searches"):
+		_people[id].searches.erase(commitment_id)
 
 func notice_perception(id: String, event: Dictionary, space: String) -> void:
 	if _people.has(id):
@@ -216,6 +241,10 @@ static func _valid_person(person: Variant) -> bool:
 	for key: String in ["until", "social_after"]:
 		if not _number(person.get(key)) or person[key] < 0:
 			return false
+	if person.has("since") and (not _number(person.since) or person.since < 0):
+		return false
+	if not _valid_searches(person.get("searches", {})):
+		return false
 	for key: String in ["activity", "place"]:
 		if not person.get(key) is String or person[key].length() > 200:
 			return false
@@ -241,3 +270,15 @@ static func _valid_person(person: Variant) -> bool:
 			or not NpcMemoryStore.is_valid_session_entry(entry):
 			return false
 	return person.get("decision") is Dictionary
+
+# Optional search progress per commitment id (absent in older saves).
+static func _valid_searches(searches: Variant) -> bool:
+	if not searches is Dictionary or searches.size() > MAX_SEARCHES:
+		return false
+	for commitment_id: Variant in searches:
+		var search: Variant = searches[commitment_id]
+		if not commitment_id is String or commitment_id.length() > 200 or not search is Dictionary \
+			or search.size() != 2 or not NpcMemory.is_integer(search.get("step")) or search.step < 0 \
+			or not _number(search.get("deferred_until")) or search.deferred_until < 0:
+			return false
+	return true

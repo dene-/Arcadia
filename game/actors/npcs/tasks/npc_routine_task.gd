@@ -8,6 +8,12 @@ const PHASE_TRAVEL: String = "travel"
 const PHASE_PERFORM: String = "perform"
 const PHASE_SLEEP: String = "sleep"
 const REST: String = "rest"
+const MEAL: StringName = &"meal"
+## Distance from the scheduled point within which a resident counts as being at the activity.
+const PRESENCE_RADIUS: float = 12.0
+
+# Runtime only: the activity the resident has confirmably begun at its place, else empty.
+var _engagement: StringName = &""
 
 func _init() -> void:
 	kind = &"routine"
@@ -44,17 +50,29 @@ func _on_advance(context: NpcTaskContext, _minutes: float) -> NpcTaskResult:
 	return NpcTaskResult.running()
 
 func _on_suspend(context: NpcTaskContext) -> void:
+	_engagement = &""
 	_release_travel(context)
+
+## The activity this task has confirmably begun (arrived and in place), else &"" while
+## travelling, sleeping, suspended or displaced.
+func confirmed_engagement() -> StringName:
+	return _engagement if status == Status.RUNNING and phase == PHASE_PERFORM else &""
 
 # _revalidate already rejected an expired task, so resuming never completes immediately.
 func _on_resume(context: NpcTaskContext) -> NpcTaskResult:
+	_engagement = &""
 	if phase == PHASE_TRAVEL or not _in_target_space(context):
 		return _begin_travel(context)
 	if phase == PHASE_SLEEP:
 		return _advance_sleep(context)
+	# Performing: engagement returns only once the body is still at the place.
+	if not _at_place(context):
+		return _begin_travel(context)
+	_engagement = StringName(params["activity"] as String)
 	return NpcTaskResult.running()
 
 func _on_cancel(context: NpcTaskContext, _reason: StringName) -> void:
+	_engagement = &""
 	_release_travel(context)
 
 func _interrupt_response(interrupt: Interrupt) -> Response:
@@ -105,6 +123,15 @@ func _in_target_space(context: NpcTaskContext) -> bool:
 	var space: Variant = context.call_service(&"space")
 	return (space is StringName or space is String) and StringName(space) == _target_space()
 
+# The body is within reach of the scheduled point; an actor without a position is nowhere.
+func _at_place(context: NpcTaskContext) -> bool:
+	var position: Variant = context.actor.get(&"global_position") if context.actor != null else null
+	if not position is Vector2:
+		return false
+	var point_data: Array = params["point"]
+	return (position as Vector2).distance_to(Vector2(float(point_data[0]), float(point_data[1]))) \
+		<= PRESENCE_RADIUS
+
 func _begin_travel(context: NpcTaskContext) -> NpcTaskResult:
 	phase = PHASE_TRAVEL
 	progress["travel_started"] = context.minute
@@ -138,6 +165,7 @@ func _arrive(context: NpcTaskContext) -> NpcTaskResult:
 	if _is_rest() and context.call_service(&"bed") is Vector2:
 		return _advance_sleep(context)
 	phase = PHASE_PERFORM
+	_engagement = StringName(params["activity"] as String)
 	return NpcTaskResult.running()
 
 func _advance_sleep(context: NpcTaskContext) -> NpcTaskResult:
@@ -154,8 +182,13 @@ func _fail_unreachable(context: NpcTaskContext) -> NpcTaskResult:
 	_release_travel(context)
 	return NpcTaskResult.failed(&"unreachable")
 
-# Completion never wakes a sleeper; the next task decides.
+# Completion never wakes a sleeper; the next task decides. A meal eaten at its place feeds.
 func _complete(context: NpcTaskContext, reason: StringName = &"until") -> NpcTaskResult:
+	if reason == &"until" and _engagement == MEAL and context.mind != null:
+		var tuning: NpcBehaviorTuning = context.call_service(&"tuning") as NpcBehaviorTuning
+		if tuning != null:
+			context.mind.complete_meal(tuning)
+	_engagement = &""
 	_release_travel(context)
 	return NpcTaskResult.completed(reason)
 

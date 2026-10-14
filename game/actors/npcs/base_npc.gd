@@ -74,7 +74,10 @@ func _ready() -> void:
 		return
 
 	spawn_position = global_position
-	_rng.randomize()
+	# Roam, run and drop rolls are reproducible for a world seed: keyed by who this is and where it spawned.
+	var rng_key: String = String(profile.npc_id) if profile != null and not profile.npc_id.is_empty() \
+		else "%s:%s" % [name, spawn_position]
+	_rng = NpcRoutinePlan.random_for(cognition.save_game.get_npc_seed(), "npc:" + rng_key)
 	if npc_data.ai_enabled:
 		add_to_group("enemies")
 	setup_actor(
@@ -191,7 +194,8 @@ func get_cognitive_context() -> Dictionary:
 			current.recent_ambient = cognition.ambient.recent(String(profile.npc_id))
 			var minds: NpcMindStore = cognition.save_game.minds
 			if minds.has_mind(String(profile.npc_id)):
-				current.merge(NpcCognitiveContext.mind_context(minds.get_mind(String(profile.npc_id))), true)
+				current.merge(NpcCognitiveContext.mind_context(minds.get_mind(String(profile.npc_id)),
+					float(current.get("world_minute", NAN)), self), true)
 		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
 		if not players.is_empty() and players[0] is BasePlayer:
 			current.player_identity = players[0].get_social_identity()
@@ -257,6 +261,27 @@ func show_sleep_pose(sleeping: bool) -> void:
 
 func is_sleeping() -> bool:
 	return _sleeping
+
+## True while this actor should earn work or patrol wages: it can act, is awake, and its
+## running task has confirmed it is engaged in work (an adult with a working role) or patrol
+## (a guard). Travel, conversation, safety, sleep and suspended tasks earn nothing.
+func earns_work_credit() -> bool:
+	if _sleeping or not can_follow_routine():
+		return false
+	var brain: NpcBrain = NpcBrain.of(self)
+	if brain == null:
+		return false
+	var task: NpcTask = brain.controller.current
+	if task == null or task.status != NpcTask.Status.RUNNING or not task.has_method(&"confirmed_engagement"):
+		return false
+	match task.call(&"confirmed_engagement"):
+		&"work":
+			var profile: NpcProfile = get_npc_profile()
+			return profile != null and profile.age >= 16 and not profile.job.to_lower().begins_with("retired") \
+				and not is_in_group(&"town_guards")
+		&"patrol":
+			return is_in_group(&"town_guards")
+	return false
 
 func wake_from_noise(reason: String = "noise") -> void:
 	if _sleeping:

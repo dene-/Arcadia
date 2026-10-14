@@ -275,3 +275,15 @@ func test_exchanges_belong_to_their_session_and_need_one_to_commit() -> void:
 	assert_eq([history[0].session, history[0].age_game_minutes], ["earlier", 30.0])
 	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue[3].session_id, "player:2")
 	backend.free()
+
+func test_opening_greeting_is_reproducible_for_the_same_session_and_minute() -> void:
+	var greetings: Array[String] = []
+	for attempt: int in 2:
+		var conversation := NpcConversation.new()
+		conversation.persist = false
+		conversation.session_id = SESSION
+		var backend := FakeBackend.new()
+		await conversation.request(_profile(), {}, "", backend)
+		greetings.append(backend.decision_payload.player.message)
+		backend.free()
+	assert_eq(greetings[0], greetings[1])

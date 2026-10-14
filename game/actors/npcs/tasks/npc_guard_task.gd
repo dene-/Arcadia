@@ -24,6 +24,9 @@ const ACTIVITY: String = "watch"
 ## Minutes a guard stands down beside a suspect who surrendered before returning to duty.
 const STAND_DOWN_MINUTES: float = 5.0
 
+# Runtime only: the latest decision left the guard on a patrol leg it can actually walk.
+var _on_route: bool = false
+
 func _init() -> void:
 	kind = &"guard"
 
@@ -46,8 +49,14 @@ func _on_advance(context: NpcTaskContext, _minutes: float) -> NpcTaskResult:
 	return _decide(context)
 
 func _on_suspend(context: NpcTaskContext) -> void:
+	_on_route = false
 	_release_travel(context)
 	_disengage(context)
+
+## &"patrol" only while the running task is walking the route or holding at a stop; never
+## while investigating, enforcing, standing down, waiting unable to move, or suspended.
+func confirmed_engagement() -> StringName:
+	return &"patrol" if _on_route and status == Status.RUNNING and phase == PHASE_PATROL else &""
 
 # Travel and the routine's activity label were lost while suspended or saved.
 func _on_resume(context: NpcTaskContext) -> NpcTaskResult:
@@ -56,6 +65,7 @@ func _on_resume(context: NpcTaskContext) -> NpcTaskResult:
 	return _decide(context)
 
 func _on_cancel(context: NpcTaskContext, _reason: StringName) -> void:
+	_on_route = false
 	_release_travel(context)
 	_disengage(context)
 
@@ -85,6 +95,7 @@ func _validate_params(value: Dictionary) -> bool:
 # --- Decisions ---
 
 func _decide(context: NpcTaskContext) -> NpcTaskResult:
+	_on_route = false
 	var tuning: NpcBehaviorTuning = context.call_service(&"tuning") as NpcBehaviorTuning
 	if tuning == null:
 		return NpcTaskResult.failed(&"no_tuning")
@@ -140,7 +151,9 @@ func _patrol(context: NpcTaskContext) -> NpcTaskResult:
 	if state == &"arrived" or state == &"failed":
 		if not _next_stop(context):
 			return _finish(context, &"no_route")
-		_go(context, _stop_space(), _stop_point())
+		state = _go(context, _stop_space(), _stop_point())
+	# A guard that cannot move is on the route in name only.
+	_on_route = state == &"traveling" or state == &"arrived"
 	return NpcTaskResult.running()
 
 # The newest live warning or combat report the guard holds.
@@ -183,6 +196,7 @@ static func _standing_down(reports: Array, minute: float) -> bool:
 	return false
 
 func _finish(context: NpcTaskContext, reason: StringName) -> NpcTaskResult:
+	_on_route = false
 	_release_travel(context)
 	_disengage(context)
 	return NpcTaskResult.completed(reason)

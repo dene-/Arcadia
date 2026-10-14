@@ -61,24 +61,31 @@ func settle(minute: float, population: TownPopulation, dead: Array[String]) -> v
 		if person.age < 16 or hours == 0:
 			continue
 		var recipe: Array = RECIPES.get(person.job, ["", 0, "", 0])
+		var output: String = String(recipe[0])
+		var input: String = String(recipe[2])
 		var batches: int = hours / 4
-		if not String(recipe[2]).is_empty():
-			batches = mini(batches, int(stock[recipe[2]]) / int(recipe[3]))
-			stock[recipe[2]] -= batches * int(recipe[3])
-		var units: int = batches * int(recipe[1])
-		var earned: int = hours * 2 if String(recipe[0]).is_empty() else units * int(PRICES[recipe[0]])
-		if units > 0:
-			stock[recipe[0]] += units
+		# A good the ledger does not track has no stock: nothing to consume, nothing to add.
+		if not input.is_empty():
+			var input_units: int = maxi(1, int(recipe[3]))
+			batches = mini(batches, int(stock.get(input, 0)) / input_units)
+			if stock.has(input):
+				stock[input] = int(stock[input]) - batches * input_units
+		var units: int = batches * int(recipe[1]) if output.is_empty() or stock.has(output) else 0
+		var earned: int = hours * 2 if output.is_empty() else units * int(PRICES.get(output, 0))
+		if units > 0 and not output.is_empty():
+			stock[output] = int(stock[output]) + units
 		var paid: int = mini(treasury, earned)
 		treasury -= paid
-		accounts[house] += paid
+		accounts[house] = int(accounts.get(house, 0)) + paid
 		_entry("income", house, paid)
 	for house: String in needs:
-		var portions: int = mini(int(needs[house]), mini(int(stock.food), int(accounts[house]) / int(PRICES.food)))
+		var portions: int = mini(int(needs[house]),
+			mini(int(stock.get("food", 0)), int(accounts.get(house, 0)) / int(PRICES.food)))
 		var cost: int = portions * int(PRICES.food)
-		accounts[house] -= cost
+		accounts[house] = int(accounts.get(house, 0)) - cost
 		treasury += cost
-		stock.food -= portions
+		if stock.has("food"):
+			stock["food"] = int(stock["food"]) - portions
 		if portions < needs[house]:
 			shortages[house] = int(needs[house]) - portions
 		_entry("food", house, -cost)
