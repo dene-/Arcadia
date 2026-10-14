@@ -365,7 +365,7 @@ const threat = () => answers(QUESTIONS, { should_remember: 0.93, memory_importan
 const chatRequest = () => ({ protocol_version: 1, npc: { id: "garrin_holt", profile: { name: "Garrin", job: "Blacksmith" } },
   player: { message: "I will burn down your forge." },
   context: { recent_dialogue: [], relationship: { trust: 0 }, memories: [], current: { recent_events: [] } }, answers: threat() });
-const dialogue = () => ({ response: "Leave my forge.", replies: ["I am sorry.", "I meant it.", "Goodbye."],
+const dialogue = () => ({ response: "Leave my forge.",
   memory_writes: [{ type: "episodic", gist: "The player threatened the forge.", source: "player_claim",
     evidence: "burn down your forge", topics: ["forge"], people: ["player"], places: [], sensory_cues: [],
     important_details: [], weak_details: [], known_gaps: [] }], recalled_memory_ids: [] });

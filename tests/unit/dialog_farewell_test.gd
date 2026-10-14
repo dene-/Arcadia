@@ -29,10 +29,6 @@ func before_each() -> void:
 	text.size = Vector2(206, 33)
 	text.theme = load("res://assets/art/ui/theme.tres")
 	_add(panel, Control.new(), "NextPageIndicator")
-	var replies: Node = _add(column, ScrollContainer.new(), "RepliesContainer")
-	var reply_list: Node = _add(replies, VBoxContainer.new(), "ReplyList")
-	for index: int in range(3):
-		_add(reply_list, Button.new(), "Reply%d" % index)
 	var chat: Node = _add(column, HBoxContainer.new(), "ChatContainer")
 	_add(chat, LineEdit.new(), "ChatLineEdit")
 	_add(chat, Button.new(), "ChatSendButton")
@@ -60,8 +56,7 @@ func _add(parent: Node, child: Node, node_name: String) -> Node:
 	return child
 
 func _reply(text: String, ending: bool = false) -> void:
-	_manager._apply_dialog_result({"response": text, "replies": ["Yes", "No", "Bye"],
-		"end_conversation": ending})
+	_manager._apply_dialog_result({"response": text, "end_conversation": ending})
 
 func test_nameplate_uses_the_actual_npc_identity_and_clears_on_close() -> void:
 	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
@@ -86,11 +81,10 @@ func test_opening_dialog_reveals_a_hidden_ui_layer() -> void:
 	_manager.advance_dialog()
 	assert_true(_manager._chat_container.visible)
 
-func test_farewell_reveals_then_closes_without_showing_chat_or_replies() -> void:
+func test_farewell_reveals_then_closes_without_showing_chat() -> void:
 	_reply("Hello.")
 	_manager.advance_dialog()
 	assert_true(_manager._chat_container.visible)
-	assert_false(_manager._replies_container.visible)
 	_reply("See you tomorrow.", true)
 	_manager._on_chat_submitted("Wait!")
 	assert_eq(_manager._active_text, "See you tomorrow.")
@@ -100,7 +94,6 @@ func test_farewell_reveals_then_closes_without_showing_chat_or_replies() -> void
 	_manager._process(10.0)
 	assert_true(_manager.is_dialog_open(), "The final line needs reading time after revealing")
 	assert_false(_manager._chat_container.visible)
-	assert_false(_manager._replies_container.visible)
 	_manager._process(0.75)
 	assert_true(_manager.is_dialog_open())
 	_manager._process(0.8)

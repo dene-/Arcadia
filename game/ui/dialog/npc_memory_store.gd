@@ -463,14 +463,6 @@ static func is_valid_result(result: Dictionary) -> bool:
 	if not result.get("response") is String or result.response.strip_edges().is_empty() \
 		or result.response.length() > 6000:
 		return false
-	if not result.get("replies") is Array or result.replies.size() != 3:
-		return false
-	var unique: Array[String] = []
-	for reply: Variant in result.replies:
-		if not reply is String or reply.strip_edges().is_empty() or reply.length() > 500 \
-			or reply in unique:
-			return false
-		unique.append(reply)
 	return result.get("memory_writes") is Array and result.memory_writes.size() <= 3 \
 		and NpcMemory.is_text_list(result.get("recalled_memory_ids"))
 

@@ -12,7 +12,7 @@ class FakeBackend extends DialogBackendClient:
 		"importance": 0.8, "emotional_intensity": 0.7, "response_mode": "DEFENSIVE",
 		"relationship_delta": {"familiarity": 0.01, "trust": -0.08, "respect": 0.0,
 			"affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
-	var result: Dictionary = {"response": "Leave my forge.", "replies": ["Sorry.", "No.", "Goodbye."],
+	var result: Dictionary = {"response": "Leave my forge.",
 		"memory_writes": [], "recalled_memory_ids": []}
 	func request_decision(request: Dictionary) -> Dictionary:
 		decision_payload = request.duplicate(true)

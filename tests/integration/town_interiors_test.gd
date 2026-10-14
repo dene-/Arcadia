@@ -120,7 +120,7 @@ func _run() -> void:
 		var manager: Node = root.get_node("DialogManager")
 		manager._bind_dialog_ui()
 		manager._start_dialog(resident)
-		manager._apply_dialog_result({"response": "What is it? I was asleep.", "replies": ["Sorry.", "I need help.", "Bye."]})
+		manager._apply_dialog_result({"response": "What is it? I was asleep."})
 		manager.advance_dialog()
 		await process_frame
 		await RenderingServer.frame_post_draw

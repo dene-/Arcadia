@@ -16,7 +16,7 @@ func _policy(remember: bool = true) -> Dictionary:
 			"respect": 0.0, "affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
 
 func _result(type: String = "episodic") -> Dictionary:
-	return {"response": "Leave my forge.", "replies": ["Sorry.", "No.", "Goodbye."],
+	return {"response": "Leave my forge.",
 		"memory_writes": [{"type": type, "gist": "The player threatened my forge.",
 			"source": "player_claim", "topics": ["forge"], "people": ["player"]}],
 		"recalled_memory_ids": []}
@@ -135,7 +135,7 @@ func test_invalid_exchange_does_not_mutate_state() -> void:
 	store.ensure_npc(_profile())
 	var before: Dictionary = store.to_save_data()
 	var result: Dictionary = _result()
-	result.replies = ["One"]
+	result.erase("response")
 	assert_false(store.commit_exchange("test_npc", "Hello", result, _policy(), [], [], SESSION))
 	var policy: Dictionary = _policy()
 	policy.importance = NAN

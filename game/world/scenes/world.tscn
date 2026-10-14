@@ -182,43 +182,6 @@ mouse_filter = 2
 texture = ExtResource("4_k3n1d")
 region_rect = Rect2(1813, 95, 6, 3)
 
-[node name="RepliesContainer" type="ScrollContainer" parent="UI/Container/VBoxContainer" unique_id=1865181439]
-visible = false
-custom_minimum_size = Vector2(0, 50)
-layout_mode = 2
-theme = ExtResource("1_ic0uy")
-horizontal_scroll_mode = 0
-follow_focus = true
-
-[node name="ReplyList" type="VBoxContainer" parent="UI/Container/VBoxContainer/RepliesContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 1
-
-[node name="ReplyButton1" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1098818244]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-text = "Just passing through."
-alignment = 0
-autowrap_mode = 3
-
-[node name="ReplyButton2" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1171674717]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-text = "What's the latest trouble around the village?"
-alignment = 0
-autowrap_mode = 3
-
-[node name="ReplyButton3" type="Button" parent="UI/Container/VBoxContainer/RepliesContainer/ReplyList" unique_id=1737075623]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-text = "Leave."
-alignment = 0
-autowrap_mode = 3
-
 [node name="ChatContainer" type="HBoxContainer" parent="UI/Container/VBoxContainer" unique_id=-1293967294]
 visible = false
 layout_mode = 2

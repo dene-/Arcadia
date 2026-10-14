@@ -626,7 +626,7 @@ func _scenario_commitment_survives_reload() -> void:
 	var id: String = _resident_id(free[0])
 	var memory: NpcMemoryStore = sim.save_game().memory
 	memory.ensure_npc(free[0].get_npc_profile())
-	var result: Dictionary = {"response": "I will tell the guard.", "replies": ["Thanks.", "Good.", "Bye."],
+	var result: Dictionary = {"response": "I will tell the guard.",
 		"memory_writes": [{"type": "prospective", "gist": "Promised to report the copper bell.",
 			"source": "player_claim", "topics": ["bell"], "people": ["player"]}], "recalled_memory_ids": []}
 	_check(memory.commit_exchange(id, "Tell the guard.", result, Simulation.FakeService.valid_policy(), [], [], "player:m4g"),

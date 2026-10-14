@@ -79,7 +79,6 @@ function proposal(overrides = {}) {
 function dialogue(overrides = {}) {
   return {
     response: "Leave my forge.",
-    replies: ["I am sorry.", "I meant it.", "Goodbye."],
     memory_writes: [proposal()],
     recalled_memory_ids: [],
     ...overrides,
@@ -274,6 +273,10 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
   const response = await post("/chat", body);
   assert.equal(response.status, 200);
   assert.equal(response.body.memory_writes.length, 1);
+  assert.equal(response.body.replies, undefined);
+  assert.equal(seenPrompt.text.format.schema.properties.replies, undefined);
+  assert.doesNotMatch(seenPrompt.text.format.schema.required.join(), /replies/);
+  assert.doesNotMatch(seenPrompt.instructions, /player repl/i);
   assert.equal(seenPrompt.store, false);
   assert.equal(seenPrompt.text.format.strict, true);
   const prompt = JSON.parse(seenPrompt.input[0].content);
@@ -452,11 +455,6 @@ test("spoken punctuation is normalized without losing grounded NPC promises", as
       output_text: JSON.stringify(
         dialogue({
           response: "I promise—I’ll mend it.",
-          replies: [
-            "Thanks—tomorrow?",
-            "You said “soon”, not ‘tomorrow’.",
-            "Goodbye.",
-          ],
           memory_writes: [
             proposal({
               type: "prospective",
@@ -474,23 +472,7 @@ test("spoken punctuation is normalized without losing grounded NPC promises", as
   const result = await post("/chat", body);
   assert.equal(result.status, 200);
   assert.equal(result.body.response, "I promise, I'll mend it.");
-  assert.equal(result.body.replies[0], "Thanks, tomorrow?");
-  assert.equal(result.body.replies[1], "You said \"soon\", not 'tomorrow'.");
   assert.equal(result.body.memory_writes[0].type, "prospective");
-});
-test("punctuation cleanup cannot make a continuing reply equal the exit reply", async (t) => {
-  const post = await server(t, {
-    generate: async () => ({
-      output_text: JSON.stringify(
-        dialogue({
-          replies: ["Bye—then.", "Wait.", "Bye, then."],
-        }),
-      ),
-    }),
-  });
-  const body = request();
-  body.answers = threat();
-  assert.equal((await post("/chat", body)).status, 503);
 });
 test("gated beliefs retain source; model relationship changes have no authority", async (t) => {
   const post = await server(t, {
@@ -514,7 +496,6 @@ test("service errors, refusals and incomplete or invalid model output fail clean
   for (const output of [
     null,
     "{",
-    JSON.stringify(dialogue({ replies: ["Only one"] })),
     JSON.stringify(dialogue({ memory_writes: null })),
   ]) {
     const post = await server(t, {

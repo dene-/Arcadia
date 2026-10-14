@@ -63,7 +63,7 @@ func test_inspector_reads_live_commits_and_cannot_mutate_nested_memories() -> vo
 		"importance": 0.8, "emotional_intensity": 0.7, "response_mode": "DEFENSIVE",
 		"relationship_delta": {"familiarity": 0.01, "trust": -0.08, "respect": 0.0,
 			"affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
-	var result: Dictionary = {"response": "Leave.", "replies": ["Sorry.", "No.", "Goodbye."],
+	var result: Dictionary = {"response": "Leave.",
 		"memory_writes": [{"type": "episodic", "gist": "The player threatened me.",
 			"source": "player_claim", "topics": ["threat"]}], "recalled_memory_ids": []}
 	assert_true(_store.commit_exchange("inspector_test_npc", "I will hurt you.", result,

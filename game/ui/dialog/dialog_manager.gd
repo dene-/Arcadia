@@ -9,7 +9,6 @@ const PLACEHOLDER_DIALOG: String = "I cannot talk just now. Try me again in a mo
 const DIALOG_PANEL_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel"
 const DIALOG_TEXT_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/DialogContainer/DialogText"
 const DIALOG_NEXT_PAGE_INDICATOR_PATH: NodePath = ^"UI/Container/VBoxContainer/DialogPanel/NextPageIndicator"
-const REPLIES_CONTAINER_PATH: NodePath = ^"UI/Container/VBoxContainer/RepliesContainer"
 const CHAT_CONTAINER_PATH: NodePath = ^"UI/Container/VBoxContainer/ChatContainer"
 const CHAT_LINE_EDIT_PATH: NodePath = ^"UI/Container/VBoxContainer/ChatContainer/ChatLineEdit"
 const CHAT_SEND_BUTTON_PATH: NodePath = ^"UI/Container/VBoxContainer/ChatContainer/ChatSendButton"
@@ -26,8 +25,6 @@ var _dialog_panel: Panel
 var _dialog_text: RichTextLabel
 var _speaker_name: Label
 var _next_page_indicator: Control
-var _replies_container: ScrollContainer
-var _reply_buttons: Array[Button] = []
 var _chat_container: Control
 var _chat_line_edit: LineEdit
 var _chat_send_button: Button
@@ -48,7 +45,6 @@ var _npc_seed: int = 0
 var _active_source: Node = null
 var _active_text: String = ""
 var _active_pages: Array[String] = []
-var _active_replies: Array[String] = []
 var _able_to_chat: bool = false
 var _is_open: bool = false
 var _is_waiting_for_backend: bool = false
@@ -143,11 +139,11 @@ func advance_dialog() -> void:
 	if _typewriter.is_revealing():
 		_typewriter.reveal_immediately(_dialog_text)
 		_update_next_page_indicator()
-		_update_reply_ui()
+		_update_chat_ui()
 		return
 
 	if not _has_next_page():
-		if not _end_after_response and (not _active_replies.is_empty() or _able_to_chat):
+		if not _end_after_response and _able_to_chat:
 			return
 		close_dialog()
 		return
@@ -168,7 +164,6 @@ func close_dialog() -> void:
 	_active_source = null
 	_active_text = ""
 	_active_pages.clear()
-	_active_replies.clear()
 	_able_to_chat = false
 	_is_open = false
 	_is_waiting_for_backend = false
@@ -182,7 +177,7 @@ func close_dialog() -> void:
 	_typewriter.reset(_dialog_text)
 	if _dialog_panel != null:
 		_dialog_panel.hide()
-	_clear_reply_ui()
+	_clear_chat_ui()
 	_update_next_page_indicator()
 	set_process(false)
 	dialog_finished.emit(finished_source)
@@ -192,15 +187,11 @@ func _bind_dialog_ui() -> bool:
 	if current_scene == null:
 		return false
 
-	if current_scene != _bound_scene:
-		_bound_scene = current_scene
-		_reply_buttons.clear()
-
+	_bound_scene = current_scene
 	_dialog_panel = current_scene.get_node_or_null(DIALOG_PANEL_PATH) as Panel
 	_dialog_text = current_scene.get_node_or_null(DIALOG_TEXT_PATH) as RichTextLabel
 	_speaker_name = current_scene.get_node_or_null(String(DIALOG_PANEL_PATH) + "/SpeakerName") as Label
 	_next_page_indicator = current_scene.get_node_or_null(DIALOG_NEXT_PAGE_INDICATOR_PATH) as Control
-	_replies_container = current_scene.get_node_or_null(REPLIES_CONTAINER_PATH) as ScrollContainer
 	_chat_container = current_scene.get_node_or_null(CHAT_CONTAINER_PATH) as Control
 	_chat_line_edit = current_scene.get_node_or_null(CHAT_LINE_EDIT_PATH) as LineEdit
 	_chat_send_button = current_scene.get_node_or_null(CHAT_SEND_BUTTON_PATH) as Button
@@ -209,7 +200,6 @@ func _bind_dialog_ui() -> bool:
 		return false
 
 	_configure_dialog_text()
-	_bind_reply_buttons()
 	if _chat_line_edit != null:
 		if not _chat_line_edit.text_submitted.is_connected(_on_chat_submitted):
 			_chat_line_edit.text_submitted.connect(_on_chat_submitted)
@@ -223,7 +213,7 @@ func _bind_dialog_ui() -> bool:
 		_dialog_panel.show()
 	else:
 		_dialog_panel.hide()
-		_clear_reply_ui()
+		_clear_chat_ui()
 	_update_next_page_indicator()
 	return true
 
@@ -246,7 +236,6 @@ func _start_dialog(source: Node) -> bool:
 			and source.get_npc_profile() != null else ""
 	_active_text = ""
 	_active_pages.clear()
-	_active_replies.clear()
 	_able_to_chat = _source_is_able_to_chat(source)
 	_end_after_response = false
 	_farewell_remaining = -1.0
@@ -342,7 +331,7 @@ func _show_current_page() -> void:
 	if _dialog_text == null or _page_index >= _active_pages.size():
 		return
 
-	_clear_reply_ui()
+	_clear_chat_ui()
 	_typewriter.begin(_dialog_text, _active_pages[_page_index])
 	_update_next_page_indicator()
 	if _speech_player != null:
@@ -356,7 +345,7 @@ func _update_typewriter(delta: float) -> void:
 	_typewriter.update(_dialog_text, delta, _play_speech_sound_for_character)
 	if was_revealing and not _typewriter.is_revealing():
 		_update_next_page_indicator()
-		_update_reply_ui()
+		_update_chat_ui()
 
 func _play_speech_sound_for_character(character: String, character_index: int) -> void:
 	if _speech_player == null:
@@ -416,8 +405,8 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 	if is_instance_valid(source) and source.has_method("get_dialog_text"):
 		var source_text: String = str(source.call("get_dialog_text")).strip_edges()
 		if not source_text.is_empty():
-			return {"response": source_text, "replies": []}
-	return {"response": PLACEHOLDER_DIALOG, "replies": []}
+			return {"response": source_text}
+	return {"response": PLACEHOLDER_DIALOG}
 
 func _apply_dialog_result(result: Dictionary) -> void:
 	_is_waiting_for_backend = false
@@ -428,23 +417,12 @@ func _apply_dialog_result(result: Dictionary) -> void:
 	_end_after_response = result.get("end_conversation", false) == true
 	_farewell_remaining = -1.0
 	_active_text = str(result.get("response", ""))
-	_active_replies = _get_replies_from_result(result)
 	_active_pages = _paginator.paginate(_active_text, _dialog_text)
 	if _active_pages.is_empty():
 		_active_pages.append(_active_text)
 	_show_current_page()
 
-func _get_replies_from_result(result: Dictionary) -> Array[String]:
-	var replies: Array[String] = []
-	var raw: Array = result.get("replies", [])
-	for item in raw:
-		if item is String:
-			replies.append(item as String)
-	return replies
-
-func _update_reply_ui() -> void:
-	_clear_reply_buttons()
-
+func _update_chat_ui() -> void:
 	var on_last_page := not _has_next_page()
 	var can_show := _is_open and not _is_waiting_for_backend and not _typewriter.is_revealing() and on_last_page
 	if _end_after_response:
@@ -454,17 +432,6 @@ func _update_reply_ui() -> void:
 			_farewell_remaining = FAREWELL_HOLD_SECONDS
 		return
 
-	if can_show and not _able_to_chat and _replies_container != null and not _active_replies.is_empty():
-		var visible_reply_count: int = mini(_active_replies.size(), _reply_buttons.size())
-		for index in range(visible_reply_count):
-			var button := _reply_buttons[index]
-			var reply_text := _active_replies[index]
-			button.text = reply_text
-			button.set_meta("reply_text", reply_text)
-			button.show()
-		_replies_container.show()
-		_replies_container.scroll_vertical = 0
-
 	if can_show and _able_to_chat and _chat_container != null:
 		_chat_container.show()
 		if _chat_line_edit != null:
@@ -472,49 +439,20 @@ func _update_reply_ui() -> void:
 	elif _chat_container != null:
 		_chat_container.hide()
 
-func _clear_reply_buttons() -> void:
-	if _replies_container == null:
-		return
-	for button: Button in _reply_buttons:
-		button.hide()
-		if button.has_meta("reply_text"):
-			button.remove_meta("reply_text")
-	_replies_container.hide()
-
-func _clear_reply_ui() -> void:
-	_clear_reply_buttons()
+func _clear_chat_ui() -> void:
 	if _chat_container != null:
 		_chat_container.hide()
 	if _chat_line_edit != null:
 		_chat_line_edit.text = ""
 		_chat_line_edit.release_focus()
 
-func _bind_reply_buttons() -> void:
-	_reply_buttons.clear()
-	if _replies_container == null:
-		return
-
-	for child in _replies_container.get_node("ReplyList").get_children():
-		var button := child as Button
-		if button == null:
-			continue
-
-		var button_index := _reply_buttons.size()
-		_reply_buttons.append(button)
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		if not button.pressed.is_connected(_on_reply_button_pressed.bind(button_index)):
-			button.pressed.connect(_on_reply_button_pressed.bind(button_index))
-
-func _send_player_reply(player_message: String) -> void:
+func _send_player_message(player_message: String) -> void:
 	if not _is_open or not is_instance_valid(_active_source) \
 		or _is_waiting_for_backend or _end_after_response:
 		return
-	_clear_reply_ui()
+	_clear_chat_ui()
 	_page_index = 0
 	_active_pages.clear()
-	_active_replies.clear()
 	_is_waiting_for_backend = true
 	_typewriter.reset(_dialog_text)
 	_dialog_text.text = LOADING_DIALOG
@@ -527,31 +465,13 @@ func _send_player_reply(player_message: String) -> void:
 		return
 	_apply_dialog_result(backend_result)
 
-func _on_reply_selected(reply_text: String) -> void:
-	if _active_replies.is_empty():
-		return
-	if reply_text == _active_replies.back():
-		close_dialog()
-		return
-	_send_player_reply(reply_text)
-
-func _on_reply_button_pressed(button_index: int) -> void:
-	if button_index < 0 or button_index >= _reply_buttons.size():
-		return
-
-	var reply_text := str(_reply_buttons[button_index].get_meta("reply_text", ""))
-	if reply_text.is_empty():
-		return
-
-	_on_reply_selected(reply_text)
-
 func _on_chat_submitted(text: String) -> void:
 	var trimmed := text.strip_edges()
 	if trimmed.is_empty():
 		return
 	if _chat_line_edit != null:
 		_chat_line_edit.text = ""
-	_send_player_reply(trimmed)
+	_send_player_message(trimmed)
 
 func _on_chat_send_pressed() -> void:
 	if _chat_line_edit != null:
