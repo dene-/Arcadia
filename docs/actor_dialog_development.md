@@ -184,17 +184,18 @@ It owns dialog session flow:
 - paginating text
 - typewriter reveal
 - voice character ticks
-- reply buttons and free chat input
+- free chat input (there are no reply buttons; the player always types)
 
 Helper classes:
 
-- `NpcConversation`: Jev decisions, context construction and successful exchange commits
+- `NpcConversation`: context construction, one `POST /v2/dialogue/chat` request through `NpcDecisionService`, validation and successful exchange commits
 - `NpcCognition`: shared cognition service, independent of dialogue presentation
+- `NpcDecisionService`: the only scheduler of backend cognition and dialogue requests
 - `NpcEventProcessor`: bounded background assessment and separate speech generation
 - `WorldEvents` / `NpcPerceptionRouter`: world facts and extensible perception adapters
-- `NpcWorldSave`: atomic named-NPC deaths and memory persistence
+- `NpcWorldSave` / `NpcSaveCoordinator`: atomic world, mind and memory persistence and when it is written
 - `NpcPerception`: sight, hearing and self-injury evidence for NPC observers
-- `NpcMemoryStore`: save-owned memory, relationships, recent dialogue and observed events
+- `NpcMemoryStore`: save-owned memory, recent dialogue and observed events (relationships, knowledge and commitments live in each resident's `NpcMindState`)
 - `NpcMemoryRetriever`: relevant memory selection and filtered recall
 - `DialogBackendClient`: HTTP request and response parsing
 - `DialogPaginator`: text pagination
@@ -213,6 +214,7 @@ Dialog source contract:
 
 See [NPC memory](npc_memory.md) for memory authoring, belief boundaries and persistence.
 See [NPC perception](npc_perception.md) for combat observations, relationship effects and speech bubbles.
+See [NPC cognition architecture](npc_cognition_architecture.md) for who owns what, the v2 routes, saves and the recipes for adding a goal or inspecting a stuck resident.
 
 When adding dialog features:
 

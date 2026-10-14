@@ -17,17 +17,18 @@ The backend's `npc-voice.js` compiles those closed choices into concrete phrasin
 | `ActorRoute` / `ActorCrowd` | Cached A* following and predictive nearby-body steering |
 | `NpcPursuit` | Enemy pursuit routes and leased lateral attack approaches |
 | `TownBuildings` / `NpcInterior` | Enterable furnished rooms, door transitions and navigation between spaces |
-| `NpcDailyRoutine` | Routine destination and hold state; delegates locomotion to the shared route component |
+| `NpcDailyRoutine` | Routine destination and current activity/place; delegates locomotion to the shared route component (`travel`, `stop`) |
 | `TownEncounters` | Nearby two-way social sessions, model calls and interruption guards |
 | `TownRumors` | Per-person accounts, provenance, confidence, expiry and loop prevention |
-| `NpcMemoryStore` | Long-term admission and bounded changes to feelings toward the player |
+| `NpcMemoryStore` | Long-term admission; feelings toward the player live in the resident's `NpcMindState` relationships |
 | `NpcAmbientHistory` | Short-lived audible speech context for varied reactions; never creates factual memories |
+| `NpcBrain` / `NpcTaskController` | The resident's current task (routine, safety, social, guard, recovery); routines are started by `TownLife._request_routine` |
 
-`DialogManager` continues to own only player conversation UI. Town life is attached to the generated region, not another Autoload. New activities can extend the place catalog and routine candidates without changing actor states or dialogue UI.
+`DialogManager` continues to own only player conversation UI. Town life is attached to the generated region, not another Autoload. New activities extend the place catalog and routine candidates plus one task boundary; see [the add-a-goal recipe](npc_cognition_architecture.md#recipe-add-a-goal-or-task). Ownership of evidence, knowledge, memory, commitments and saves is in [the cognition architecture](npc_cognition_architecture.md).
 
 ## Routine and movement
 
-The clock advances 1.5 game minutes per real second by default, with a day/night tint. It pauses while the game is closed. Breakfast and lunch have varied times and locations; residents have their own workplaces and several leisure venues. Jev selects from supplied, feasible activities and a bounded duration. Up to four routine decisions run concurrently. Unavailable or invalid decisions fall back to the day's plan.
+The clock advances 1.5 game minutes per real second by default, with a day/night tint. It pauses while the game is closed. Breakfast and lunch have varied times and locations; residents have their own workplaces and several leisure venues. Jev selects among supplied, feasible activities (`select_goal`), and Godot combines that judgment with the resident's needs, obligations, concerns and commitments (`TownLife.goal_frame`). Up to four routine decisions run concurrently (`max_decision_workers`). An unavailable, stale or invalid decision keeps the resident's own priorities or the day's plan entry.
 
 Moving bodies are excluded from the static navigation bake. Live routes detour around residents and Den, destinations reserve personal space, and local steering lets approaching walkers yield. Blocked routes are retried. Optional visits and social destinations avoid crowded venues. Encounters arise from proximity along routes or at destinations, rather than a global gathering command.
 
@@ -57,10 +58,13 @@ Residents initially know the names, jobs and homes of the other townspeople. Dir
 
 | Endpoint | Decision |
 | --- | --- |
-| `POST /life/routine` | Supplied activity choice and duration |
-| `POST /life/social` | Engage, topic, tone and willingness to linger |
-| `POST /life/listen` | Listener belief, memory admission, importance and bounded relationship effects |
-| `POST /life/say` | Spoken words for an admitted exchange, using the dialogue provider |
+| `POST /v2/cognition/select-goal` | Supplied activity choice and duration (`TownLife._choose_activity`) |
+| `POST /v2/cognition/social` | Engage, topic, tone and willingness to linger |
+| `POST /v2/cognition/listen` | Listener belief, memory admission, importance and bounded relationship effects |
+| `POST /v2/cognition/utterance` | Whether and how a resident speaks about something they perceived |
+| `POST /v2/dialogue/say` | Spoken words for an admitted exchange, using the dialogue provider |
+
+The routes, tickets, outcomes and the retired v1 `/life/*` routes are described in [the cognition architecture](npc_cognition_architecture.md#decision-service-and-routes).
 
 Conversations require proximity, line of sight, availability and individual cooldowns. At most three pairs converse concurrently. The listener gets a turn after a greeting. Resting residents do not initiate these encounters. Injury, death, player dialogue, separation and a session deadline invalidate pending results and release both actors. Model refusal or service failure never fabricates a conversation or new information.
 
@@ -74,17 +78,17 @@ Hearsay enters memory as `hearsay`, not an eyewitness event. Believed reports ca
 
 ## Persistence and debugging
 
-Town state is an optional `world.life` block in `user://npc_world.json`, saved atomically with memories and named deaths. Older saves load without a reset. Daily-plan revisions regenerate plans while keeping personalities, relationships and memories. No wall-clock catch-up is performed on restart. The existing explicit world reset clears life state together with the other world data.
+Town state is the `world.life` block of `user://npc_world_v2.json`, saved atomically with memories, minds and named deaths by `NpcSaveCoordinator`. Older saves (`npc_world.json`, `npc_memory.json`) are migrated once on load without a reset. Daily-plan revisions regenerate plans while keeping personalities, relationships and memories. No wall-clock catch-up is performed on restart. The existing explicit world reset clears life state together with the other world data. How migration treats old data is in [the cognition architecture](npc_cognition_architecture.md#file-and-migration).
 
-With the game stopped, `tools/reset_npc_world.gd -- --confirm --keep-region` resets NPC memories, deaths and social/routine state while retaining the forest seed. The old save is backed up before replacement; omitting `--keep-region` also resets the region seed.
+With the game stopped, `tools/reset_npc_world.gd -- --confirm --keep-region` resets NPC memories, deaths and social/routine state while retaining the forest seed. The old v2 save is backed up (`npc_world_v2.json.reset-<unix time>.bak`) before replacement; omitting `--keep-region` also resets the region seed.
 
-In Godot's Remote Inspector, select a resident and inspect **Runtime Life**: current activity/destination, personality, known townspeople and relationships, recent social exchanges, rumors and routine decision. `social_status` distinguishes assessment, declined encounters, unavailable services, displayed bubbles and offscreen exchanges. **Runtime Memory** shows admitted hearsay and feelings toward Den. Runtime diagnostics are removed from model context.
+In Godot's Remote Inspector, select a resident and inspect **Town Life** (`runtime_life`): current activity and place, destination, personality, known townspeople, recent social exchanges, rumors and routine context. **Runtime Memory** shows admitted memories and recent dialogue. **Cognition** shows the current task, claims, goal scores, request outcomes, decision trace, commitments and pending evidence; use it first for a resident that appears stuck (see [the stuck-resident recipe](npc_cognition_architecture.md#recipe-inspect-a-stuck-resident)). Runtime diagnostics are removed from model context.
 
-Restart the backend after changing its routes. An old server can answer `/chat` normally while returning 404 for `/life/social`, preventing social speech.
+Restart the backend after changing its routes. An outdated server answers `404` or `409 protocol_mismatch` to the v2 routes; residents then keep their own priorities and no social speech is generated.
 
 ## Validation
 
-All automated provider tests use mocks and temporary saves. With Godot installed:
+All automated provider tests use mocks and temporary saves. `tools/run_npc_cognition_checks.sh` (`.ps1` on Windows) runs the unit runner, the integration scripts (including the cognition matrix, soak and runtime smoke scripts) and the backend tests together; see [godot_testing.md](godot_testing.md#cognition-checks). With Godot installed, the town scenarios individually:
 
 ```sh
 GODOT=/Applications/Godot.app/Contents/MacOS/Godot

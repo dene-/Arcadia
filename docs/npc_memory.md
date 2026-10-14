@@ -4,29 +4,29 @@ This implements the memory design from the [Designing NPC Memory System conversa
 
 ## Ownership and turn flow
 
-`NpcProfile` is immutable authored identity. `NpcMemoryStore` owns save-specific experiences, recent dialogue, relationships and pending observed events. `NpcConversation` constructs temporary context, runs the two backend stages, and commits successful exchanges. `DialogManager` owns the helper and UI lifecycle, not memory algorithms. There is no extra Autoload or server database.
+`NpcProfile` is immutable authored identity. `NpcMemoryStore` owns save-specific experiences, recent dialogue and pending observed events; relationships, knowledge, commitments and unappraised evidence live in each resident's `NpcMindState` (see the [cognition architecture](npc_cognition_architecture.md)). `NpcConversation` constructs temporary context, sends one `POST /v2/dialogue/chat` request through `NpcDecisionService`, and commits successful exchanges. `DialogManager` owns the helper and UI lifecycle, not memory algorithms. There is no extra Autoload or server database.
 
 ```mermaid
 sequenceDiagram
-    participant G as Godot
-    participant S as Local Node server
-    participant J as Jev
-    participant L as Dialogue model
-    G->>S: /decide: profile, current state, recent dialogue, relationship
-    S->>J: Batched typed questions
-    J-->>S: Probabilities, scores and choices
-    S-->>G: Validated answers and deterministic policy
-    G->>G: Retrieve and filter recall; preview relationship change
-    G->>S: /chat: accessible memories and updated context
-    S->>L: Universal cognitive prompt and strict output schema
-    L-->>S: Dialogue, replies, proposed memory gists, used memory IDs
-    S-->>G: Validated result
-    G->>G: Check conversation freshness, commit and save
+	participant G as Godot
+	participant S as Local Node server
+	participant J as Jev
+	participant L as Dialogue model
+	G->>S: POST /v2/dialogue/chat: profile, context, player message, recent dialogue, recalled candidates
+	S->>J: Typed player-speech judgments
+	J-->>S: Probabilities, scores and choices
+	S->>S: Apply thresholds to get the speech policy
+	S->>L: Universal cognitive prompt, strict output schema and the policy
+	L-->>S: Dialogue and proposed memory gists
+	S->>J: Ground the memory proposals
+	S-->>G: Judgments, reply, grounded memory writes, used memory IDs
+	G->>G: NpcDecisionPolicy.player_speech: bounded relationship change, recall and farewell
+	G->>G: Check conversation freshness, commit and save
 ```
 
-The preview affects the current response, but persistent state changes only after valid dialogue returns. Closing, switching, reopening, or losing the source invalidates pending results. Failed requests do not advance memory time, reinforce recall, consume events or change relationships. A response cannot apply to a later conversation with the same NPC.
+The speech policy affects the current response, but persistent state changes only after valid dialogue returns. Closing, switching, reopening, or losing the source invalidates pending results (`NpcConversation.cancel` abandons the request). Failed or unavailable requests do not advance memory time, reinforce recall, consume events or change relationships. A response cannot apply to a later conversation with the same NPC.
 
-Opening an interaction automatically chooses a short player greeting, such as "Hi." or "Hey." The same greeting reaches Jev, the dialogue model and recent history; typed player messages remain unchanged. NPC responses contain spoken words only. The prompt asks for natural conversational language, and the server replaces any remaining em dashes in displayed responses and suggested replies.
+Opening an interaction automatically chooses a short player greeting from `NpcConversation.OPENING_GREETINGS`, such as "Hi." or "Hey." The same greeting reaches Jev, the dialogue model and recent history; typed player messages (the free chat line) remain unchanged. NPC responses contain spoken words only. The prompt asks for natural conversational language, and the server replaces any remaining em dashes in displayed responses.
 
 ## Authoring NPCs
 
@@ -55,7 +55,7 @@ Runtime records are JSON-compatible dictionaries, not mutable shared Resources:
 
 The last 12 speaker turns form recent dialogue. Ordinary greetings and small talk normally remain there without durable admission. Semantic memory requires Jev's belief gate. Player claims retain `source: player_claim` and belief confidence 0.6; even a believed claim does not become authoritative world state. Different NPCs can retain conflicting beliefs. Exact repeated gists from the same source are deduplicated without increasing confidence.
 
-The dialogue model proposes text and categories but cannot choose trust deltas, importance, belief admission or save IDs. The server requires a verbatim evidence span in the current message, NPC response, or a supplied observed event. This checks grounding and source attribution; it cannot prove that a generated paraphrase is semantically correct. Evaluate that behavior with live models before shipping.
+The dialogue model proposes text and categories but cannot choose trust deltas, importance, belief admission or save IDs. The server grounds each proposed memory in a separate judgment against the current message, the NPC response and the supplied observed events, and returns only the proposals that pass (`memory_writes`); Godot still decides admission through `NpcDecisionPolicy.player_speech` and `NpcMemoryStore.commit_exchange`. This checks grounding and source attribution; it cannot prove that a generated paraphrase is semantically correct. Evaluate that behavior with live models before shipping.
 
 Relationship dimensions remain independent: familiarity, trust, respect, affection, fear and suspicion. Jev selects direction; code applies a bounded magnitude derived from importance. Uncertain choices leave dispositions unchanged. Forgiveness does not delete history. Core identity and procedural expertise remain in authored data.
 
@@ -67,7 +67,7 @@ Recall separately computes quality using age, cognition, emotional retention, vi
 
 Only supplied memories reported as actually used receive rehearsal credit. Emotional memories can keep fragments longer; associative cues can retrieve a memory without a direct question. Saved records remain intact. There is no random rewriting of world facts and no forced confabulation.
 
-Memory age uses a **logical turn clock**, not wall-clock time: every successful exchange advances it once, across NPCs. Game time skips can call `DialogManager.get_memory_store().advance_time(turns)` and save. `age_turns` is an authoring/tuning unit, not a claim that one turn equals a day. The game currently has no world calendar. Sleep consolidation, embedding retrieval, learned distortions and NPC-to-NPC gossip are later extensions, not simulated implicitly.
+Memory age follows the **world clock**: `NpcMemoryStore.world_minute` is set from the town simulation (`set_world_minute`), and retrieval and forgetting use it. `NpcMemoryStore.turn` is only a sequence number that each successful exchange or appraised evidence advances (`advance_time`); it is not a time unit. `NpcCoreMemory.age_turns` is an authoring unit for how long ago an authored memory happened, not a claim that one turn equals a day. Memories imported from a legacy save without a recorded date are marked undated (`NpcMemory.UNKNOWN_MINUTE`) and age from the moment they are loaded. Sleep consolidation, embedding retrieval, learned distortions and NPC-to-NPC gossip are later extensions, not simulated implicitly.
 
 ## Perception and intentions
 
@@ -81,27 +81,21 @@ DialogManager.record_npc_event(npc.get_npc_profile(), "I watched the player retu
 
 Pending events are bounded to eight and consumed only after a successful exchange. Events that arrive during a request are preserved for a later exchange. Player assertions must stay player messages; never feed them through this observation API.
 
-Game code, not model prose, resolves a prospective record:
+Game code, not model prose, resolves a prospective record, and it does so through a commitment. A commitment (`NpcCommitments.create(kind, other_ids, evidence_ids, created_minute, deadline_minute, priority)`) that cites the memory as evidence `memory:<memory id>` is attached to the task that fulfils it (`task.commitment_ids`). `NpcBrain` resolves commitments from the task outcome: `completed` when the task completes, `failed` when it fails or its deadline passes, `cancelled` when it cannot be restored. Only a `completed` commitment calls `NpcMemoryStore.complete_intention(npc_id, memory_id)` for each `memory:` evidence id, which marks the prospective record completed. A cancelled, failed or merely interrupted task leaves the promise open, and nothing else (no model answer, no direct game call) completes it. The flow is exercised by `tests/integration/npc_cognition_matrix_test.gd` (row 13: promise, errand, completion) and `tests/unit/npc_commitment_test.gd`.
 
-```gdscript
-var memory_store: NpcMemoryStore = DialogManager.get_memory_store()
-memory_store.complete_intention("garrin_holt", "mem:12")
-memory_store.save_file()
-```
-
-This changes the NPC's intention record, never inventory, quests or other world truth. Generic world event simulation and a quest system are outside this change.
+This changes the NPC's intention record, never inventory, quests or other world truth. No shipped system creates a promise commitment yet; generic world event simulation and a quest system are outside this change.
 
 ## Persistence
 
-The default save is `user://npc_memory.json`, version 1. Successful exchanges and observed injury events save automatically. Writes go through a temporary file and rename. Loading validates the entire save before replacing state. Invalid or unsupported saves are left untouched and automatic overwriting is disabled; memory can continue in RAM while the file is recovered. Warnings report persistence errors.
+The memory records are the `memory` section of the combined save `user://npc_world_v2.json` (`NpcWorldSave`, version 2; see [the cognition architecture](npc_cognition_architecture.md#saving)). `NpcSaveCoordinator` is the only writer: successful exchanges, appraised evidence and observed events request a debounced write, and critical changes flush. Writes go through a temporary file and rename. Loading validates the entire save before replacing state. Invalid or unsupported saves are left untouched and writes are disabled; memory can continue in RAM while the file is recovered. Warnings report persistence errors.
 
-`to_save_data()` and `from_save_data()` expose an explicit contract for a future game save system. This temporary default is one local playthrough. A future new-game/save-slot UI should own separate store instances or embed this data in its own slot; no multiplayer identity or server-side persistence is implied.
+The legacy `user://npc_memory.json` (version 1) and `user://npc_world.json` are only read, never written, when no v2 file exists. `NpcMemoryStore.to_save_data()` and `from_save_data(data, at_minute)` are the store's contract with `NpcWorldSave`. This default is one local playthrough; a future new-game/save-slot UI should own separate `NpcWorldSave` instances or embed this data in its own slot. No multiplayer identity or server-side persistence is implied.
 
 ## Inspecting runtime memory
 
 Run the game from Godot, switch the Scene dock to **Remote**, and select the NPC actor node. Expand **Runtime Memory** on the node itself, outside **Npc Data > Profile**. Restart a game that was already running when this feature was added.
 
-The read-only section shows the stable NPC ID, initialization status, global memory turn, full memory records, recent dialogue, relationship values and pending observed events. Expand the **Memories** array and each record dictionary to see its gist, source, importance, confidence, details and rehearsal data. Values are read from the live store whenever the Remote Inspector refreshes. This debug view includes the full archive; dialogue generation still receives only filtered recall.
+The read-only section shows the stable NPC ID, initialization status, global memory turn, full memory records, recent dialogue, pending observed events and the observation diagnostics. Expand the **Memories** array and each record dictionary to see its gist, source, importance, confidence, details and rehearsal data. Values are read from the live store whenever the Remote Inspector refreshes. This debug view includes the full archive; dialogue generation still receives only filtered recall. Relationships, commitments, evidence, tasks and decisions are in the separate **Cognition** group; see [the cognition architecture](npc_cognition_architecture.md#recipe-inspect-a-stuck-resident).
 
 An untouched NPC can show **Not initialized yet.** Inspecting it does not initialize or change its save state. The profile's **Core Memories** and legacy **Memories** fields remain authored inputs. Runtime inspection returns copies, is available only in debug builds, and never serializes these properties into scenes.
 
@@ -123,4 +117,4 @@ The headless editor import also emits existing inventory `@tool`/placeholder-ins
 
 ## World-state persistence update
 
-The running game now uses `NpcCognition` to own cognition independently of dialogue UI. `user://npc_world.json` stores memories and named-NPC deaths atomically; `npc_memory.json` is a legacy import source. See [NPC perception and persistence](npc_perception.md) for event adapters, live reaction diagnostics, migration behavior and the explicit reset command.
+The running game uses `NpcCognition` to own cognition independently of dialogue UI. `user://npc_world_v2.json` stores memories, minds and named-NPC deaths atomically; `npc_world.json` and `npc_memory.json` are legacy import sources. See [NPC perception and persistence](npc_perception.md) for event adapters, live reaction diagnostics and the explicit reset command, and the [cognition architecture](npc_cognition_architecture.md) for ownership, the decision service, migration and recipes.
