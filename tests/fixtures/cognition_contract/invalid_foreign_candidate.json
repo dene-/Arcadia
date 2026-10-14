@@ -1,0 +1,79 @@
+{
+  "description": "suitability is answered for a candidate id that was never supplied, leaving REST_HOME unanswered.",
+  "kind": "select_goal",
+  "response": {
+    "protocol_version": 2,
+    "prompt_version": "cognition-1",
+    "request_id": "req:select_goal:1",
+    "kind": "select_goal",
+    "model": "jev-fixture",
+    "judgments": {
+      "suitability:WORK_FORGE": {
+        "type": "score",
+        "score": 1,
+        "confidence": 0.8,
+        "probabilities": {
+          "0": 0,
+          "1": 1,
+          "2": 0,
+          "3": 0,
+          "4": 0
+        }
+      },
+      "duration:WORK_FORGE": {
+        "type": "choice",
+        "choice": "BRIEF",
+        "confidence": 0.85,
+        "probabilities": {
+          "BRIEF": 0.8,
+          "ORDINARY": 0.1,
+          "EXTENDED": 0.1
+        }
+      },
+      "suitability:VISIT_MIRELLE": {
+        "type": "score",
+        "score": 3.5,
+        "confidence": 0.8,
+        "probabilities": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0.5,
+          "4": 0.5
+        }
+      },
+      "duration:VISIT_MIRELLE": {
+        "type": "choice",
+        "choice": "EXTENDED",
+        "confidence": 0.85,
+        "probabilities": {
+          "BRIEF": 0.1,
+          "ORDINARY": 0.1,
+          "EXTENDED": 0.8
+        }
+      },
+      "duration:REST_HOME": {
+        "type": "choice",
+        "choice": "ORDINARY",
+        "confidence": 0.85,
+        "probabilities": {
+          "BRIEF": 0.1,
+          "ORDINARY": 0.8,
+          "EXTENDED": 0.1
+        }
+      },
+      "suitability:BURN_TOWN": {
+        "type": "score",
+        "score": 2,
+        "confidence": 0.8,
+        "probabilities": {
+          "0": 0,
+          "1": 0,
+          "2": 1,
+          "3": 0,
+          "4": 0
+        }
+      }
+    }
+  }
+}

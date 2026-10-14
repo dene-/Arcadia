@@ -31,9 +31,7 @@ func setup(scene_tree: SceneTree) -> void:
 	# Guard: anything that still reaches the original client cannot leave the machine.
 	_original_backend.chat_endpoint = GUARD_ENDPOINT + "/chat"
 	_original_backend.decision_endpoint = GUARD_ENDPOINT + "/decide"
-	_original_backend.observation_endpoint = GUARD_ENDPOINT + "/observe"
-	_original_backend.reaction_endpoint = GUARD_ENDPOINT + "/react"
-	_original_backend.life_endpoint = GUARD_ENDPOINT + "/life"
+	_original_backend.v2_base_url = GUARD_ENDPOINT
 	_counter += 1
 	save_path = OS.get_temp_dir().path_join("arcadia-sim-%d-%d.json" % [OS.get_process_id(), _counter])
 	var save: NpcWorldSave = _cognition.save_game
@@ -49,12 +47,10 @@ func setup(scene_tree: SceneTree) -> void:
 	backend = FakeService.new()
 	backend.chat_endpoint = GUARD_ENDPOINT + "/chat"
 	backend.decision_endpoint = GUARD_ENDPOINT + "/decide"
-	backend.observation_endpoint = GUARD_ENDPOINT + "/observe"
-	backend.reaction_endpoint = GUARD_ENDPOINT + "/react"
-	backend.life_endpoint = GUARD_ENDPOINT + "/life"
+	backend.v2_base_url = GUARD_ENDPOINT
 	tree.root.add_child(backend)
 	_cognition.backend = backend
-	_cognition.events.backend = backend
+	_cognition.decisions.transport = backend
 
 func save_game() -> NpcWorldSave:
 	return _cognition.save_game
@@ -205,7 +201,7 @@ func teardown() -> void:
 	await tree.process_frame
 	await tree.process_frame
 	_cognition.backend = _original_backend
-	_cognition.events.backend = _original_backend
+	_cognition.decisions.transport = _original_backend
 	if backend != null and is_instance_valid(backend):
 		backend.queue_free()
 	await tree.process_frame

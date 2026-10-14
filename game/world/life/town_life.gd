@@ -5,8 +5,6 @@ extends Node
 ## Each resident's NpcBrain is the only locomotion and sleep authority; planners here, the watch and
 ## funerals only request tasks from it and let its priorities settle conflicts.
 
-## Seconds between retries of evidence whose appraisal was deferred.
-const RETRY_INTERVAL: float = 5.0
 ## A repeat sighting of the same target is recorded only after it moved, changed space or this long.
 const SIGHTING_MOVE_PIXELS: float = 16.0
 const SIGHTING_REFRESH_MINUTES: float = 30.0
@@ -14,7 +12,7 @@ const SIGHTING_REFRESH_MINUTES: float = 30.0
 @export_range(0.0, 10.0, 0.1) var minutes_per_second: float = 1.5
 @export_range(1, 12, 1) var max_decision_workers: int = 4
 var save_game: NpcWorldSave
-var backend: DialogBackendClient
+var decisions: NpcDecisionService
 var navigation := TownNavigation.new()
 var encounters: TownEncounters
 var buildings: TownBuildings
@@ -32,7 +30,6 @@ var _pending: Dictionary = {}
 var _revisions: Dictionary = {}
 var _tick: float = 0.0
 var _save_elapsed: float = 0.0
-var _retry_elapsed: float = 0.0
 # Game hour whose memory and receipt upkeep already ran.
 var _maintained_hour: int = -1
 # (observer|target) -> {space, position, minute}: last sighting recorded, to throttle re-recording.
@@ -49,7 +46,7 @@ func _ready() -> void:
 	save_game = cognition.save_game
 	save_game.population.ensure_population(save_game.region_seed)
 	save_game.economy.ensure_households(save_game.population, save_game.life.minute)
-	backend = cognition.backend
+	decisions = cognition.decisions
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	if not is_inside_tree():
@@ -80,7 +77,7 @@ func _ready() -> void:
 	encounters = TownEncounters.new()
 	encounters.state = save_game.life
 	encounters.store = save_game.memory
-	encounters.backend = backend
+	encounters.decisions = decisions
 	encounters.seed_value = save_game.get_npc_seed()
 	encounters.save_callback = _save
 	encounters.brains = brain_for
@@ -137,10 +134,6 @@ func _process(delta: float) -> void:
 	save_game.economy.settle(save_game.life.minute, save_game.population, save_game.dead_npcs)
 	_tick += delta
 	_save_elapsed += delta
-	_retry_elapsed += delta
-	if _retry_elapsed >= RETRY_INTERVAL:
-		_retry_elapsed = 0.0
-		get_node("/root/NpcCognition").retry_deferred_evidence()
 	for id: String in _actors.keys():
 		if not is_instance_valid(_actors[id]):
 			navigation.release(id)
@@ -217,6 +210,8 @@ func _update_environment() -> void:
 			_light.color = Color(1, 0.96, 0.88)
 
 func _exit_tree() -> void:
+	for request_id: String in _pending.values():
+		decisions.cancel(request_id)
 	if _initialized:
 		_save()
 	for id: String in _actors:
@@ -306,7 +301,6 @@ func _build_places() -> void:
 			"home": room.resident_name + " household in Rekala"})
 
 func _choose_activity(npc: BaseNpc, id: String) -> void:
-	_pending[id] = true
 	var revision: int = npc.life_revision
 	var person: Dictionary = save_game.life.get_person(id)
 	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, save_game.life.minute)
@@ -322,11 +316,23 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 		+ str(current.get("safety_response", {}).get("concern", "")),
 		current, npc.get_npc_profile().get_cognition(), save_game.memory.world_minute,
 		NpcMemoryRetriever.links_for(raw))
-	var payload: Dictionary = {"protocol_version": 1,
-		"npc": {"id": id, "profile": npc.get_backend_profile()},
-		"current": current, "candidates": options}
-	var result: Dictionary = await backend.request_life("routine", payload)
+	var ticket := NpcDecisionTicket.create(id, NpcDecisionTicket.SELECT_GOAL)
+	ticket.task_id = "routine:" + id
+	ticket.task_generation = revision
+	ticket.created_minute = int(save_game.life.minute)
+	ticket.read_versions = {"life": revision,
+		"task": int(save_game.minds.get_mind(id).versions().task)}
+	var candidates: Array[Dictionary] = []
+	for option: Dictionary in options:
+		ticket.candidate_ids.append(option.id)
+		candidates.append({"id": option.id, "description": option.description})
+	_pending[id] = ticket.request_id
+	var result: NpcDecisionResult = await decisions.evaluate(ticket, {"evidence": [],
+		"state": {"profile": npc.get_backend_profile(), "current": current},
+		"candidates": candidates})
 	_pending.erase(id)
+	if result.outcome in [NpcDecisionResult.Outcome.STALE, NpcDecisionResult.Outcome.CANCELLED]:
+		return # A newer request for this resident, or shutdown, owns the decision.
 	if not is_inside_tree() or not is_instance_valid(npc) or not npc.can_follow_routine() \
 		or npc.life_revision != revision or encounters.is_busy(id) or funerals.is_assigned(id) \
 		or not _routine_due(id):
@@ -336,22 +342,20 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	if NpcRoutinePlan.current(save_game.life.get_person(id).plan, save_game.life.minute) != preferred:
 		save_game.life.interrupt(id)
 		return # A delayed nighttime decision cannot overwrite the morning routine.
-	var policy: Dictionary = result.get("policy", {})
+	# Without a confident suitable candidate (or a provider) the resident keeps today's plan entry.
+	var choice: NpcDecisionPolicy.GoalChoice = NpcDecisionPolicy.goal_choice(result, tuning)
 	var selected: Dictionary = options[0]
 	var duration: float = 20.0
-	var accepted: bool = false
-	var valid: bool = policy.get("activity") is String \
-		and (policy.get("duration_minutes") is int or policy.get("duration_minutes") is float)
-	if valid and is_finite(float(policy.duration_minutes)):
-		for option: Dictionary in options:
-			if option.id == policy.activity:
-				selected = option
-				duration = clampf(policy.duration_minutes, 10, 90)
-				accepted = true
-				break
-	# Deterministic fallback keeps everyday life moving when providers are unavailable.
-	save_game.life.select_activity(id, selected, duration,
-		{"service": "jev" if accepted else "schedule_fallback", "policy": policy})
+	var service: String = "schedule_fallback" if not result.is_success() else "plan_kept"
+	for option: Dictionary in options:
+		if option.id == choice.candidate_id:
+			selected = option
+			duration = choice.duration_minutes
+			service = "jev"
+			break
+	save_game.life.select_activity(id, selected, duration, {"service": service,
+		"outcome": NpcDecisionResult.Outcome.keys()[result.outcome], "candidate": selected.id,
+		"duration": duration})
 	_request_routine(npc, id, selected)
 	_update_context(npc, id)
 	_save()

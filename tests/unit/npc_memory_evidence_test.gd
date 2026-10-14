@@ -1,6 +1,7 @@
 extends "res://tests/test_case.gd"
 
 const CognitionScript = preload("res://game/actors/npcs/npc_cognition.gd")
+const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
 
 const OBSERVER: String = "elder"
 const DECEASED: String = "garrin_holt"
@@ -12,11 +13,8 @@ func _profile(id: String = OBSERVER) -> NpcProfile:
 	profile.npc_id = StringName(id)
 	return profile
 
-func _policy(remember: bool = true, trust: float = 0.0) -> Dictionary:
-	return {"remember": remember, "retrieve": false, "update_belief": false, "speak": false,
-		"importance": 0.7, "emotional_intensity": 0.5, "response_mode": "NEUTRAL",
-		"relationship_delta": {"familiarity": 0.0, "trust": trust, "respect": 0.0,
-			"affection": 0.0, "fear": 0.0, "suspicion": 0.0}}
+func _policy(remember: bool = true, trust: float = 0.0) -> NpcDecisionPolicy.Appraisal:
+	return Appraisals.player_trust(trust, remember)
 
 func _perceive(kind: String, sense: String, text: String, participants: Array,
 		minute: float = 500.0, observer: String = OBSERVER, player_involved: bool = false) -> NpcObservation:
@@ -56,7 +54,8 @@ func _claim(store: NpcMemoryStore, observation: NpcObservation) -> NpcObservatio
 	return claimed
 
 ## Mirrors the processor: enqueue, claim, commit.
-func _commit(store: NpcMemoryStore, observation: NpcObservation, policy: Dictionary = _policy()) -> String:
+func _commit(store: NpcMemoryStore, observation: NpcObservation,
+		policy: NpcDecisionPolicy.Appraisal = _policy()) -> String:
 	return store.commit_evidence(observation.observer_id, _claim(store, observation), policy)
 
 func _memories(store: NpcMemoryStore, observer: String = OBSERVER) -> Array:
@@ -100,9 +99,10 @@ func test_invalid_inputs_report_their_reason_without_changes() -> void:
 	var store := _store()
 	var claimed: NpcObservation = _claim(store, _death())
 	assert_eq(store.commit_evidence(OBSERVER, null, _policy()), "invalid_observation")
-	var bad: Dictionary = _policy()
+	var bad: NpcDecisionPolicy.Appraisal = _policy()
 	bad.importance = 4.0
-	assert_eq(store.commit_evidence(OBSERVER, claimed, bad), "invalid_policy")
+	assert_eq(store.commit_evidence(OBSERVER, claimed, bad), "invalid_appraisal")
+	assert_eq(store.commit_evidence(OBSERVER, claimed, null), "invalid_appraisal")
 	assert_false(_inbox(store).has_receipt(claimed.observation_id))
 	assert_true(_memories(store).is_empty())
 	assert_eq(store.commit_evidence(OBSERVER, claimed, _policy()), "")

@@ -1,0 +1,55 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:listen:1",
+  "npc_id": "garrin_holt",
+  "kind": "listen",
+  "ticket": {
+    "task_id": "conversation:mirelle:garrin",
+    "task_generation": 3,
+    "created_minute": 1842,
+    "read_versions": {
+      "knowledge": 12,
+      "relationships": 7,
+      "condition": 2,
+      "task": 3
+    },
+    "evidence_ids": [
+      "ev:31"
+    ],
+    "candidate_ids": [],
+    "context_hash": "h:4f2a9c"
+  },
+  "state": {
+    "speaker": {
+      "id": "mirelle",
+      "name": "Mirelle"
+    },
+    "listener": {
+      "relationship_to_speaker": {
+        "trust": 0.5
+      }
+    },
+    "account": {
+      "hops": 1,
+      "confidence": 0.7,
+      "player_involved": true
+    }
+  },
+  "evidence": [
+    {
+      "id": "ev:31",
+      "text": "Mirelle says she saw Den hurt Garrin outside the forge.",
+      "modality": "hearing",
+      "source_id": "mirelle",
+      "participant_ids": [
+        "mirelle",
+        "player"
+      ]
+    }
+  ],
+  "subjects": [
+    "mirelle",
+    "player"
+  ]
+}

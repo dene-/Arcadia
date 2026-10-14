@@ -70,10 +70,27 @@ func record_hearsay(profile: NpcProfile, account: Dictionary, policy: Dictionary
 	# Receipts survive even when the story itself is not retained. Retelling is not evidence.
 	state.heard_origins[account.origin_id] = true
 	_changed(String(profile.npc_id))
-	if account.player_involved and account.confidence >= 0.7:
-		minds.get_mind(String(profile.npc_id)).relationships.apply_delta("player",
-			{"trust": clampf(policy.trust_player, -0.03, 0.03)},
-			"hearsay:%s:%s" % [profile.npc_id, account.origin_id], account.origin_id)
+	# Listening dispositions (NpcDecisionPolicy.listening) pass through the listener's incident
+	# budget; every retelling of one origin shares that origin's budget and receipts. A weak
+	# account can change how the listener sees the messenger, never the people it is about.
+	var dispositions: Dictionary = policy.get("dispositions", {})
+	if not dispositions.is_empty():
+		var heard := NpcObservation.new()
+		heard.observation_id = "hearsay:%s:%s" % [profile.npc_id, account.origin_id]
+		heard.origin_id = account.origin_id
+		heard.incident_id = account.origin_id
+		heard.observer_id = String(profile.npc_id)
+		heard.kind = &"hearsay"
+		heard.modality = NpcObservation.Modality.SPOKEN_REPORT
+		heard.observed_minute = world_minute
+		heard.source_id = account.source_id
+		heard.text = String(account.text).substr(0, NpcObservation.MAX_TEXT_LENGTH)
+		var mind: NpcMindState = minds.get_mind(String(profile.npc_id))
+		for subject: String in dispositions:
+			if subject != account.source_id and float(account.confidence) < 0.7:
+				continue
+			mind.apply_evidence_delta(subject, heard, dispositions[subject],
+				"%s:%s" % [heard.observation_id, subject])
 	if not policy.remember:
 		return
 	var gist: String = "%s told me that %s reported: %s" % [account.source_name,
@@ -206,19 +223,22 @@ func record_observation(profile: NpcProfile, event: Dictionary, world_minute: fl
 		state.observations.pop_front()
 	_changed(String(profile.npc_id))
 
-## Appraises evidence the mind's inbox has claimed. The inbox claim is completed first and its
-## receipt is what makes the appraisal happen once: when completion fails nothing changes, and a
-## completed claim always carries its effects. Returns "" on success (re-committing an already
-## receipted observation is a successful no-op) or why nothing was committed: "invalid_observation",
-## "store_unavailable" (this NPC has no memory state), "invalid_policy", "receipts_full" (every
-## stored receipt is still replayable; upkeep frees room once origins expire) or "not_claimed".
-func commit_evidence(npc_id: String, observation: NpcObservation, policy: Variant) -> String:
+## Applies an appraisal (NpcDecisionPolicy.appraisal) to evidence the mind's inbox has claimed.
+## The inbox claim is completed first and its receipt is what makes the appraisal happen once:
+## when completion fails nothing changes, and a completed claim always carries its effects.
+## Returns "" on success (re-committing an already receipted observation is a successful no-op)
+## or why nothing was committed: "invalid_observation", "store_unavailable" (this NPC has no
+## memory state), "invalid_appraisal", "receipts_full" (every stored receipt is still
+## replayable; upkeep frees room once origins expire) or "not_claimed".
+func commit_evidence(npc_id: String, observation: NpcObservation,
+		appraisal: NpcDecisionPolicy.Appraisal) -> String:
 	if observation == null or observation.observation_id.is_empty():
 		return "invalid_observation"
 	if not _states.has(npc_id):
 		return "store_unavailable"
-	if not is_valid_policy(policy):
-		return "invalid_policy"
+	var record: Dictionary = appraisal_record(appraisal) if appraisal != null else {}
+	if not is_valid_appraisal_record(record):
+		return "invalid_appraisal"
 	var mind: NpcMindState = minds.get_mind(npc_id)
 	if mind.evidence.has_receipt(observation.observation_id):
 		return ""
@@ -231,14 +251,17 @@ func commit_evidence(npc_id: String, observation: NpcObservation, policy: Varian
 	for entry: Dictionary in state.observations:
 		if entry.get("observation_id") == observation.observation_id:
 			entry.status = "classified"
-			entry.decision = policy.duplicate(true)
+			entry.decision = record.duplicate(true)
 	advance_time()
-	# Hearing noise alone cannot identify or change feelings toward the player.
-	if observation.facts.get("player_involved") == true \
-			and observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]:
-		mind.apply_evidence_delta("player", observation, policy.relationship_delta,
-			"observation:%s:%s" % [npc_id, observation.observation_id])
-	if policy.remember:
+	# Only direct evidence about an evidenced participant changes feelings; hearing noise or a
+	# report cannot identify anyone. Each subject spends through the M6 incident budget.
+	if observation.modality in [NpcObservation.Modality.SIGHT, NpcObservation.Modality.TOUCH]:
+		var evidenced: Array[String] = observation.participant_ids()
+		for subject: String in appraisal.dispositions:
+			if subject in evidenced and subject != npc_id:
+				mind.apply_evidence_delta(subject, observation, appraisal.dispositions[subject],
+					"observation:%s:%s:%s" % [npc_id, observation.observation_id, subject])
+	if appraisal.remember:
 		var people: Array[String] = observation.participant_ids()
 		if not observation.source_id.is_empty() and not observation.source_id in people:
 			people.append(observation.source_id)
@@ -249,8 +272,38 @@ func commit_evidence(npc_id: String, observation: NpcObservation, policy: Varian
 		_admit(state.memories, {"type": "episodic",
 			"source": "hearsay" if report else "observed_event",
 			"gist": observation.text, "topics": topics, "people": people.slice(0, 8),
-			"sensory_cues": observation.cues.slice(0, 8)}, policy, _evidence_of(observation))
+			"sensory_cues": observation.cues.slice(0, 8)},
+			{"importance": record.importance, "emotional_intensity": record.emotional_intensity,
+				"update_belief": false}, _evidence_of(observation))
 	return ""
+
+## The saved, display-only summary of an appraisal on its observation entry.
+static func appraisal_record(appraisal: NpcDecisionPolicy.Appraisal) -> Dictionary:
+	var intensity: float = 0.0
+	for emotion: String in appraisal.emotions:
+		intensity = maxf(intensity, appraisal.emotions[emotion])
+	return {"immediate_danger": appraisal.immediate_danger, "remember": appraisal.remember,
+		"importance": appraisal.importance, "emotional_intensity": intensity,
+		"emotions": appraisal.emotions.duplicate(), "dispositions": appraisal.dispositions.duplicate(true)}
+
+static func is_valid_appraisal_record(record: Variant) -> bool:
+	if not record is Dictionary or not record.get("immediate_danger") is bool \
+			or not record.get("remember") is bool or not NpcMemory.is_unit(record.get("importance")) \
+			or not NpcMemory.is_unit(record.get("emotional_intensity")) \
+			or not record.get("emotions") is Dictionary or not record.get("dispositions") is Dictionary:
+		return false
+	for emotion: Variant in record.emotions:
+		if not emotion is String or not NpcMemory.is_unit(record.emotions[emotion]):
+			return false
+	for subject: Variant in record.dispositions:
+		if not subject is String or not record.dispositions[subject] is Dictionary:
+			return false
+		for dimension: Variant in record.dispositions[subject]:
+			var delta: Variant = record.dispositions[subject][dimension]
+			if not dimension is String or not (delta is int or delta is float) \
+					or not is_finite(float(delta)):
+				return false
+	return true
 
 # Memory evidence fields of one observation.
 func _evidence_of(observation: NpcObservation) -> Dictionary:
@@ -530,8 +583,10 @@ func _valid_observations(value: Variant, next_id: Variant) -> bool:
 			var minute: Variant = observation.world_minute
 			if not (minute is float or minute is int) or not is_finite(float(minute)) or minute < 0:
 				return false
-		if not observation.get("decision") is Dictionary or \
-			(observation.status == "classified" and not is_valid_policy(observation.decision)):
+		# Saves written before M7 hold the v1 observation policy as the display decision.
+		if not observation.get("decision") is Dictionary or (observation.status == "classified" \
+				and not is_valid_appraisal_record(observation.decision) \
+				and not is_valid_policy(observation.decision)):
 			return false
 	return true
 

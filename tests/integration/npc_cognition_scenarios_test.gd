@@ -21,6 +21,7 @@ func _run() -> void:
 	await _scenario_reload_stability()
 	await _scenario_no_information_without_evidence()
 	await _scenario_personal_knowledge()
+	await _scenario_routine_goal_choice()
 	await _scenario_sleeper_shelters()
 	await _scenario_safety_ends_session()
 	await _scenario_reload_mid_travel()
@@ -55,9 +56,9 @@ func _scenario_isolation() -> void:
 	_check(sim.resident("garrin_holt") != null, "Founder resident not found")
 	await sim.advance(5.0)
 	_check(sim.backend.total_calls() > 0, "Nothing reached the fake backend")
-	_check(sim.backend.call_count("life/routine") > 0, "Routine decisions did not reach the fake backend")
-	_check(sim.backend.call_count("life/routine") <= sim.resident_ids().size() * 2,
-		"Unexpected request volume for 5 seconds: %d" % sim.backend.call_count("life/routine"))
+	_check(sim.backend.call_count("select_goal") > 0, "Routine decisions did not reach the fake backend")
+	_check(sim.backend.call_count("select_goal") <= sim.resident_ids().size() * 2,
+		"Unexpected request volume for 5 seconds: %d" % sim.backend.call_count("select_goal"))
 	_check(not sim.trace().is_empty(), "No trace recorded")
 	_check(FileAccess.file_exists(sim.save_path), "Fixture save was not written to the temp path")
 	await sim.teardown()
@@ -380,18 +381,15 @@ func _scenario_safety_ends_session() -> void:
 	life_state.rumors.observe(first_id, first.get_npc_profile().profile_name,
 		{"origin_id": "test:m4b", "text": SYNTHETIC_TEXT, "sense": "sight", "player_involved": false},
 		{"remember": true, "importance": 1.0}, life_state.minute)
-	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
-		"topic_index": 0, "tone": "FRIENDLY"}})
-	sim.backend.queue_response("life/listen", {"policy": {"belief": 0.9, "importance": 0.8,
-		"remember": true, "affinity": 0.01, "trust_player": 0.0}})
-	sim.backend.hold("life/listen")
+	sim.backend.queue_response("social", {"topic": "test:m4b", "tone": "friendly"})
+	sim.backend.hold("listen")
 	sim.life.encounters.consider(first, second)
 	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
 		and sim.life.encounters.session_phase(second_id) == TownEncounters.PHASE_CONVERSE,
 		"(b) The session did not reach conversation: %s / %s" % [sim.life.encounters.diagnostics(first_id),
 			sim.life.brain_for(second_id).debug_snapshot()])
 	if not sim.life.encounters.is_busy(first_id):
-		sim.backend.release("life/listen")
+		sim.backend.release("listen")
 		await sim.teardown()
 		return
 	var session_owner: String = String(_claims(sim, first_id).conversation)
@@ -413,7 +411,7 @@ func _scenario_safety_ends_session() -> void:
 			break
 	_check(safety != null, "(b) The SHELTER concern produced no safety task")
 	if safety == null:
-		sim.backend.release("life/listen")
+		sim.backend.release("listen")
 		await sim.teardown()
 		return
 	_check(not sim.life.encounters.is_busy(first_id) and not sim.life.encounters.is_busy(second_id),
@@ -421,7 +419,7 @@ func _scenario_safety_ends_session() -> void:
 	_check(_claims(sim, first_id).conversation != session_owner, "(b) The partner kept the session's conversation claim")
 	var partner: NpcTask = _task(sim, first_id)
 	_check(partner == null or partner.kind != &"social", "(b) The partner is still held by the session")
-	sim.backend.release("life/listen")
+	sim.backend.release("listen")
 	await sim.advance(0.5)
 	_check(_task(sim, second_id) == safety and safety.status == NpcTask.Status.RUNNING,
 		"(b) The session's late release ended the safety task")
@@ -486,8 +484,8 @@ func _scenario_crossing_invitations() -> void:
 	var encounters: TownEncounters = sim.life.encounters
 	var before: Dictionary = {first_id: _claims(sim, first_id), second_id: _claims(sim, second_id)}
 	var tasks: Dictionary = {first_id: _task(sim, first_id), second_id: _task(sim, second_id)}
-	var judgments: int = sim.backend.call_count("life/social")
-	sim.backend.hold("life/social")
+	var judgments: int = sim.backend.call_count("social")
+	sim.backend.hold("social")
 	encounters.consider(pair[0], pair[1])
 	encounters.consider(pair[1], pair[0])
 	for id: String in [first_id, second_id]:
@@ -495,13 +493,12 @@ func _scenario_crossing_invitations() -> void:
 			"(d) %s is not waiting on one invitation: '%s'" % [id, encounters.session_phase(id)])
 		_check(_claims(sim, id) == before[id], "(d) An invitation took claims for %s: %s" % [id, _claims(sim, id)])
 		_check(_task(sim, id) == tasks[id], "(d) An invitation replaced the task of %s" % id)
-	_check(sim.backend.call_count("life/social") == judgments + 1,
-		"(d) The crossing invitation made %d social judgments" % (sim.backend.call_count("life/social") - judgments))
-	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
-		"topic_index": -1, "tone": "FRIENDLY"}})
-	sim.backend.queue_response("life/social", {"policy": {"engage": false, "another_exchange": false,
-		"topic_index": -1, "tone": "RESERVED"}})
-	sim.backend.release("life/social")
+	_check(sim.backend.call_count("social") == judgments + 1,
+		"(d) The crossing invitation made %d social judgments" % (sim.backend.call_count("social") - judgments))
+	sim.backend.queue_response("social", {"topic": NpcDecisionService.SMALL_TALK, "tone": "friendly"})
+	sim.backend.queue_response("social", {"engage": 0.1, "topic": NpcDecisionService.SMALL_TALK,
+		"tone": "reserved"})
+	sim.backend.release("social")
 	_check(not encounters.is_busy(first_id) and not encounters.is_busy(second_id),
 		"(d) The session never ended: %s" % [encounters.diagnostics(first_id)])
 	_check(encounters.diagnostics(first_id).get("outcome") in ["offscreen_exchange", "declined", "bubble_displayed"],
@@ -539,10 +536,7 @@ func _scenario_player_takes_over_session() -> void:
 		{"origin_id": "test:m4e", "text": SYNTHETIC_TEXT, "sense": "sight", "player_involved": false},
 		{"remember": true, "importance": 1.0}, life_state.minute)
 	var late_line: String = "The copper bell rang at the old well."
-	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
-		"topic_index": 0, "tone": "FRIENDLY"}})
-	sim.backend.queue_response("life/listen", {"policy": {"belief": 0.9, "importance": 0.8,
-		"remember": true, "affinity": 0.01, "trust_player": 0.0}})
+	sim.backend.queue_response("social", {"topic": "test:m4e", "tone": "friendly"})
 	sim.backend.queue_response("life/say", {"response": late_line})
 	sim.backend.hold("life/say")
 	sim.life.encounters.consider(first, second)
@@ -762,6 +756,64 @@ func _check_idle_bounded(sim: Simulation, from: float, limit: float, label: Stri
 		_check(end - float(idle_since[id]) <= limit, "%s %s still idle after %.1f minutes" % [label, id, end - float(idle_since[id])])
 
 # --- M5: watch and death recovery ---
+
+## Ends every resident's current routine so each asks for a new judgment right away. The first
+## round only wakes the residents who start the day asleep (a schedule obligation, not a judgment);
+## the second asks everybody.
+func _redecide_routines(sim: Simulation) -> void:
+	for _round: int in 2:
+		for id: String in sim.resident_ids():
+			sim.save_game().life.interrupt(id)
+		await sim.advance(12.0) # Four judgments start per second.
+
+## A routine judgment is applied end to end: a confident suitable candidate becomes the resident's
+## activity with its bounded duration, and with no confident candidate the day's plan entry stays
+## for the default 20 minutes.
+func _scenario_routine_goal_choice() -> void:
+	var tuning := NpcBehaviorTuning.new()
+	var sim: Simulation = await _start(600.0)
+	sim.backend.set_default("select_goal", {"suitability:REST": 4.0, "duration:REST": "EXTENDED"})
+	await _redecide_routines(sim)
+	var chosen: int = 0
+	for id: String in sim.resident_ids():
+		var person: Dictionary = sim.save_game().life.get_person(id)
+		if person.decision.get("service", "") != "jev":
+			continue
+		# A guard on its night watch is offered only the plan entry: ORDINARY minutes by default.
+		var rests: bool = person.decision.candidate == "REST"
+		if rests:
+			chosen += 1
+			_check(person.activity == "rest" and person.place == "home:" + id,
+				"(routine) %s did not apply the chosen REST: %s / %s" % [id, person.activity, person.decision])
+		else:
+			_check(person.decision.candidate == "PLAN",
+				"(routine) %s applied an unrequested candidate: %s" % [id, person.decision])
+		var expected: float = tuning.extended_goal_minutes if rests else tuning.ordinary_goal_minutes
+		_check(person.decision.duration == expected,
+			"(routine) %s used a duration of %s" % [id, person.decision.duration])
+		_check(float(person.until) <= sim.save_game().life.minute + expected,
+			"(routine) %s runs past its bounded duration" % id)
+	_check(chosen > 0, "(routine) No resident applied the confident REST choice")
+	await sim.teardown()
+	sim = await _start(600.0)
+	var unsure: Dictionary = {"type": "score", "score": 4.0, "confidence": 0.3,
+		"probabilities": {"0": 0.2, "1": 0.2, "2": 0.2, "3": 0.2, "4": 0.2}}
+	var answers: Dictionary = {}
+	for candidate: String in ["PLAN", "REST", "SOCIAL", "MEAL", "WORK", "WALK", "VISIT"]:
+		answers["suitability:" + candidate] = unsure
+	sim.backend.set_default("select_goal", answers)
+	await _redecide_routines(sim)
+	var kept: int = 0
+	for id: String in sim.resident_ids():
+		var person: Dictionary = sim.save_game().life.get_person(id)
+		if not person.decision.get("service", "") in ["plan_kept", "jev"]:
+			continue # Never asked (wakeup, duty): the service did not decide.
+		_check(person.decision.service == "plan_kept" and person.decision.candidate == "PLAN"
+				and person.decision.duration == 20.0,
+			"(routine) %s did not keep the plan on low confidence: %s" % [id, person.decision])
+		kept += 1
+	_check(kept > 0, "(routine) No resident decided under low confidence")
+	await sim.teardown()
 
 ## One town: (h) a patrol resumes after an intervention; (i) a full report, recovery and burial
 ## across a mid-carry reload; (j) a killed carrier leaves the body where it fell; (k) with no guard

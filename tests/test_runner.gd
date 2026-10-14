@@ -24,9 +24,7 @@ func _run_tests() -> void:
 	cognition.save_game.legacy_world_path = temp_base + "-legacy-world.json"
 	cognition.save_game.legacy_memory_path = temp_base + "-legacy-memory.json"
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
-	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
-	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
-	cognition.backend.life_endpoint = "http://127.0.0.1:1/life"
+	cognition.backend.v2_base_url = "http://127.0.0.1:1"
 	var test_files := _discover_tests(TEST_ROOT)
 	# Optional substring filter for focused runs, e.g. ARCADIA_TEST_FILTER=npc_mind_state.
 	var filter: String = OS.get_environment("ARCADIA_TEST_FILTER")

@@ -1,0 +1,249 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:listen:1",
+  "kind": "listen",
+  "model": "jev-fixture",
+  "judgments": {
+    "believe_account": {
+      "type": "noul",
+      "noul": 0.64
+    },
+    "remember": {
+      "type": "noul",
+      "noul": 0.88
+    },
+    "importance": {
+      "type": "score",
+      "score": 2.5,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0.5,
+        "3": 0.5,
+        "4": 0
+      }
+    },
+    "disposition:mirelle:trust:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:mirelle:trust:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:mirelle:affection:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:mirelle:affection:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:mirelle:respect:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:mirelle:respect:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:mirelle:fear:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:mirelle:fear:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:mirelle:suspicion:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:mirelle:suspicion:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:player:trust:direction": {
+      "type": "choice",
+      "choice": "NEGATIVE",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.8,
+        "UNCHANGED": 0.1,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:player:trust:magnitude": {
+      "type": "score",
+      "score": 1.5,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 0,
+        "1": 0.5,
+        "2": 0.5,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:player:affection:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:player:affection:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:player:respect:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:player:respect:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:player:fear:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:player:fear:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    },
+    "disposition:player:suspicion:direction": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.85,
+      "probabilities": {
+        "NEGATIVE": 0.1,
+        "UNCHANGED": 0.8,
+        "POSITIVE": 0.1
+      }
+    },
+    "disposition:player:suspicion:magnitude": {
+      "type": "score",
+      "score": 0,
+      "confidence": 0.8,
+      "probabilities": {
+        "0": 1,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      }
+    }
+  }
+}

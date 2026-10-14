@@ -1,14 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import {
-  QUESTIONS,
-  EVENT_QUESTIONS,
-  decisionPolicy,
-  observationPolicy,
-} from "../src/npc-decisions.js";
+import { QUESTIONS, decisionPolicy } from "../src/npc-decisions.js";
 import { createApp } from "../src/app.js";
 import { VOICE_DIRECTIONS, voiceInstructions } from "../src/npc-voice.js";
 
@@ -42,6 +36,16 @@ function answers(overrides = {}, questions = QUESTIONS) {
       ];
     }),
   );
+}
+function appraisal(questions) {
+  return answers({
+    immediate_danger: 0.1,
+    remember: 0.9,
+    importance: 3,
+    fear: 2,
+    "disposition:player:trust:direction": "NEGATIVE",
+    "disposition:player:trust:magnitude": 2,
+  }, questions);
 }
 function request() {
   return {
@@ -103,7 +107,7 @@ async function server(t, services = {}) {
         body: JSON.stringify(body),
       },
     );
-    return { status: response.status, body: await response.json() };
+    return { status: response.status, body: response.status === 404 ? null : await response.json() };
   };
 }
 const threat = () =>
@@ -290,7 +294,7 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
     assert.equal(typeof prompt.relationship_scales[field], "string");
 });
 
-test("dialogue and reactions preserve different voices under the same response policy", async (t) => {
+test("dialogue and reactions preserve different voices under the same policy or intent", async (t) => {
   const calls = [];
   const post = await server(t, { generate: async (input) => {
     calls.push({ instructions: input.instructions, state: JSON.parse(input.input[0].content) });
@@ -303,9 +307,9 @@ test("dialogue and reactions preserve different voices under the same response p
     ]) {
       const body = request();
       body.npc.profile.voice = voice;
-      body.event = { text: "I heard fighting nearby.", sense: "hearing",
-        player_involved: false, speech_allowed: true };
-      body.answers = path === "/chat" ? answers() : answers({ should_speak: 0.99 }, EVENT_QUESTIONS);
+      body.event = { text: "I heard fighting nearby.", sense: "hearing", player_involved: false };
+      if (path === "/chat") body.answers = answers();
+      else body.intent = "remark";
       assert.equal((await post(path, body)).status, 200);
     }
   }
@@ -320,100 +324,105 @@ test("dialogue and reactions preserve different voices under the same response p
   }
 });
 
-test("observations classify independently of dialogue and cannot blame an unseen player", async (t) => {
-  let seen,
-    generated,
-    generations = 0;
+test("reactions write only the requested intent from the supplied context", async (t) => {
+  const generated = [];
   const post = await server(t, {
-    decide: async (input) => {
-      seen = input;
-      return {
-        answers: answers(
-          {
-            should_remember: 0.93,
-            memory_importance: 3,
-            emotional_intensity: 3,
-            trust_change: "NEGATIVE",
-            should_speak: 0.9,
-          },
-          EVENT_QUESTIONS,
-        ),
-      };
-    },
-    generate: async (input) => {
-      generated = JSON.parse(input.input[0].content);
-      generations++;
+    decide: async () => assert.fail("a reaction must not call a judgment"),
+    generate: async (input, options) => {
+      generated.push({ input: JSON.parse(input.input[0].content), options, store: input.store });
       return { output_text: '{"response":"Keep away!”"}' };
     },
   });
   const body = request();
   body.event = {
-    text: "I heard fighting nearby.",
-    sense: "hearing",
+    text: "I saw the player attack someone.",
+    sense: "sight",
     player_involved: true,
-    speech_allowed: false,
+    participants: [{ name: "Mirelle", role: "hurt_person", relationship: { affection: 0.8 } }],
   };
-  const heard = await post("/observe", body);
-  assert.equal(heard.status, 200);
-  assert.equal(heard.body.policy.remember, true);
-  assert.ok(
-    Object.values(heard.body.policy.relationship_delta).every(
-      (value) => value === 0,
-    ),
-  );
-  assert.equal(heard.body.policy.speak, false);
-  assert.equal(generations, 0);
-  assert.deepEqual(seen.context, undefined);
-  assert.equal(seen.state.event.text, body.event.text);
-  body.answers = heard.body.answers;
-  assert.equal((await post("/react", body)).body.response, "");
-  assert.equal(generations, 0);
-  body.event.sense = "sight";
-  body.event.speech_allowed = true;
-  body.event.text = "I saw the player attack someone.";
-  body.event.participants = [{ name: "Mirelle", role: "hurt_person", relationship: { affection: 0.8 } }];
   body.context.current.recent_ambient = [{ speaker: "Elora", text: "Mirelle, are you hurt?" }];
   body.context.current.location = "Mirelle's home and shop";
   body.context.current.recently_awakened = true;
-  const seenEvent = await post("/observe", body);
-  assert.ok(seenEvent.body.policy.relationship_delta.trust < 0);
-  body.answers = seenEvent.body.answers;
-  const spoken = await post("/react", body);
-  assert.equal(spoken.status, 200);
-  assert.equal(spoken.body.response, 'Keep away!"');
-  assert.equal(generations, 1);
-  assert.deepEqual(generated.event.participants, body.event.participants);
-  assert.deepEqual(generated.context.current, body.context.current);
-  body.npc.profile.cognition = { verbal_reactivity: 0 };
-  assert.equal((await post("/react", body)).body.response, "");
-  assert.equal(generations, 1);
+  for (const intent of ["remark", "warn", "call_for_help", "protest", "grieve"]) {
+    const reaction = await post("/react", { ...body, intent });
+    assert.equal(reaction.status, 200);
+    assert.equal(reaction.body.response, 'Keep away!"');
+  }
+  assert.deepEqual(generated.map((call) => call.input.intent),
+    ["remark", "warn", "call_for_help", "protest", "grieve"]);
+  const [first] = generated;
+  assert.deepEqual(first.input.event.participants, body.event.participants);
+  assert.deepEqual(first.input.context.current, body.context.current);
+  assert.equal(first.input.policy, undefined);
+  assert.equal(first.input.answers, undefined);
+  assert.equal(first.store, false);
+  assert.equal(first.options.timeout, 10000);
+  assert.ok(first.options.signal instanceof AbortSignal);
 });
 
-test("invalid event data, failed classifiers and oversized reactions fail cleanly", async (t) => {
+test("a reaction ignores v1 answers and speech flags the game no longer sends", async (t) => {
+  let seen;
+  const post = await server(t, { generate: async (input) => {
+    seen = JSON.parse(input.input[0].content);
+    return { output_text: '{"response":"Hey!"}' };
+  } });
+  const body = { ...request(), intent: "protest", answers: { should_speak: { type: "noul", noul: 0 } },
+    observationPolicy: { speak: false },
+    event: { text: "Something hit me.", sense: "touch", player_involved: true, speech_allowed: false } };
+  const result = await post("/react", body);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.response, "Hey!");
+  assert.equal(seen.answers, undefined);
+  assert.equal(seen.observationPolicy, undefined);
+});
+
+test("the v1 observation and town-life decision routes are gone", async (t) => {
+  const post = await server(t, {
+    decide: async () => assert.fail("removed routes must not call inference"),
+    generate: async () => assert.fail("removed routes must not call inference"),
+  });
+  for (const path of ["/observe", "/life/routine", "/life/social", "/life/listen"])
+    assert.equal((await post(path, request())).status, 404, path);
+});
+
+test("invalid events and intents, failed generation and oversized reactions fail cleanly", async (t) => {
   let calls = 0;
   const post = await server(t, {
-    decide: async () => {
+    generate: async () => {
       calls++;
       throw new Error("secret provider error");
     },
-    generate: async () => ({
-      output_text: JSON.stringify({ response: "x".repeat(161) }),
-    }),
   });
-  const body = request();
-  assert.equal((await post("/observe", body)).status, 400);
+  const event = { text: "I was hurt.", sense: "touch", player_involved: true };
+  const body = { ...request(), event, intent: "protest" };
+  for (const change of [
+    (b) => delete b.event,
+    (b) => (b.event = { ...event, sense: "smell" }),
+    (b) => (b.event = { ...event, text: "" }),
+    (b) => (b.event = { ...event, player_involved: "yes" }),
+    (b) => delete b.intent,
+    (b) => (b.intent = "silence"),
+    (b) => (b.intent = "REMARK"),
+    (b) => (b.intent = ["remark"]),
+    (b) => (b.protocol_version = 2),
+  ]) {
+    const bad = structuredClone(body);
+    change(bad);
+    assert.equal((await post("/react", bad)).status, 400);
+  }
   assert.equal(calls, 0);
-  body.event = {
-    text: "I was hurt.",
-    sense: "touch",
-    player_involved: true,
-    speech_allowed: true,
-  };
-  const result = await post("/observe", body);
-  assert.equal(result.status, 503);
-  assert.ok(!JSON.stringify(result).includes("secret"));
-  body.answers = answers({ should_speak: 0.9 }, EVENT_QUESTIONS);
-  assert.equal((await post("/react", body)).status, 503);
+  const failed = await post("/react", body);
+  assert.equal(failed.status, 503);
+  assert.ok(!JSON.stringify(failed).includes("secret"));
+  assert.equal(calls, 1);
+  const oversized = await server(t, {
+    generate: async () => ({ output_text: JSON.stringify({ response: "x".repeat(161) }) }),
+  });
+  assert.equal((await oversized("/react", body)).status, 503);
+  const incomplete = await server(t, {
+    generate: async () => ({ status: "incomplete", output_text: '{"response":"Hey!"}' }),
+  });
+  assert.equal((await incomplete("/react", body)).status, 503);
 });
 test("unsupported observations, ungated beliefs and hidden recall IDs are dropped", async (t) => {
   const post = await server(t, {
@@ -564,29 +573,26 @@ test(
       decide: async ({ questions, state }) => ({
         answers: questions.supported_0
           ? answers({ supported_0: 0.95 }, questions)
-          : questions.should_speak
-          ? answers(
-              {
-                should_remember: 0.93,
-                memory_importance: 3,
-                trust_change: "NEGATIVE",
-                should_speak: 0.9,
-              },
-              EVENT_QUESTIONS,
-            )
-          : state.player.message === "See you tomorrow."
-            ? answers({ interaction_intent: "FAREWELL", should_end_conversation: 0.99 })
-            : threat(),
+          : questions.immediate_danger
+            ? appraisal(questions)
+            : questions.speak
+              ? answers({ speak: 0.9, intent: "protest" }, questions)
+              : state.player.message === "See you tomorrow."
+                ? answers({ interaction_intent: "FAREWELL", should_end_conversation: 0.99 })
+                : threat(),
       }),
-      generate: async (input) => ({
-        output_text: JSON.stringify(
-          input.text.format.name === "npc_reaction"
-            ? { response: "Keep away!" }
-            : JSON.parse(input.input[0].content).policy.end_conversation
-              ? dialogue({ response: "Until tomorrow.", memory_writes: [] })
-              : dialogue(),
-        ),
-      }),
+      generate: async (input) => {
+        const data = JSON.parse(input.input[0].content);
+        return {
+          output_text: JSON.stringify(
+            input.text.format.name === "npc_reaction"
+              ? { response: data.intent === "protest" ? "Keep away!" : "Wrong intent." }
+              : data.policy.end_conversation
+                ? dialogue({ response: "Until tomorrow.", memory_writes: [] })
+                : dialogue(),
+          ),
+        };
+      },
     }).listen(0, "127.0.0.1");
     await once(listener, "listening");
     t.after(() => {
@@ -616,25 +622,6 @@ test(
     assert.doesNotMatch(stderr, /SCRIPT ERROR/);
   },
 );
-
-// Captured from the approved live probe: ordinary blacksmith, injured by the player.
-test("live assault judgment admits memory and speech; moderate speech judgments remain usable", () => {
-  // The recorded fixture predates safety appraisal; only that additional answer is mocked.
-  const raw = { ...answers({ safety_response: "SHELTER" }, EVENT_QUESTIONS),
-    ...JSON.parse(readFileSync(new URL("../../../tests/fixtures/jev_assault_decision.json", import.meta.url))) };
-  const event = { sense: "touch", player_involved: true, speech_allowed: true };
-  const policy = observationPolicy(raw, event, { verbal_reactivity: 0.5 });
-  assert.equal(policy.speak, true);
-  assert.equal(policy.remember, true);
-  assert.equal(policy.response_mode, "DEFENSIVE");
-  assert.ok(policy.relationship_delta.trust < 0);
-  raw.should_speak.noul = 0.6;
-  assert.equal(observationPolicy(raw, event).speak, true);
-  raw.should_speak.noul = 0.3;
-  assert.equal(observationPolicy(raw, event).speak, false);
-  raw.should_speak.noul = 0.99;
-  assert.equal(observationPolicy(raw, { ...event, speech_allowed: false }).speak, false);
-});
 
 test("a valid quote cannot launder unsupported memory details", async (t) => {
   let checks = 0;
@@ -682,19 +669,4 @@ test("no grounding call is made when nothing merits memory", async (t) => {
   const result = await post("/chat", { ...request(), answers: answers() });
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.memory_writes, []);
-});
-
-test("safety appraisal selects bounded behavior and uncertain personal injury keeps its fallback", () => {
-  const event = { sense: "touch", directly_affected: true, player_involved: false, speech_allowed: false };
-  for (const response of ["NONE", "CAUTION", "SHELTER"]) {
-    const raw = answers({ safety_response: response }, EVENT_QUESTIONS);
-    assert.equal(observationPolicy(raw, event).safety_response, response);
-    assert.ok(Object.values(observationPolicy(raw, event).relationship_delta).every((delta) => delta === 0));
-    raw.safety_response.confidence = 0.1;
-    assert.equal(observationPolicy(raw, event).safety_response, "SHELTER");
-    assert.equal(observationPolicy(raw, { ...event, sense: "hearing", directly_affected: false }).safety_response, "CAUTION");
-  }
-  const invalid = answers({}, EVENT_QUESTIONS);
-  invalid.safety_response.choice = "KILL_PLAYER";
-  assert.throws(() => observationPolicy(invalid, event));
 });

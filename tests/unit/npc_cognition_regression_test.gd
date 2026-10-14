@@ -1,5 +1,7 @@
 extends "res://tests/test_case.gd"
 
+const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
+
 ## Pins corrected cognition behavior. The M5 test below still characterizes today's burial flow.
 
 func _profile() -> NpcProfile:
@@ -12,11 +14,8 @@ func _observation(origin: String, text: String, perceived: Dictionary = {}) -> N
 	data.merge(perceived, true)
 	return NpcObservation.from_perception("test_observer", origin, 500.0, &"outdoors", data)
 
-func _policy() -> Dictionary:
-	return {"remember": true, "retrieve": false, "update_belief": false, "speak": false,
-		"importance": 0.8, "emotional_intensity": 0.7, "response_mode": "NEUTRAL",
-		"relationship_delta": {"familiarity": 0.0, "trust": 0.0, "respect": 0.0,
-			"affection": 0.0, "fear": 0.0, "suspicion": 0.0}}
+func _policy() -> NpcDecisionPolicy.Appraisal:
+	return Appraisals.make(true, 0.8, 0.7)
 
 func test_death_evidence_stays_pending_in_the_inbox_under_newer_observations_and_is_appraised() -> void:
 	var store := NpcMemoryStore.new()
@@ -58,8 +57,8 @@ func test_reported_body_is_remembered_as_hearsay_about_the_deceased_and_reporter
 		"event:report", 500.0, &"outdoors", event)
 	inbox.enqueue(observation)
 	inbox.claim(observation.observation_id, 500.0)
-	var policy: Dictionary = _policy()
-	policy.relationship_delta.trust = 0.1
+	var policy: NpcDecisionPolicy.Appraisal = _policy()
+	policy.dispositions["player"] = {"trust": 0.1}
 	var before: float = store.minds.get_mind("test_observer").relationships.get_relationship("player").trust
 	assert_eq(store.commit_evidence("test_observer", observation, policy), "")
 	var memories: Array = store.snapshot("test_observer").memories
@@ -79,14 +78,14 @@ func test_provider_failure_defers_evidence_and_a_later_attempt_appraises_it_once
 	var observation: NpcObservation = _observation("event:smoke", "I saw smoke over the mill.")
 	inbox.enqueue(observation)
 	inbox.claim(observation.observation_id, 500.0)
-	assert_eq(store.commit_evidence("test_observer", observation, {}), "invalid_policy")
+	assert_eq(store.commit_evidence("test_observer", observation, null), "invalid_appraisal")
 	assert_eq(inbox.item(observation.observation_id).status, "CLAIMED",
 		"A rejected commit leaves the claim for the caller to fail")
 	assert_true(inbox.fail(observation.observation_id, "provider_unavailable", 500.0))
 	assert_eq(inbox.item(observation.observation_id).status, "DEFERRED", "The evidence stays as retry work")
-	assert_eq(inbox.ready_count(500.5), 0, "Not eligible before the retry delay")
-	assert_eq(inbox.ready_count(502.0), 1)
-	var retry: NpcObservation = inbox.claim(observation.observation_id, 502.0)
+	assert_eq(inbox.ready_count(2499.0), 0, "Not eligible before the first retry step (2 s)")
+	assert_eq(inbox.ready_count(2500.0), 1)
+	var retry: NpcObservation = inbox.claim(observation.observation_id, 2500.0)
 	assert_eq(store.commit_evidence("test_observer", retry, _policy()), "")
 	assert_true(inbox.has_receipt(retry.observation_id), "Committing completed the claim")
 	assert_eq(store.snapshot("test_observer").memories.size(), 1, "Appraised exactly once")

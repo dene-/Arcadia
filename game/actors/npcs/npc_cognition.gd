@@ -1,12 +1,17 @@
 extends Node
 
+const RETRY_INTERVAL_MSEC: int = 1000
+
 ## Application boundary for NPC cognition. Dialogue UI never owns event processing.
 var save_game := NpcWorldSave.new()
 var store: NpcMemoryStore = save_game.memory
 var backend: DialogBackendClient
+## Owner of every v2 cognition and optional-speech request; its transport is `backend`.
+var decisions: NpcDecisionService
 var events: NpcEventProcessor
 var perception := NpcPerceptionRouter.new()
 var ambient := NpcAmbientHistory.new()
+var _next_retry_msec: int = 0
 
 func _ready() -> void:
 	store.memories_admitted.connect(_on_memories_admitted)
@@ -15,9 +20,12 @@ func _ready() -> void:
 		push_warning("NPC memory save could not be loaded: %s" % error)
 	backend = DialogBackendClient.new()
 	add_child(backend)
+	decisions = NpcDecisionService.new()
+	decisions.transport = backend
+	add_child(decisions)
 	events = NpcEventProcessor.new()
 	events.store = store
-	events.backend = backend
+	events.decisions = decisions
 	events.save_callback = save_game.save_file
 	events.perception_classified.connect(_on_perception_classified)
 	add_child(events)
@@ -39,6 +47,7 @@ func _on_world_event(event: WorldEvent) -> void:
 	if event.kind == &"actor_died" and event.subject is BaseNpc:
 		var profile: NpcProfile = event.subject.get_npc_profile()
 		if profile != null:
+			events.cancel(String(profile.npc_id))
 			save_game.mark_dead(profile.npc_id)
 			if event.subject.is_in_group(&"town_residents"):
 				save_game.deaths.record(String(profile.npc_id), String(event.subject.world_space),
@@ -67,14 +76,23 @@ func _on_world_event(event: WorldEvent) -> void:
 	if error != OK:
 		push_warning("NPC world could not be saved: %s" % error)
 
-## Resumes residents whose deferred evidence is due again and who have no worker running.
+## Drives the evidence retry ladder in real time, independent of simulation speed.
+func _process(_delta: float) -> void:
+	var now: int = Time.get_ticks_msec()
+	if now >= _next_retry_msec:
+		_next_retry_msec = now + RETRY_INTERVAL_MSEC
+		retry_deferred_evidence()
+
+## Resumes residents whose deferred evidence is due again (real-time retry ladder) and who have
+## no turn queued or running.
 func retry_deferred_evidence() -> void:
 	var minute: float = save_game.life.minute
+	var now_msec: float = float(events.clock.call())
 	for observer: BaseNpc in get_tree().get_nodes_in_group(&"npc_observers"):
 		var profile: NpcProfile = observer.get_npc_profile()
 		if profile == null or profile.npc_id.is_empty() or events.is_busy(String(profile.npc_id)):
 			continue
-		if save_game.minds.get_mind(String(profile.npc_id)).evidence.ready_count(minute) > 0:
+		if save_game.minds.get_mind(String(profile.npc_id)).evidence.ready_count(now_msec) > 0:
 			var current: Dictionary = observer.get_cognitive_context()
 			current.world_minute = minute
 			events.resume(profile, current, observer)

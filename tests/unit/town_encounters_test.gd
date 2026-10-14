@@ -1,22 +1,6 @@
 extends "res://tests/test_case.gd"
 
-class SocialBackend extends DialogBackendClient:
-	signal released
-	var hold_stage: String = ""
-	var fail_speech: bool = false
-	func request_life(kind: String, _payload: Dictionary) -> Dictionary:
-		if kind == hold_stage:
-			await released
-		match kind:
-			"social":
-				return {"policy": {"engage": true, "topic_index": 0,
-					"tone": "CONCERNED", "another_exchange": false}}
-			"listen":
-				return {"policy": {"belief": 0.8, "remember": true,
-					"importance": 0.7, "affinity": 0.0, "trust_player": -0.03}}
-			"say":
-				return {} if fail_speech else {"response": "I saw Den fighting nearby."}
-		return {}
+const FakeDecisionService := preload("res://tests/fixtures/npc_fake_decision_service.gd")
 
 class AudibleEncounter extends TownEncounters:
 	func _player_near(_speaker: BaseNpc) -> bool:
@@ -36,7 +20,8 @@ class IdleExecutor extends RefCounted:
 var _scene: Node2D
 var _first: BaseNpc
 var _second: BaseNpc
-var _backend: SocialBackend
+var _backend: FakeDecisionService
+var _decisions: NpcDecisionService
 var _encounters: TownEncounters
 var _tuning := NpcBehaviorTuning.new()
 var _executor := IdleExecutor.new()
@@ -48,10 +33,13 @@ func before_each() -> void:
 	tree.root.add_child(_scene)
 	_first = _resident("social_a", Vector2(5000, 5000))
 	_second = _resident("social_b", Vector2(5020, 5000))
-	_backend = SocialBackend.new()
+	_backend = FakeDecisionService.new()
 	_scene.add_child(_backend)
+	_decisions = NpcDecisionService.new()
+	_decisions.transport = _backend
+	_scene.add_child(_decisions)
 	_encounters = AudibleEncounter.new()
-	_encounters.backend = _backend
+	_encounters.decisions = _decisions
 	_encounters.state = TownLifeState.new()
 	_encounters.store = NpcMemoryStore.new()
 	_encounters.tuning = _tuning
@@ -95,8 +83,11 @@ func after_each() -> void:
 	_scene.free()
 	_brains.clear()
 
+func _fail_speech() -> void:
+	_backend.set_default("life/say", {"outcome": "UNAVAILABLE"})
+
 func test_session_holds_both_residents_until_it_ends() -> void:
-	_backend.hold_stage = "listen"
+	_backend.hold("listen")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	for id: String in ["social_a", "social_b"]:
@@ -105,23 +96,22 @@ func test_session_holds_both_residents_until_it_ends() -> void:
 		assert_eq(_claims(id).locomotion, task.task_id)
 		assert_eq(_claims(id).conversation, task.task_id)
 		assert_eq(_encounters.session_phase(id), TownEncounters.PHASE_CONVERSE)
-	_backend.fail_speech = true
-	_backend.released.emit()
+	_fail_speech()
+	_backend.release_all()
 	assert_false(_encounters.is_busy("social_a"))
 	_assert_released("social_a")
 	_assert_released("social_b")
 
 func test_invitation_takes_no_claims_and_a_crossing_invitation_is_dropped() -> void:
-	_backend.hold_stage = "social"
+	_backend.hold("social")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	_encounters.consider(_second, _first)
 	for id: String in ["social_a", "social_b"]:
 		assert_eq(_encounters.session_phase(id), TownEncounters.PHASE_INVITE)
 		_assert_released(id)
-	_backend.hold_stage = ""
-	_backend.fail_speech = true
-	_backend.released.emit()
+	_fail_speech()
+	_backend.release("social")
 	assert_eq(_encounters.diagnostics("social_a").outcome, "speech_cancelled_or_unavailable")
 	assert_false(_encounters.is_busy("social_a"))
 	assert_false(_encounters.is_busy("social_b"))
@@ -129,14 +119,15 @@ func test_invitation_takes_no_claims_and_a_crossing_invitation_is_dropped() -> v
 	_assert_released("social_b")
 
 func test_invitation_is_dropped_when_a_resident_becomes_unavailable() -> void:
-	_backend.hold_stage = "social"
+	_backend.hold("social")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	var duty := _caution_duty()
 	assert_true((_brains["social_b"] as NpcBrain).request_task(duty))
 	_encounters._process(0.01)
 	assert_false(_encounters.is_busy("social_a"))
-	_backend.released.emit()
+	assert_eq(_decisions.active_count(NpcDecisionService.Pool.JUDGMENT), 0)
+	_backend.release_all()
 	_assert_released("social_a")
 	assert_eq(_claims("social_b").locomotion, duty.task_id)
 	assert_eq(_claims("social_b").conversation, "")
@@ -151,7 +142,7 @@ func test_refusing_participant_releases_the_other_immediately() -> void:
 	assert_eq(_claims("social_b").locomotion, duty.task_id)
 
 func test_safety_task_ends_session_and_late_release_keeps_its_claims() -> void:
-	_backend.hold_stage = "listen"
+	_backend.hold("listen")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	var safety := NpcSafetyTask.create({"response": "SHELTER", "origin_id": "danger:1",
@@ -160,13 +151,14 @@ func test_safety_task_ends_session_and_late_release_keeps_its_claims() -> void:
 	assert_false(_encounters.is_busy("social_a"))
 	assert_false(_encounters.is_busy("social_b"))
 	_assert_released("social_a")
-	_backend.released.emit()
+	assert_eq(_decisions.active_count(NpcDecisionService.Pool.JUDGMENT), 0)
+	_backend.release_all()
 	assert_eq(_claims("social_b").locomotion, safety.task_id)
 	assert_eq(_claims("social_b").conversation, safety.task_id)
 	assert_eq((_brains["social_b"] as NpcBrain).current_activity().task_id, safety.task_id)
 
 func test_player_interruption_releases_both_actors_and_drops_late_assessment() -> void:
-	_backend.hold_stage = "listen"
+	_backend.hold("listen")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	assert_true(_encounters.is_busy("social_a"))
@@ -175,24 +167,35 @@ func test_player_interruption_releases_both_actors_and_drops_late_assessment() -
 	assert_false(_encounters.is_busy("social_a"))
 	_assert_released("social_a")
 	_assert_released("social_b")
-	_backend.released.emit()
+	assert_eq(_decisions.active_count(NpcDecisionService.Pool.JUDGMENT), 0)
+	_backend.release_all()
 	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
 	assert_true(_encounters.store.snapshot("social_b").memories.all(
 		func(memory: Dictionary) -> bool: return memory.source != "hearsay"))
 
 func test_failed_audible_speech_does_not_transfer_information() -> void:
-	_backend.fail_speech = true
+	_fail_speech()
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	assert_false(_encounters.is_busy("social_a"))
 	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
 
 func test_successful_speech_creates_attributed_memory_and_affects_next_player_context() -> void:
+	_backend.set_default("life/say", {"response": "I saw Den fighting nearby."})
+	_backend.queue_response("listen", {"disposition:player:trust:direction": "NEGATIVE",
+		"disposition:player:trust:magnitude": 4.0})
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
+	assert_eq(_backend.calls("social")[0].topics, ["test:1"])
+	assert_eq(_backend.calls("social")[0].tones, TownEncounters.TONES)
+	assert_eq(_backend.calls("listen")[0].subjects, ["social_a", "player"])
+	assert_eq(_backend.calls("utterance")[0].intents, ["share", TownEncounters.SILENCE])
+	assert_eq(_backend.calls("life/say")[0].intent, "share")
 	var snapshot: Dictionary = _encounters.store.snapshot("social_b")
 	assert_eq(snapshot.memories.back().source, "hearsay")
-	assert_eq(snapshot.relationship.trust, -0.03)
+	# The strongest listening judgment moves trust by one incident's maximum change, not more.
+	assert_true(absf(snapshot.relationship.trust + NpcIncidentBudget.MAX_CHANGE) < 0.0001,
+		"trust %s" % snapshot.relationship.trust)
 	assert_eq(_second.get_cognitive_context().town_rumors[0].source_id, "social_a")
 	assert_true(_first.get_node("ReactionBubble").visible)
 	_first.enter_dialog()
@@ -200,7 +203,7 @@ func test_successful_speech_creates_attributed_memory_and_affects_next_player_co
 	assert_false(_encounters.is_busy("social_b"))
 
 func test_danger_cancels_social_holds_and_prevents_transferring_a_late_rumor() -> void:
-	_backend.hold_stage = "listen"
+	_backend.hold("listen")
 	await _scene.get_tree().physics_frame
 	_encounters.consider(_first, _second)
 	assert_true(_encounters.is_busy("social_a"))
@@ -210,7 +213,7 @@ func test_danger_cancels_social_holds_and_prevents_transferring_a_late_rumor() -
 	assert_false(_encounters.is_busy("social_a"))
 	_assert_released("social_a")
 	_assert_released("social_b")
-	_backend.released.emit()
+	_backend.release_all()
 	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
 	_encounters.consider(_first, _second)
 	assert_false(_encounters.is_busy("social_b"))

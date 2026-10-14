@@ -137,7 +137,7 @@ func reserve_encounter(id: String, seed_value: int) -> void:
 
 ## Records a delivered line of session `session_id` in `id`'s social history.
 func remember_exchange(id: String, other: String, text: String, session_id: String,
-		speaker_id: String, listener_id: String, disposition: float = 0.0) -> void:
+		speaker_id: String, listener_id: String) -> void:
 	var person: Dictionary = _people[id]
 	person.recent_social.append({"with": other, "text": text.substr(0, 500), "minute": minute,
 		"session_id": session_id, "speaker_id": speaker_id, "listener_id": listener_id,
@@ -148,8 +148,7 @@ func remember_exchange(id: String, other: String, text: String, session_id: Stri
 	_next_social_receipt += 1
 	var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
 	if relationships.has_subject(other):
-		relationships.apply_delta(other, {"familiarity": 0.02,
-			"affection": clampf(disposition, -0.04, 0.04)}, receipt)
+		relationships.apply_delta(other, {"familiarity": 0.02}, receipt)
 
 func to_data() -> Dictionary:
 	return {"version": VERSION, "minute": minute, "next_event": _next_event,

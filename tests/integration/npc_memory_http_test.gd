@@ -9,8 +9,10 @@ func _run() -> void:
 	var endpoint: String = OS.get_environment("ARCADIA_TEST_SERVER_URL")
 	backend.chat_endpoint = endpoint + "/chat"
 	backend.decision_endpoint = endpoint + "/decide"
-	backend.observation_endpoint = endpoint + "/observe"
-	backend.reaction_endpoint = endpoint + "/react"
+	backend.v2_base_url = endpoint
+	var decisions := NpcDecisionService.new()
+	decisions.transport = backend
+	root.add_child(decisions)
 	var profile: NpcProfile = load("res://game/resources/actors/humans/blacksmith_npc_profile.tres")
 	var conversation := NpcConversation.new()
 	conversation.persist = false
@@ -28,22 +30,41 @@ func _run() -> void:
 		and farewell.get("response") == "Until tomorrow." \
 		and state.recent_dialogue.size() == 4 \
 		and state.recent_dialogue.back().text == "Until tomorrow."
-	var event: Dictionary = {"text": "I saw the player hurt a villager.",
-		"sense": "sight", "player_involved": true, "speech_allowed": true}
-	var payload: Dictionary = {"protocol_version": 1,
-		"npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
-		"player": {"message": ""}, "event": event,
-		"context": {"current": {"recent_events": []}, "relationship": state.relationship,
-			"recent_dialogue": [], "memories": []}}
-	var judgment: Dictionary = await backend.request_observation(payload)
-	succeeded = succeeded and NpcMemoryStore.is_valid_policy(judgment.get("policy"))
-	if not judgment.is_empty():
-		payload.answers = judgment.answers
-		var reaction: Dictionary = await backend.request_reaction(payload)
-		succeeded = succeeded and reaction.get("response") == "Keep away!"
+	var tuning := NpcBehaviorTuning.new()
+	var npc_id: String = String(profile.npc_id)
+	var evidence: Dictionary = {"id": "obs:http-test", "text": "I saw the player hurt a villager.",
+		"modality": "sight", "source_id": "player", "participant_ids": ["player"]}
+	var appraise_ticket := NpcDecisionTicket.create(npc_id, NpcDecisionTicket.APPRAISE)
+	appraise_ticket.evidence_ids.append(evidence.id)
+	var appraised: NpcDecisionResult = await decisions.evaluate(appraise_ticket,
+		{"state": {"npc": profile.to_backend_profile()}, "evidence": [evidence], "subjects": ["player"]})
+	var appraisal: NpcDecisionPolicy.Appraisal = NpcDecisionPolicy.appraisal(appraised, tuning)
+	succeeded = succeeded and appraised.is_success() and appraisal.remember \
+		and not appraisal.immediate_danger and appraisal.importance > 0.0 \
+		and appraisal.dispositions.get("player", {}).get("trust", 0.0) < 0.0
+	var permitted: Array[String] = ["remark", "protest"]
+	var utterance_ticket := NpcDecisionTicket.create(npc_id, NpcDecisionTicket.UTTERANCE)
+	utterance_ticket.evidence_ids.append(evidence.id)
+	var judged: NpcDecisionResult = await decisions.evaluate(utterance_ticket,
+		{"state": {"npc": profile.to_backend_profile()}, "evidence": [evidence],
+			"intents": ["remark", "protest", "silence"]})
+	var utterance: NpcDecisionPolicy.Utterance = NpcDecisionPolicy.utterance(judged, permitted, tuning)
+	succeeded = succeeded and utterance.speak and utterance.intent == "protest"
+	if utterance.speak:
+		var payload: Dictionary = {"protocol_version": 1,
+			"npc": {"id": npc_id, "profile": profile.to_backend_profile()},
+			"player": {"message": ""},
+			"event": {"text": evidence.text, "sense": "sight", "player_involved": true},
+			"intent": utterance.intent,
+			"context": {"current": {"recent_events": []}, "relationship": state.relationship,
+				"recent_dialogue": [], "memories": []}}
+		var spoken: NpcDecisionResult = await decisions.run_text(
+			NpcDecisionTicket.create(npc_id, NpcDecisionTicket.UTTERANCE), "/react", payload)
+		succeeded = succeeded and spoken.is_success() and spoken.body.get("response") == "Keep away!"
 	if succeeded:
 		print("Godot HTTP memory integration passed")
 	else:
 		push_error("Godot HTTP memory integration failed")
+	decisions.queue_free()
 	backend.queue_free()
 	quit(0 if succeeded else 1)

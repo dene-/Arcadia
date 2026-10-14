@@ -1,12 +1,12 @@
 extends SceneTree
 
-class MockBackend extends DialogBackendClient:
-	func request_life(_kind: String, _payload: Dictionary) -> Dictionary:
-		return {}
-	func request_observation(_payload: Dictionary) -> Dictionary:
-		return {}
-	func request_reaction(_payload: Dictionary) -> Dictionary:
-		return {}
+const FakeDecisionService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
+
+# Every provider endpoint is unavailable: residents keep their deterministic behavior.
+class MockBackend extends FakeDecisionService:
+	func _init() -> void:
+		super._init()
+		fail_all = true
 
 var failures: Array[String] = []
 
@@ -25,7 +25,7 @@ func _run() -> void:
 	var backend := MockBackend.new()
 	root.add_child(backend)
 	cognition.backend = backend
-	cognition.events.backend = backend
+	cognition.decisions.transport = backend
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
 	root.add_child(world)
 	current_scene = world

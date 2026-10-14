@@ -31,7 +31,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M4 | done: `NpcSocialTask`; encounter sessions invite (no claims, 8 s) → approach → converse → leave; player dialogue through the brain (urgent duties refuse with a short line); protected speech tokens; session id/minute/delivery in dialogue and social history (migration revision 3, legacy = unknown time); commitments resolved by task outcome, intentions completed only through commitments | see git log |
 | M5 | done: `TownDeaths` intent API with private records (no `transition()`); `NpcRecoveryTask` (witness absorb → seek help from own knowledge → report, or defer with a 30-minute retry; guard acknowledge → reach body → assess → prepare → carry → cemetery → bury); `NpcGuardTask` (patrol/investigate/warn/intervene/pursue/surrendered, force only on own evidence); guard shifts from role data (no named-guard cases); bereavement concerns for informed kin; graves teach burial; directed-travel/hold adapters removed | see git log |
 | M6 | done: memories carry modality/incident/origin/evidence ids/perceived minute/hearsay chain; admission keyed by the evidence receipt and completed in the same commit (`store_unavailable`, `not_claimed`, `receipts_full` reasons); per-incident relationship budget (0.15, one fresh budget per fatal or surrender-violation escalation); undated legacy memories stay undated; salience from bereavement, commitments and duties; retrieval with name/topic aliases and incident/commitment links; hourly consolidation and reference-aware receipt compaction (no FIFO drops) | see git log |
-| M7 | pending | |
+| M7 | done: `NpcDecisionTicket`/`NpcDecisionResult`/`NpcDecisionService`/`NpcDecisionPolicy` (judgment pool 4, text pool 2 with one interactive reserve, urgency aging, per-NPC round robin, select-goal coalescing, settle-once cancel/cancel_owner); `DialogBackendClient.request_v2` with local cancellation and 10/40/12 s monotonic deadlines; appraisal, routine goal choice, social, listening and utterance go through `/v2/cognition/*`; speech text only after an utterance judgment; evidence turns batch per NPC with a 2/10/30 s retry ladder, 60 s backoff and wake on success; bounded 2 s assessment wait; backend provider queue, abort on disconnect, SDK retries 0; `/observe`, `/life/routine`, `/life/social`, `/life/listen` and their JS policies removed | see git log |
 | M8 | pending | |
 | M9 | pending | |
 | M10 | pending | |
@@ -71,6 +71,12 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 - Rumor loop: a forgotten rumor re-heard after save/reload adds no memory and no trust change while any account is live; an origin nobody can retell is forgotten with its receipt.
 - Behavior changes: ten hits and three hits of one assault end within 0.15 of each other (seeing and feeling one incident share a budget); receipts at the 4096 bound refuse new completions until compaction frees room; first-hand sightings of one incident consolidate across origins (hearsay only within one origin).
 
+### M7 evidence
+
+- Unit 535 passed (new: `npc_decision_service`, `npc_decision_policy`, transport cancellation/deadline tests; both sides load the shared `tests/fixtures/cognition_contract/` fixtures); all 13 integrations passed (new scenario: confident routine goal choice with a bounded duration, low confidence keeps the plan); backend 61 passed with `GODOT` set (v1 routing/policy tests removed with their routes; real Godot HTTP test now runs v2 appraise + utterance + `/react`).
+- Decision: player dialogue (`/decide`, `/chat`, `decisionPolicy`) stays v1 until M9's `/v2/dialogue/chat`; `/react` and `/life/say` generate text for a judged intent until M9's `/v2/dialogue/say`.
+- Behavior changes: chatting between residents only raises familiarity (dispositions come from listening judgments); a weak account can only change how the listener sees the messenger; background speech generation runs one at a time (the second text permit is reserved for interactive work); a deferring witness releases every report it holds (found by scenario (k) after the routine change).
+
 ## Remaining migration adapters
 
 - `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
@@ -78,4 +84,4 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 
 ## Next step
 
-M7 (Godot side): `NpcDecisionService` with tickets, a fair scheduler and cancellable transport; move every caller to the v2 cognition routes; `NpcDecisionPolicy` owns effects; remove the v1 routes and JS delta formulas.
+M8: needs, emotions and goal selection (`NpcCondition`, `NpcGoal`, `NpcGoalSelector`), engagement-based work credit, check-relative and visit-grave tasks.

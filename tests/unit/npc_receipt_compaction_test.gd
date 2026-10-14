@@ -1,5 +1,6 @@
 extends "res://tests/test_case.gd"
 
+const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
 const OBSERVER: String = "elder"
 
 var _serial: int = 0
@@ -138,11 +139,8 @@ func _profile(id: String = OBSERVER) -> NpcProfile:
 	profile.npc_id = StringName(id)
 	return profile
 
-func _policy(trust: float = 0.0) -> Dictionary:
-	return {"remember": true, "retrieve": false, "update_belief": false, "speak": false,
-		"importance": 0.7, "emotional_intensity": 0.5, "response_mode": "NEUTRAL",
-		"relationship_delta": {"familiarity": 0.0, "trust": trust, "respect": 0.0,
-			"affection": 0.0, "fear": 0.0, "suspicion": 0.0}}
+func _policy(trust: float = 0.0) -> NpcDecisionPolicy.Appraisal:
+	return Appraisals.player_trust(trust)
 
 # A player-involved sighting: its commit completes an inbox receipt and a relationship receipt.
 func _hit() -> NpcObservation:
@@ -180,8 +178,8 @@ func test_upkeep_drops_receipts_of_origins_nobody_can_replay_and_keeps_live_ones
 	var mind: NpcMindState = store.minds.get_mind(OBSERVER)
 	assert_true(mind.evidence.has_receipt(kept.observation_id))
 	assert_false(mind.evidence.has_receipt(dropped.observation_id))
-	assert_true(mind.relationships.has_receipt("observation:%s:%s" % [OBSERVER, kept.observation_id]))
-	assert_false(mind.relationships.has_receipt("observation:%s:%s" % [OBSERVER, dropped.observation_id]))
+	assert_true(mind.relationships.has_receipt("observation:%s:%s:player" % [OBSERVER, kept.observation_id]))
+	assert_false(mind.relationships.has_receipt("observation:%s:%s:player" % [OBSERVER, dropped.observation_id]))
 	assert_eq(store.maintain({kept.origin_id: true}, 600.0).receipts_pruned, 0)
 
 func test_upkeep_keeps_receipts_an_open_commitment_cites_until_it_closes() -> void:
@@ -194,7 +192,7 @@ func test_upkeep_keeps_receipts_an_open_commitment_cites_until_it_closes() -> vo
 	assert_ne(commitment, "")
 	assert_eq(store.maintain({}, 700.0).receipts_pruned, 0)
 	assert_true(mind.evidence.has_receipt(hit.observation_id))
-	assert_true(mind.relationships.has_receipt("observation:%s:%s" % [OBSERVER, hit.observation_id]))
+	assert_true(mind.relationships.has_receipt("observation:%s:%s:player" % [OBSERVER, hit.observation_id]))
 	assert_true(mind.commitments.resolve(commitment, "completed", 710.0))
 	assert_eq(store.maintain({}, 720.0).receipts_pruned, 2)
 	assert_false(mind.evidence.has_receipt(hit.observation_id))
@@ -214,8 +212,8 @@ func test_upkeep_keeps_receipts_whose_origin_is_still_waiting_in_the_inbox() -> 
 
 func test_upkeep_forgets_heard_origins_nobody_can_retell() -> void:
 	var rumors := TownRumors.new()
-	var policy: Dictionary = {"remember": true, "importance": 0.8, "belief": 0.7, "affinity": 0.0,
-		"trust_player": -0.03}
+	var policy: Dictionary = {"remember": true, "importance": 0.8, "belief": 0.7,
+		"dispositions": {"player": {"trust": -0.03}}}
 	var events: Array[Dictionary] = []
 	for origin: String in ["event:live", "event:gone"]:
 		events.append({"origin_id": origin, "text": "I saw Den hurt Garrin.", "sense": "sight",
@@ -233,5 +231,5 @@ func test_upkeep_forgets_heard_origins_nobody_can_retell() -> void:
 	assert_eq(result.receipts_pruned, 1)
 	saved = memory.to_save_data()
 	assert_eq(saved.npcs.listener.heard_origins.keys(), ["event:live"])
-	assert_true(memory.minds.get_mind("listener").relationships.has_receipt("hearsay:listener:event:live"))
-	assert_false(memory.minds.get_mind("listener").relationships.has_receipt("hearsay:listener:event:gone"))
+	assert_true(memory.minds.get_mind("listener").relationships.has_receipt("hearsay:listener:event:live:player"))
+	assert_false(memory.minds.get_mind("listener").relationships.has_receipt("hearsay:listener:event:gone:player"))

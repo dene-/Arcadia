@@ -1,32 +1,6 @@
 extends SceneTree
 
-class MockLifeBackend extends DialogBackendClient:
-	var decisions: int = 0
-	var transfers: int = 0
-	var lines: int = 0
-	var http_mode: bool = false
-	func request_life(kind: String, payload: Dictionary) -> Dictionary:
-		if http_mode:
-			if kind == "routine": decisions += 1
-			if kind == "listen": transfers += 1
-			if kind == "say": lines += 1
-			return await super.request_life(kind, payload)
-		match kind:
-			"routine":
-				decisions += 1
-				return {"policy": {"activity": "SOCIAL", "duration_minutes": 90}}
-			"social":
-				print("Encounter: ", payload.npc.id, " -> ", payload.listener.id, " topics=", payload.topics.size())
-				return {"policy": {"engage": true, "topic_index": 0 if not payload.topics.is_empty() else -1,
-					"tone": "FRIENDLY", "another_exchange": false}}
-			"listen":
-				transfers += 1
-				return {"policy": {"belief": 0.75, "remember": true, "importance": 0.8,
-					"affinity": 0.01, "trust_player": -0.03}}
-			"say":
-				lines += 1
-				return {"response": "Mirelle told me there was fighting nearby." if payload.mode == "share" else "Good to see you."}
-		return {}
+const FakeDecisionService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -38,15 +12,16 @@ func _run() -> void:
 	cognition.save_game.legacy_memory_path = cognition.save_game.path + ".legacy-memory"
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
-	var backend := MockLifeBackend.new()
-	var endpoint: String = OS.get_environment("ARCADIA_TOWN_SERVER_URL")
-	if not endpoint.is_empty():
-		backend.life_endpoint = endpoint + "/life"
-		backend.http_mode = true
+	var backend := FakeDecisionService.new()
+	# Residents want the social activity for a long while; the listener believes the rumor and
+	# holds the player slightly less trustworthy.
+	backend.set_default("select_goal", {"suitability:SOCIAL": 4.0, "duration:SOCIAL": "EXTENDED"})
+	backend.set_default("listen", {"disposition:player:trust:direction": "NEGATIVE",
+		"disposition:player:trust:magnitude": 1.0})
+	backend.set_default("life/say", {"response": "Mirelle told me there was fighting nearby."})
 	root.add_child(backend)
 	cognition.backend = backend
-	cognition.events.backend.observation_endpoint = "http://127.0.0.1:1/observe"
-	cognition.events.backend.reaction_endpoint = "http://127.0.0.1:1/react"
+	cognition.decisions.transport = backend
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
 	root.add_child(world)
 	current_scene = world
@@ -113,14 +88,17 @@ func _run() -> void:
 		failures.append("Only %d residents moved" % moved)
 	if arrivals.size() < 8:
 		failures.append("Only %d residents reached a destination" % arrivals.size())
-	if informed < 2 or backend.transfers == 0:
+	var decisions: int = backend.call_count("select_goal")
+	var transfers: int = backend.call_count("listen")
+	var lines: int = backend.call_count("life/say")
+	if informed < 2 or transfers == 0:
 		failures.append("No rumor reached another resident")
-	if backend.lines == 0:
+	if lines == 0:
 		failures.append("No audible social dialogue")
-	if backend.decisions < 9:
+	if decisions < 9:
 		failures.append("Not all residents consulted the decision model")
 	print("Town life: moved=%d arrived=%d informed=%d decisions=%d lines=%d" %
-		[moved, arrivals.size(), informed, backend.decisions, backend.lines])
+		[moved, arrivals.size(), informed, decisions, lines])
 	print("Town life failures: ", failures)
 	world.queue_free()
 	await process_frame

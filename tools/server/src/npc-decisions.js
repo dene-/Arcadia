@@ -4,7 +4,6 @@ export const THRESHOLDS = Object.freeze({
   retrieve: 0.5,
   belief: 0.8,
   choice: 0.65,
-  speak: 0.5,
   end_conversation: 0.8,
 });
 export const RELATIONSHIP_SCALES = {
@@ -106,50 +105,6 @@ for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
     criteria: direction,
   };
 }
-export const EVENT_QUESTIONS = {
-  safety_response: {
-    type: "choice",
-    instructions:
-      "What immediate safety response fits this NPC's NEW perception in event.text, their personality, existing memories, injury and current circumstances? Distinguish a personal assault, violence against a neighbor, a hostile creature being defeated and anonymous distant noise. Judge only perceived evidence; hearing alone does not identify an attacker or prove a death. A response is temporary, not a permanent relationship change. Other answers are independent.",
-    criteria: {
-      NONE: "No continuing danger warrants changing the routine; the event appears harmless to this NPC or the threat is over.",
-      CAUTION: "Remain alert and let the concern influence the next decision without a mandatory retreat.",
-      SHELTER: "Interrupt conversation and ordinary errands, leave the immediate danger and seek a known refuge briefly.",
-    },
-  },
-  response_mode: {
-    ...QUESTIONS.response_mode,
-    instructions:
-      "Which response style fits this NPC's reaction to the NEW perception in event.text? Use identity, cognition, current danger and existing relationship, interpreted using relationship_scales.",
-  },
-  should_remember: {
-    type: "noul",
-    instructions:
-      "Does this NPC's NEW perception in `event.text` deserve lasting memory, given npc.profile, cognition, goals and relationship? Judge what they perceived, not hidden world facts. Past observations have already been assessed. Mere distant noise often remains short-term; personally consequential violence may matter greatly.",
-  },
-  memory_importance: {
-    ...QUESTIONS.memory_importance,
-    instructions:
-      "How important is the NEW perception in event.text to this NPC over time, given their identity, cognition and relationship?",
-  },
-  emotional_intensity: {
-    ...QUESTIONS.emotional_intensity,
-    instructions:
-      "How emotionally affecting is event.text to this NPC, given npc.profile, cognition and context.relationship?",
-  },
-  should_speak: {
-    type: "noul",
-    instructions:
-      "Would this person naturally say something aloud in response to the NEW event.text? Evaluate a spontaneous exclamation, protest, warning or remark, not starting a conversation. Use npc.profile.personality, npc.profile.cognition.verbal_reactivity, their physical state and relationship. Being personally attacked or witnessing a killing can warrant an immediate protest or warning; mundane distant noise often does not. Decide from this new event, not previous speech decisions. Ignore technical delivery eligibility: game code handles cooldowns and timing.",
-  },
-};
-for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
-  EVENT_QUESTIONS[`${name}_change`] = {
-    type: "choice",
-    criteria: direction,
-    instructions: `How should the NEW perception in event.text change this NPC's ${name} toward the player? Use identity, cognition, existing feelings and relationship_scales. Distinguish attacking a civilian from fighting a hostile creature; neither automatically proves motives or earns gratitude. If event.player_involved is false or the NPC only heard unidentifiable fighting, choose UNCHANGED. Past observations are context, not another reason to apply an old change.`,
-  };
-}
 function unit(value) {
   if (!Number.isFinite(value) || value < 0 || value > 1)
     throw new Error("Invalid probability");
@@ -216,36 +171,5 @@ export function decisionPolicy(raw) {
     interaction_intent: choice("interaction_intent", "OTHER"),
     response_mode: answers.response_mode.choice,
     relationship_delta: relationshipDelta,
-  };
-}
-
-export function observationPolicy(raw, event, cognition = {}) {
-  const answers = validateAnswers(raw, EVENT_QUESTIONS);
-  const importance = answers.memory_importance.score / 4;
-  const identifiedPlayer = event.player_involved && event.sense !== "hearing";
-  const relationship_delta = { familiarity: identifiedPlayer ? 0.01 : 0 };
-  for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
-    const answer = answers[`${name}_change`];
-    const sign =
-      identifiedPlayer && answer.confidence >= THRESHOLDS.choice
-        ? { POSITIVE: 1, NEGATIVE: -1, UNCHANGED: 0 }[answer.choice]
-        : 0;
-    relationship_delta[name] = sign * (0.02 + importance * 0.08);
-  }
-  return {
-    safety_response: answers.safety_response.confidence >= THRESHOLDS.choice
-      ? answers.safety_response.choice
-      : event.directly_affected === true && event.sense === "touch" ? "SHELTER" : "CAUTION",
-    remember: answers.should_remember.noul >= THRESHOLDS.remember,
-    retrieve: false,
-    update_belief: false,
-    importance,
-    emotional_intensity: answers.emotional_intensity.score / 4,
-    response_mode: answers.response_mode.choice,
-    relationship_delta,
-    speak:
-      event.speech_allowed === true &&
-      cognition.verbal_reactivity !== 0 &&
-      answers.should_speak.noul >= THRESHOLDS.speak,
   };
 }

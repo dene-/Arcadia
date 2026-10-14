@@ -1,0 +1,54 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:social:1",
+  "npc_id": "garrin_holt",
+  "kind": "social",
+  "ticket": {
+    "task_id": "task:garrin:stroll",
+    "task_generation": 3,
+    "created_minute": 1842,
+    "read_versions": {
+      "knowledge": 12,
+      "relationships": 7,
+      "condition": 2,
+      "task": 3
+    },
+    "evidence_ids": [
+      "ev:21"
+    ],
+    "candidate_ids": [],
+    "context_hash": "h:4f2a9c"
+  },
+  "state": {
+    "counterpart": {
+      "id": "mirelle",
+      "name": "Mirelle",
+      "relationship": {
+        "affection": 0.4
+      }
+    },
+    "activity": "walking"
+  },
+  "evidence": [
+    {
+      "id": "ev:21",
+      "text": "Garrin was struck outside the forge by a stranger.",
+      "modality": "touch",
+      "source_id": "",
+      "participant_ids": [
+        "player"
+      ]
+    }
+  ],
+  "topics": [
+    "news:forge_attack",
+    "news:market_prices"
+  ],
+  "tones": [
+    "friendly",
+    "reserved",
+    "concerned",
+    "curious"
+  ]
+}

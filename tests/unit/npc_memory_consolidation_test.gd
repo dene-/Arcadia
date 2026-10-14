@@ -1,5 +1,6 @@
 extends "res://tests/test_case.gd"
 
+const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
 const OBSERVER: String = "elder"
 const NOW: float = 1000.0
 
@@ -159,11 +160,8 @@ func _store() -> NpcMemoryStore:
 	store.set_world_minute(500.0)
 	return store
 
-func _policy() -> Dictionary:
-	return {"remember": true, "retrieve": false, "update_belief": false, "speak": false,
-		"importance": 0.3, "emotional_intensity": 0.2, "response_mode": "NEUTRAL",
-		"relationship_delta": {"familiarity": 0.0, "trust": 0.0, "respect": 0.0,
-			"affection": 0.0, "fear": 0.0, "suspicion": 0.0}}
+func _policy() -> NpcDecisionPolicy.Appraisal:
+	return Appraisals.make(true, 0.3, 0.2)
 
 func _hurt(text: String) -> NpcObservation:
 	_serial += 1
@@ -242,7 +240,8 @@ func _event(origin: String) -> Dictionary:
 	return {"origin_id": origin, "text": "I saw Den hurt Garrin.", "sense": "sight", "player_involved": true}
 
 func _rumor_policy() -> Dictionary:
-	return {"remember": true, "importance": 0.8, "belief": 0.7, "affinity": 0.0, "trust_player": -0.03}
+	return {"remember": true, "importance": 0.8, "belief": 0.7,
+		"dispositions": {"player": {"trust": -0.03}}}
 
 func _listener() -> NpcProfile:
 	var profile := NpcProfile.new()

@@ -1,0 +1,25 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:utterance:1",
+  "kind": "utterance",
+  "model": "jev-fixture",
+  "judgments": {
+    "speak": {
+      "type": "noul",
+      "noul": 0.77
+    },
+    "intent": {
+      "type": "choice",
+      "choice": "warn",
+      "confidence": 0.85,
+      "probabilities": {
+        "warn": 0.8,
+        "protest": 0.05,
+        "request_help": 0.05,
+        "acknowledge": 0.05,
+        "silence": 0.05
+      }
+    }
+  }
+}

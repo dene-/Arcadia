@@ -15,8 +15,6 @@ func _run() -> void:
 	cognition.save_game.region_seed = 274415
 	cognition.save_game.dead_npcs.clear()
 	cognition.store.from_save_data(NpcMemoryStore.new().to_save_data())
-	cognition.backend.observation_endpoint = "http://127.0.0.1:1/observe"
-	cognition.backend.reaction_endpoint = "http://127.0.0.1:1/react"
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
 	world.town_life_enabled = false
 	root.add_child(world)

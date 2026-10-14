@@ -1,0 +1,38 @@
+{
+  "description": "tone choice is not among the supplied tones.",
+  "kind": "social",
+  "response": {
+    "protocol_version": 2,
+    "prompt_version": "cognition-1",
+    "request_id": "req:social:1",
+    "kind": "social",
+    "model": "jev-fixture",
+    "judgments": {
+      "engage": {
+        "type": "noul",
+        "noul": 0.9
+      },
+      "topic": {
+        "type": "choice",
+        "choice": "news:forge_attack",
+        "confidence": 0.85,
+        "probabilities": {
+          "SMALL_TALK": 0.1,
+          "news:forge_attack": 0.8,
+          "news:market_prices": 0.1
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "furious",
+        "confidence": 0.85,
+        "probabilities": {
+          "friendly": 0.067,
+          "reserved": 0.067,
+          "concerned": 0.799,
+          "curious": 0.067
+        }
+      }
+    }
+  }
+}

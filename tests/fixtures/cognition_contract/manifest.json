@@ -1,0 +1,58 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "kinds": {
+    "appraise": {
+      "route": "/v2/cognition/appraise",
+      "request": "appraise.request.json",
+      "response": "appraise.response.json"
+    },
+    "select_goal": {
+      "route": "/v2/cognition/select-goal",
+      "request": "select_goal.request.json",
+      "response": "select_goal.response.json"
+    },
+    "social": {
+      "route": "/v2/cognition/social",
+      "request": "social.request.json",
+      "response": "social.response.json"
+    },
+    "listen": {
+      "route": "/v2/cognition/listen",
+      "request": "listen.request.json",
+      "response": "listen.response.json"
+    },
+    "utterance": {
+      "route": "/v2/cognition/utterance",
+      "request": "utterance.request.json",
+      "response": "utterance.response.json"
+    }
+  },
+  "invalid": [
+    {
+      "file": "invalid_wrong_type.json",
+      "kind": "appraise",
+      "expected_error": "invalid_provider_payload"
+    },
+    {
+      "file": "invalid_score_out_of_range.json",
+      "kind": "appraise",
+      "expected_error": "invalid_provider_payload"
+    },
+    {
+      "file": "invalid_unknown_choice.json",
+      "kind": "social",
+      "expected_error": "invalid_provider_payload"
+    },
+    {
+      "file": "invalid_missing_question.json",
+      "kind": "select_goal",
+      "expected_error": "invalid_provider_payload"
+    },
+    {
+      "file": "invalid_foreign_candidate.json",
+      "kind": "select_goal",
+      "expected_error": "invalid_provider_payload"
+    }
+  ]
+}

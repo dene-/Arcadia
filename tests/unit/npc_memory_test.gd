@@ -1,5 +1,6 @@
 extends "res://tests/test_case.gd"
 
+const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
 const SESSION: String = "player:1"
 
 func _profile(id: StringName = &"test_npc") -> NpcProfile:
@@ -267,7 +268,7 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 		var inbox: NpcEvidenceInbox = save.memory.minds.get_mind("other").evidence
 		assert_true(inbox.enqueue(noise))
 		var claimed: NpcObservation = inbox.claim(noise.observation_id, 10.0)
-		assert_eq(save.memory.commit_evidence("other", claimed, _policy(false)), "")
+		assert_eq(save.memory.commit_evidence("other", claimed, Appraisals.make(false)), "")
 	assert_eq(retriever.recall(memory, cognition, save.memory.world_minute), before)
 	save.life.advance(1440)
 	var later: Dictionary = retriever.recall(memory, cognition, save.memory.world_minute)

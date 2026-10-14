@@ -1,16 +1,18 @@
 extends "res://tests/test_case.gd"
 
-const ObservationTests = preload("res://tests/unit/npc_observation_test.gd")
+const FakeService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
+const Rig = preload("res://tests/fixtures/npc_processor_rig.gd")
 const ConversationTests = preload("res://tests/unit/npc_conversation_test.gd")
 
 func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	var tree: SceneTree = Engine.get_main_loop()
 	var cognition: Node = tree.root.get_node("NpcCognition")
-	var original: DialogBackendClient = cognition.events.backend
-	var backend := ObservationTests.FakeBackend.new()
-	backend.policy = ObservationTests.new()._policy()
-	backend.policy.speak = true
-	cognition.events.backend = backend
+	var original: DialogBackendClient = cognition.decisions.transport
+	var backend := FakeService.new()
+	tree.root.add_child(backend)
+	backend.set_default("appraise", Rig.distrust("player"))
+	backend.set_default("react", {"response": "Keep away!"})
+	cognition.decisions.transport = backend
 	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
 	npc.npc_data = npc.npc_data.duplicate()
 	npc.npc_data.max_health = 5
@@ -28,9 +30,16 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	assert_eq(sightings.size(), 1, "The victim saw the attacker, so it knows where the player was")
 	assert_eq(sightings[0].value.x, 5010.0)
 	assert_eq(sightings[0].status, "OBSERVED")
-	assert_eq(backend.payloads.size(), 1)
-	assert_true(backend.payloads[0].event.directly_affected)
-	assert_ne(backend.payloads[0].context.current.activity, "conversation")
+	var calls: Array[Dictionary] = backend.calls("appraise")
+	assert_eq(calls.size(), 1)
+	assert_true(calls[0].evidence[0].text.contains("Den"), "The victim names the attacker it saw")
+	assert_eq(calls[0].evidence[0].modality, "touch")
+	assert_true("player" in calls[0].subjects)
+	assert_ne(calls[0].state.current.activity, "conversation")
+	assert_eq(backend.call_count("utterance"), 1)
+	assert_eq(backend.calls("utterance")[0].intents,
+		["remark", "warn", "call_for_help", "protest", "silence"],
+		"A hurt actor is danger evidence, and being touched permits a protest")
 	assert_true(npc.get_node("ReactionBubble").visible)
 	assert_eq(npc.get_node("ReactionBubble/Panel/Text").text, "Keep away!")
 	assert_eq(cognition.store.snapshot("flow_test").observations[0].diagnostics.speech_result, "displayed")
@@ -62,7 +71,8 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	npc.queue_free()
 	player.queue_free()
 	await tree.process_frame
-	cognition.events.backend = original
+	cognition.decisions.transport = original
+	backend.release_all()
 	backend.free()
 	dialogue.free()
 

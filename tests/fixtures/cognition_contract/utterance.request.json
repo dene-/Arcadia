@@ -1,0 +1,45 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:utterance:1",
+  "npc_id": "garrin_holt",
+  "kind": "utterance",
+  "ticket": {
+    "task_id": "task:garrin:forge",
+    "task_generation": 3,
+    "created_minute": 1842,
+    "read_versions": {
+      "knowledge": 12,
+      "relationships": 7,
+      "condition": 2,
+      "task": 3
+    },
+    "evidence_ids": [
+      "ev:12"
+    ],
+    "candidate_ids": [],
+    "context_hash": "h:4f2a9c"
+  },
+  "state": {
+    "activity": "working",
+    "verbal_reactivity": 0.6
+  },
+  "evidence": [
+    {
+      "id": "ev:12",
+      "text": "A stranger struck Garrin's shoulder with a club outside the forge.",
+      "modality": "touch",
+      "source_id": "",
+      "participant_ids": [
+        "player"
+      ]
+    }
+  ],
+  "intents": [
+    "warn",
+    "protest",
+    "request_help",
+    "acknowledge",
+    "silence"
+  ]
+}

@@ -356,7 +356,7 @@ func test_rumor_fixture_keeps_receipts_hearsay_memories_and_account_chains() -> 
 		town.memory.snapshot("holt_partner").relationship.trust, "Weak hearsay does not.")
 	var memories_before: int = _memories(save, "garrin_holt").size()
 	save.memory.record_hearsay(_profile("garrin_holt"), garrin[0],
-		{"remember": true, "importance": 0.9, "trust_player": -0.03})
+		{"remember": true, "importance": 0.9, "dispositions": {"player": {"trust": -0.03}}})
 	assert_eq(_memories(save, "garrin_holt").size(), memories_before, "Retelling is not new evidence.")
 	assert_eq(save.memory.snapshot("garrin_holt").relationship.trust, trust)
 

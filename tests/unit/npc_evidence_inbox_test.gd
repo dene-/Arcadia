@@ -124,7 +124,7 @@ func test_lifecycle_and_idempotence() -> void:
 	assert_false(inbox.fail("a", "late", 2.0))
 	assert_eq(inbox.item("a"), {})
 
-func test_failed_items_become_ready_after_retry_delay() -> void:
+func test_failed_items_become_ready_after_the_first_ladder_step() -> void:
 	var inbox := NpcEvidenceInbox.new()
 	inbox.enqueue(_sight("a", 1.0))
 	inbox.claim("a", 10.0)
@@ -132,29 +132,53 @@ func test_failed_items_become_ready_after_retry_delay() -> void:
 	var record: Dictionary = inbox.item("a")
 	assert_eq(record["status"], "DEFERRED")
 	assert_eq(record["attempts"], 1)
-	assert_eq(record["retry_after"], 10.0 + NpcEvidenceInbox.RETRY_DELAY_MINUTES)
+	assert_eq(record["retry_after"], 10.0 + NpcEvidenceInbox.RETRY_LADDER_MSEC[0])
 	assert_eq(record["last_error"], "provider unavailable")
 	assert_true(inbox.contains_pending("a"))
 	assert_eq(inbox.ready_count(11.0), 0)
 	assert_null(inbox.next_ready(11.0))
 	assert_null(inbox.claim("a", 11.0))
-	assert_eq(inbox.ready_count(12.0), 1)
-	assert_not_null(inbox.claim("a", 12.0))
-	assert_true(inbox.fail("a", "again", 12.0))
+	assert_eq(inbox.ready_count(2010.0), 1)
+	assert_not_null(inbox.claim("a", 2010.0))
+	assert_true(inbox.fail("a", "again", 2010.0))
 	assert_eq(inbox.item("a")["attempts"], 2)
 
-func test_defer_sets_explicit_retry_time() -> void:
+func test_retry_ladder_is_2_10_30_seconds_then_a_60_second_backoff() -> void:
+	assert_eq(NpcEvidenceInbox.RETRY_LADDER_MSEC, [2000, 10000, 30000] as Array[int])
+	assert_eq(NpcEvidenceInbox.RETRY_BACKOFF_MSEC, 60000)
 	var inbox := NpcEvidenceInbox.new()
-	inbox.enqueue(_sight("p", 1.0))
-	inbox.enqueue(_sight("c", 2.0))
-	assert_true(inbox.defer("p", 50.0))
-	inbox.claim("c", 2.0)
-	assert_true(inbox.defer("c", 60.0))
-	assert_eq(inbox.item("c")["attempts"], 0)
-	assert_eq(inbox.ready_count(49.0), 0)
-	assert_eq(inbox.next_ready(55.0).observation_id, "p")
-	assert_eq(inbox.ready_count(60.0), 2)
-	assert_false(inbox.defer("missing", 5.0))
+	inbox.enqueue(_sight("a", 1.0))
+	var now: float = 1000.0
+	for expected: float in [2000.0, 10000.0, 30000.0, 60000.0, 60000.0]:
+		assert_not_null(inbox.claim("a", now))
+		assert_true(inbox.fail("a", "provider unavailable", now))
+		assert_eq(inbox.item("a")["retry_after"], now + expected)
+		assert_eq(inbox.ready_count(now + expected - 1.0), 0)
+		assert_eq(inbox.ready_count(now + expected), 1)
+		now += expected
+	assert_eq(inbox.item("a")["attempts"], 5)
+
+func test_wake_backoff_releases_only_items_past_the_ladder() -> void:
+	var inbox := NpcEvidenceInbox.new()
+	inbox.enqueue(_sight("ladder", 1.0))
+	inbox.enqueue(_sight("backoff", 2.0))
+	var now: float = 1000.0
+	inbox.claim("ladder", now)
+	inbox.fail("ladder", "x", now)
+	for _attempt: int in range(NpcEvidenceInbox.RETRY_LADDER_MSEC.size() + 1):
+		inbox.claim("backoff", INF)
+		inbox.fail("backoff", "x", now)
+		now += 100000.0
+	var version_before: int = inbox.version
+	var waiting_until: float = inbox.item("backoff")["retry_after"]
+	assert_true(waiting_until > 0.0)
+	assert_eq(inbox.wake_backoff(), 1, "Only the item past the ladder wakes")
+	assert_eq(inbox.item("backoff")["retry_after"], 0.0)
+	assert_eq(inbox.item("ladder")["retry_after"], 1000.0 + NpcEvidenceInbox.RETRY_LADDER_MSEC[0],
+		"One malformed answer must not turn the ladder into a tight loop")
+	assert_true(inbox.version > version_before)
+	assert_eq(inbox.next_ready(0.0).observation_id, "backoff")
+	assert_eq(inbox.wake_backoff(), 0)
 
 func test_next_ready_orders_protected_then_oldest_then_insertion() -> void:
 	var inbox := NpcEvidenceInbox.new()

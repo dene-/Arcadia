@@ -1,21 +1,6 @@
 extends SceneTree
 
-class SafetyBackend extends DialogBackendClient:
-	signal release_routine
-	signal release_observation
-	var hold_routine: bool = false
-	var hold_observation: bool = true
-	func request_life(kind: String, _payload: Dictionary) -> Dictionary:
-		if kind == "routine":
-			if hold_routine:
-				await release_routine
-			return {"policy": {"activity": "PLAN", "duration_minutes": 30}}
-		return {"policy": {"engage": false, "topic_index": -1,
-			"tone": "RESERVED", "another_exchange": false}}
-	func request_observation(_payload: Dictionary) -> Dictionary:
-		if hold_observation:
-			await release_observation
-		return {} # Exercise retreat with the classifier unavailable.
+const FakeDecisionService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
 
 var _failures: Array[String] = []
 
@@ -31,10 +16,14 @@ func _run() -> void:
 	cognition.save_game.path = OS.get_temp_dir().path_join("arcadia-safety-%d.json" % OS.get_process_id())
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
-	var backend := SafetyBackend.new()
+	var backend := FakeDecisionService.new()
+	# The held classifier ends unavailable: exercise retreat without a perception verdict.
+	backend.hold("appraise")
+	backend.set_default("appraise", {"outcome": "UNAVAILABLE"})
+	backend.set_default("social", {"engage": 0.0, "tone": "reserved"})
 	root.add_child(backend)
 	cognition.backend = backend
-	cognition.events.backend = backend
+	cognition.decisions.transport = backend
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
 	root.add_child(world)
 	current_scene = world
@@ -56,7 +45,7 @@ func _run() -> void:
 	life.buildings._transfer(player, "player:%d" % player.get_instance_id(), &"outdoors", npc.global_position + Vector2(10, 0))
 	npc.set_health(npc.max_health)
 	# Hold an earlier routine response: the urgent route must not wait for it.
-	backend.hold_routine = true
+	backend.hold("select_goal")
 	life._choose_activity(npc, id)
 	var dialog: Node = root.get_node("DialogManager")
 	_check(dialog._bind_dialog_ui(), "World dialogue UI could not be bound")
@@ -70,10 +59,8 @@ func _run() -> void:
 	life._process(1.01)
 	_check(not dialog.is_dialog_open(), "The retreat did not interrupt the active conversation")
 	_check(npc.daily_routine.activity == "shelter", "Retreat waited for the delayed provider")
-	backend.hold_routine = false
-	backend.release_routine.emit()
-	backend.hold_observation = false
-	backend.release_observation.emit()
+	backend.release("select_goal")
+	backend.release("appraise")
 	await cognition.events.flush(id)
 	_check(life.save_game.life.get_person(id).activity == "shelter", "An obsolete routine replaced the retreat")
 	await _arrive(npc, life, StringName("home:" + id))

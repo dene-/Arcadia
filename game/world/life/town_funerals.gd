@@ -109,9 +109,13 @@ func maintain(npc: BaseNpc, npc_id: String) -> bool:
 	if live != null:
 		if live.phase != NpcRecoveryTask.PHASE_DEFERRED:
 			return true
-		# No guard found anywhere the witness knew of: the commitment stays open for a later try.
+		# No guard found anywhere the witness knew of: every report this witness holds stays open
+		# for a later try, and the witness returns to ordinary life meanwhile.
 		brain.end_task(live.task_id, &"deferred")
-		_deaths().release_assignment(live.body_id(), npc_id, minute)
+		for id: String in _deaths().ids():
+			var held: Dictionary = _deaths().snapshot(id)
+			if held.stage == "discovered" and held.reporter == npc_id:
+				_deaths().release_assignment(id, npc_id, minute)
 		_retry_at[npc_id] = minute + RETRY_MINUTES
 		return false
 	if float(_retry_at.get(npc_id, -INF)) > minute:

@@ -1,16 +1,14 @@
 import express from "express";
 import { townLifeRoutes } from "./town-life.js";
-import {
-  QUESTIONS,
-  EVENT_QUESTIONS,
-  RELATIONSHIP_SCALES,
-  decisionPolicy,
-  observationPolicy,
-} from "./npc-decisions.js";
+import { cognitionRoutes } from "./cognition-routes.js";
+import { createProviders } from "./provider-queue.js";
+import { UPSTREAM_BUDGETS_MS, disconnectSignal } from "./upstream.js";
+import { QUESTIONS, RELATIONSHIP_SCALES, decisionPolicy } from "./npc-decisions.js";
 import {
   COGNITIVE_PROMPT,
   DIALOGUE_FORMAT,
   parseDialogue,
+  REACTION_INTENTS,
   REACTION_PROMPT,
   REACTION_FORMAT,
   parseReaction,
@@ -67,7 +65,7 @@ function validateRequest(body) {
     throw new Error("Invalid events");
   return body;
 }
-function validateObservation(body) {
+function validateReaction(body) {
   const request = validateRequest(body);
   const event = request.event;
   if (
@@ -77,16 +75,20 @@ function validateObservation(body) {
     event.text.length > 500 ||
     !["sight", "hearing", "touch"].includes(event.sense) ||
     typeof event.player_involved !== "boolean" ||
-    typeof event.speech_allowed !== "boolean"
+    !REACTION_INTENTS.includes(request.intent)
   )
-    throw new Error("Invalid observation");
+    throw new Error("Invalid reaction");
   return request;
 }
-export function createApp({ decide, generate }) {
+export function createApp({ decide: rawDecide, generate: rawGenerate, queue }) {
+  const providers = createProviders({ decide: rawDecide, generate: rawGenerate, queue });
+  const { decide, generate } = providers;
   const app = express();
   app.use(express.json({ limit: "96kb" }));
-  app.use("/life", townLifeRoutes({ decide, generate }));
+  app.use("/life", townLifeRoutes({ generate }));
+  app.use("/v2/cognition", cognitionRoutes({ decide }));
   app.post("/decide", async (req, res) => {
+    const signal = disconnectSignal(res);
     let request;
     try {
       request = validateRequest(req.body);
@@ -98,55 +100,27 @@ export function createApp({ decide, generate }) {
         ...request,
         relationship_scales: RELATIONSHIP_SCALES,
       };
-      const result = await decide({ state, questions: QUESTIONS });
+      const result = await decide({ state, questions: QUESTIONS }, { signal });
       res.json({
         answers: result.answers,
         policy: decisionPolicy(result.answers),
       });
     } catch (error) {
+      if (signal.aborted) return;
       reportProviderFailure("NPC decision service", error);
       res.status(503).json({ error: "NPC decision service unavailable." });
     }
   });
-  app.post("/observe", async (req, res) => {
+  // The game decides whether to speak and with which intent (v2 utterance judgment); this route
+  // only writes the line, in the NPC's saved voice.
+  app.post("/react", async (req, res) => {
+    const signal = disconnectSignal(res);
     let request;
     try {
-      request = validateObservation(req.body);
-    } catch {
-      return res.status(400).json({ error: "Invalid observation request." });
-    }
-    try {
-      const state = {
-        ...request,
-        relationship_scales: RELATIONSHIP_SCALES,
-      };
-      const result = await decide({ state, questions: EVENT_QUESTIONS });
-      res.json({
-        answers: result.answers,
-        policy: observationPolicy(
-          result.answers,
-          request.event,
-          request.npc.profile.cognition,
-        ),
-      });
-    } catch (error) {
-      reportProviderFailure("NPC observation service", error);
-      res.status(503).json({ error: "NPC observation service unavailable." });
-    }
-  });
-  app.post("/react", async (req, res) => {
-    let request, policy;
-    try {
-      request = validateObservation(req.body);
-      policy = observationPolicy(
-        request.answers,
-        request.event,
-        request.npc.profile.cognition,
-      );
+      request = validateReaction(req.body);
     } catch {
       return res.status(400).json({ error: "Invalid reaction request." });
     }
-    if (!policy.speak) return res.json({ response: "" });
     try {
       const response = await generate({
         instructions: REACTION_PROMPT + voiceInstructions(request.npc.profile),
@@ -156,24 +130,26 @@ export function createApp({ decide, generate }) {
             content: JSON.stringify({
               npc: request.npc,
               event: request.event,
+              intent: request.intent,
               context: request.context,
-              policy,
               relationship_scales: RELATIONSHIP_SCALES,
             }),
           },
         ],
         text: { format: REACTION_FORMAT },
         store: false,
-      });
+      }, { signal, timeout: UPSTREAM_BUDGETS_MS.ambient });
       if (response.status && response.status !== "completed")
         throw new Error("Incomplete reaction");
       res.json(parseReaction(response.output_text));
     } catch (error) {
+      if (signal.aborted) return;
       reportProviderFailure("NPC reaction service", error);
       res.status(503).json({ error: "NPC reaction service unavailable." });
     }
   });
   app.post("/chat", async (req, res) => {
+    const signal = disconnectSignal(res);
     let request, policy;
     try {
       request = validateRequest(req.body);
@@ -182,37 +158,51 @@ export function createApp({ decide, generate }) {
       return res.status(400).json({ error: "Invalid dialogue request." });
     }
     try {
-      const response = await generate({
-        instructions: COGNITIVE_PROMPT + voiceInstructions(request.npc.profile),
-        input: [
-          {
-            role: "user",
-            content: JSON.stringify({
-              npc: request.npc,
-              player: request.player,
-              context: request.context,
-              policy,
-              relationship_scales: RELATIONSHIP_SCALES,
-            }),
-          },
-        ],
-        text: { format: DIALOGUE_FORMAT },
-        store: false,
-      });
-      if (response.status && response.status !== "completed")
-        throw new Error("Incomplete response");
-      const result = parseDialogue(response.output_text, request, policy);
-      result.memory_writes = await groundMemories(result.memory_writes, request, result.response, decide);
+      const result = await providers.withText(async ({ generate: upstream, decide: ground }) => {
+        const response = await upstream({
+          instructions: COGNITIVE_PROMPT + voiceInstructions(request.npc.profile),
+          input: [
+            {
+              role: "user",
+              content: JSON.stringify({
+                npc: request.npc,
+                player: request.player,
+                context: request.context,
+                policy,
+                relationship_scales: RELATIONSHIP_SCALES,
+              }),
+            },
+          ],
+          text: { format: DIALOGUE_FORMAT },
+          store: false,
+        }, { timeout: UPSTREAM_BUDGETS_MS.dialogue });
+        if (response.status && response.status !== "completed")
+          throw new Error("Incomplete response");
+        const parsed = parseDialogue(response.output_text, request, policy);
+        // Grounding runs under the dialogue's text permit; its judgment permit is a different pool.
+        parsed.memory_writes = await groundMemories(parsed.memory_writes, request, parsed.response, ground);
+        return parsed;
+      }, { signal });
       res.json(result);
     } catch (error) {
+      if (signal.aborted) return;
       reportProviderFailure("NPC dialogue service", error);
       res.status(503).json({ error: "NPC dialogue service unavailable." });
     }
   });
-  app.use((error, _req, res, _next) =>
+  app.use((error, req, res, _next) => {
+    if (req.originalUrl.startsWith("/v2/")) {
+      if (error.status === 413) return res.status(413).json({ error: "invalid_request", code: "payload_too_large" });
+      if (error.type === "entity.parse.failed") return res.status(400).json({ error: "invalid_request", code: "invalid_json" });
+      if (!(error.status >= 400 && error.status < 500)) {
+        console.error(`Cognition route failed: ${error?.name || "Unknown error"}`);
+        return res.status(500).json({ error: "internal_error" });
+      }
+      return res.status(400).json({ error: "invalid_request", code: "invalid_envelope" });
+    }
     res
       .status(error.status === 413 ? 413 : 400)
-      .json({ error: "Invalid request body." }),
-  );
+      .json({ error: "Invalid request body." });
+  });
   return app;
 }

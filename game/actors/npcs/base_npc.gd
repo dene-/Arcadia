@@ -143,6 +143,11 @@ func reserve_spoken_reaction() -> bool:
 	_reaction_cooldown_until = Time.get_ticks_msec() + int(npc_data.reaction_cooldown * 1000.0)
 	return true
 
+## Gives back a reservation whose speech was never displayed, so a failed generation does not
+## silence the NPC for the whole cooldown.
+func release_spoken_reaction() -> void:
+	_reaction_cooldown_until = 0
+
 ## Takes the speech token for `owner`; refused while another owner's protected line is active.
 func begin_speech(owner: String, protected: bool) -> bool:
 	if owner.is_empty() or health <= 0 or _dialog_locked or _sleeping \

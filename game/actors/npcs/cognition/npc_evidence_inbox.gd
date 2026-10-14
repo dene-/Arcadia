@@ -8,7 +8,10 @@ enum Status { PENDING, CLAIMED, DEFERRED }
 
 const READY_WINDOW: int = 32
 const INCIDENT_WINDOW_MINUTES: float = 10.0
-const RETRY_DELAY_MINUTES: float = 2.0
+## Real-time retry ladder after the first, second and third failed appraisal (monotonic msec).
+const RETRY_LADDER_MSEC: Array[int] = [2000, 10000, 30000]
+## Beyond the ladder an item waits for a successful provider response (`wake_backoff`) or this.
+const RETRY_BACKOFF_MSEC: int = 60000
 const MAX_ITEMS: int = 512
 ## Hard bound on stored receipts; at the bound `complete` refuses instead of dropping one.
 const MAX_RECEIPTS: int = 4096
@@ -29,6 +32,8 @@ class _Item extends RefCounted:
 	var observation: NpcObservation
 	var status: int = NpcEvidenceInbox.Status.PENDING
 	var attempts: int = 0
+	## Monotonic Time.get_ticks_msec() of the next retry. Runtime only: ticks restart with the
+	## process, so a loaded item is due at once.
 	var retry_after: float = 0.0
 	var count: int = 1
 	var first_minute: float = 0.0
@@ -36,9 +41,9 @@ class _Item extends RefCounted:
 	var last_error: String = ""
 	var protected: bool = false
 
-	func is_eligible(now_minute: float) -> bool:
+	func is_eligible(now_msec: float) -> bool:
 		return status == NpcEvidenceInbox.Status.PENDING \
-			or (status == NpcEvidenceInbox.Status.DEFERRED and retry_after <= now_minute)
+			or (status == NpcEvidenceInbox.Status.DEFERRED and retry_after <= now_msec)
 
 ## Increments on every accepted mutation.
 var version: int = 0
@@ -90,24 +95,24 @@ func contains_pending(observation_id: String) -> bool:
 func has_receipt(observation_id: String) -> bool:
 	return _receipt_ids.has(observation_id)
 
-## Size of the dispatch window: eligible items, capped at READY_WINDOW.
-func ready_count(now_minute: float = INF) -> int:
+## Size of the dispatch window: eligible items, capped at READY_WINDOW. Times are monotonic msec.
+func ready_count(now_msec: float = INF) -> int:
 	var eligible: int = 0
 	for entry: _Item in _items:
-		if entry.is_eligible(now_minute):
+		if entry.is_eligible(now_msec):
 			eligible += 1
 	return mini(eligible, READY_WINDOW)
 
-func next_ready(now_minute: float) -> NpcObservation:
+func next_ready(now_msec: float) -> NpcObservation:
 	var best: _Item = null
 	for entry: _Item in _items:
-		if entry.is_eligible(now_minute) and (best == null or _precedes(entry, best)):
+		if entry.is_eligible(now_msec) and (best == null or _precedes(entry, best)):
 			best = entry
 	return best.observation.copy() if best != null else null
 
-func claim(observation_id: String, now_minute: float) -> NpcObservation:
+func claim(observation_id: String, now_msec: float) -> NpcObservation:
 	var entry: _Item = _by_id.get(observation_id)
-	if entry == null or not entry.is_eligible(now_minute):
+	if entry == null or not entry.is_eligible(now_msec):
 		return null
 	entry.status = Status.CLAIMED
 	version += 1
@@ -149,16 +154,32 @@ func compact(references: Dictionary) -> int:
 		version += 1
 	return pruned
 
-func fail(observation_id: String, reason: String, now_minute: float) -> bool:
+## Defers a claimed item along the retry ladder; past the ladder it waits RETRY_BACKOFF_MSEC
+## unless `wake_backoff` reports a healthy provider first.
+func fail(observation_id: String, reason: String, now_msec: float) -> bool:
 	var entry: _Item = _by_id.get(observation_id)
-	if entry == null or entry.status != Status.CLAIMED or not is_finite(now_minute):
+	if entry == null or entry.status != Status.CLAIMED or not is_finite(now_msec):
 		return false
 	entry.status = Status.DEFERRED
 	entry.attempts += 1
-	entry.retry_after = now_minute + RETRY_DELAY_MINUTES
+	entry.retry_after = now_msec + (RETRY_LADDER_MSEC[entry.attempts - 1]
+		if entry.attempts <= RETRY_LADDER_MSEC.size() else RETRY_BACKOFF_MSEC)
 	entry.last_error = reason.substr(0, MAX_ERROR_LENGTH)
 	version += 1
 	return true
+
+## A successful provider response: items past the retry ladder become due at once. Items still
+## on the ladder keep their delay, so one malformed answer is not retried in a tight loop.
+func wake_backoff() -> int:
+	var woken: int = 0
+	for entry: _Item in _items:
+		if entry.status == Status.DEFERRED and entry.attempts > RETRY_LADDER_MSEC.size() \
+				and entry.retry_after > 0.0:
+			entry.retry_after = 0.0
+			woken += 1
+	if woken > 0:
+		version += 1
+	return woken
 
 ## Returns a claimed item to PENDING without counting an attempt.
 func release(observation_id: String) -> bool:
@@ -167,15 +188,6 @@ func release(observation_id: String) -> bool:
 		return false
 	entry.status = Status.PENDING
 	entry.retry_after = 0.0
-	version += 1
-	return true
-
-func defer(observation_id: String, until_minute: float) -> bool:
-	var entry: _Item = _by_id.get(observation_id)
-	if entry == null or entry.status == Status.DEFERRED or not is_finite(until_minute):
-		return false
-	entry.status = Status.DEFERRED
-	entry.retry_after = until_minute
 	version += 1
 	return true
 
@@ -207,7 +219,7 @@ func to_data() -> Dictionary:
 		var claimed: bool = entry.status == Status.CLAIMED
 		items.append({"observation": entry.observation.to_data(),
 			"status": Status.keys()[Status.PENDING if claimed else entry.status],
-			"attempts": entry.attempts, "retry_after": 0.0 if claimed else entry.retry_after,
+			"attempts": entry.attempts, "retry_after": 0.0,
 			"count": entry.count, "first_minute": entry.first_minute,
 			"last_minute": entry.last_minute, "last_error": entry.last_error})
 	var data: Dictionary = {"version": SCHEMA_VERSION, "incident_counter": _incident_counter,
@@ -389,7 +401,7 @@ static func _parse_item(raw: Variant) -> _Item:
 	entry.observation = observation
 	entry.status = Status[status]
 	entry.attempts = int(source["attempts"])
-	entry.retry_after = float(source["retry_after"])
+	entry.retry_after = 0.0 # A real-time schedule does not survive the process; due at once.
 	entry.count = int(source["count"])
 	entry.first_minute = float(source["first_minute"])
 	entry.last_minute = float(source["last_minute"])

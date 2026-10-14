@@ -2,10 +2,12 @@ class_name TownEncounters
 extends Node
 
 ## Owns short social sessions between two residents, each identified by a session id.
-## Phases: invite (one social judgment, no claims, bounded by INVITE_MS) -> approach (both
+## Phases: invite (one v2 social judgment, no claims, bounded by INVITE_MS) -> approach (both
 ## brains reserve a conversation claim plus an NpcSocialTask in stable id order) -> converse
-## (alternating speakers) -> leave (both tasks end, both conversations finish). Dialogue,
-## injury, danger or death end the session; results of an ended session are dropped.
+## (alternating speakers; a shared account gets a v2 listen judgment, audible lines a v2
+## utterance judgment before any /life/say text) -> leave (both tasks end, both conversations
+## finish, the session's open request is cancelled). Dialogue, injury, danger or death end the
+## session; results of an ended session are dropped.
 const MAX_SESSIONS: int = 3
 const RANGE: float = 28.0
 const INVITE_MS: int = 8000
@@ -13,9 +15,16 @@ const SESSION_MS: int = 45000
 const PHASE_INVITE: String = "invite"
 const PHASE_APPROACH: String = "approach"
 const PHASE_CONVERSE: String = "converse"
+const TONES: Array[String] = ["friendly", "reserved", "concerned", "curious"]
+const DEFAULT_TONE: String = "friendly"
+## Utterance intent offered next to the line's mode; choosing it keeps the person quiet.
+const SILENCE: String = "silence"
+## Rumor confidence ceiling for an account the listener did not believe.
+const DOUBTED_BELIEF: float = 0.3
+static var _id_pattern: RegEx
 var state: TownLifeState
 var store: NpcMemoryStore
-var backend: DialogBackendClient
+var decisions: NpcDecisionService
 var seed_value: int
 var save_callback: Callable
 ## Returns the NpcBrain for a resident id (or null).
@@ -159,73 +168,140 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 		var listener: BaseNpc = second if round_index == 0 else first
 		var speaker_id: String = a if round_index == 0 else b
 		var listener_id: String = b if round_index == 0 else a
-		var topics: Array[Dictionary] = state.rumors.candidates(speaker_id, listener_id, state.minute)
-		var payload: Dictionary = _payload(speaker, listener)
-		payload.topics = topics
-		var judgment: Dictionary = await backend.request_life("social", payload)
+		var topics: Array[Dictionary] = _shareable(speaker_id, listener_id)
+		var topic_ids: Array[String] = []
+		var evidence: Array[Dictionary] = []
+		for account: Dictionary in topics:
+			topic_ids.append(account.origin_id)
+			evidence.append(_evidence(account))
+		var ticket: NpcDecisionTicket = _ticket(NpcDecisionTicket.SOCIAL, speaker_id, token)
+		var judged: NpcDecisionResult = await _decide(token, ticket, {"evidence": evidence,
+			"state": _state(speaker, listener), "topics": topic_ids, "tones": TONES})
 		if not _live(token):
 			break
-		var policy: Dictionary = judgment.get("policy", {})
-		if not _valid_social(policy, topics.size()):
+		if not judged.is_success():
 			_status(a, b, "decision_unavailable")
 			break
-		if not policy.engage:
+		var social: NpcDecisionPolicy.Social = NpcDecisionPolicy.social(judged, DEFAULT_TONE, tuning)
+		if not social.engage:
 			_status(a, b, "declined")
 			break
 		if _sessions[token].phase == PHASE_INVITE and not _approach(token):
 			_status(a, b, "reservation_refused")
 			break
-		var topic: Dictionary = topics[int(policy.topic_index)] if policy.topic_index >= 0 else {}
-		var listener_policy: Dictionary = {}
+		var topic: Dictionary = {}
+		for account: Dictionary in topics:
+			if account.origin_id == social.topic:
+				topic = account
+		var heard: NpcDecisionPolicy.Listening = null
 		if not topic.is_empty():
-			var assessment: Dictionary = _payload(listener, speaker)
-			assessment.topic = topic
-			assessment.speaker = {"id": speaker_id, "name": speaker.get_npc_profile().profile_name}
-			var heard: Dictionary = await backend.request_life("listen", assessment)
-			listener_policy = heard.get("policy", {})
-			if not _live(token) or not _valid_listen(listener_policy):
+			var listen: NpcDecisionTicket = _ticket(NpcDecisionTicket.LISTEN, listener_id, token)
+			var assessed: NpcDecisionResult = await _decide(token, listen, {
+				"evidence": [_evidence(topic)], "state": _state(listener, speaker),
+				"subjects": _subjects(topic, speaker_id, listener_id)})
+			if not _live(token) or not assessed.is_success():
 				_status(a, b, "assessment_cancelled_or_unavailable")
 				break
+			heard = NpcDecisionPolicy.listening(assessed, speaker_id, tuning)
 		var audible: bool = _player_near(speaker)
 		var line: String = ""
+		var status: String = "offscreen_exchange"
 		if audible:
 			_status(a, b, "generating_speech")
-			line = await _say(speaker, listener, topic, policy, "small_talk" if topic.is_empty() else "share")
-			if not _live(token) or line.is_empty() or not _speak(speaker, session_id, line):
+			var spoken: Dictionary = await _say(token, speaker, listener, topic, social.tone,
+				"small_talk" if topic.is_empty() else "share")
+			if not _live(token) or not spoken.ok \
+					or (not spoken.line.is_empty() and not _speak(speaker, session_id, spoken.line)):
 				_status(a, b, "speech_cancelled_or_unavailable")
 				break
-		_status(a, b, "bubble_displayed" if audible else "offscreen_exchange")
+			line = spoken.line
+			status = "bubble_displayed" if not line.is_empty() else "quiet_exchange"
+		_status(a, b, status)
 		# Information is transferred only here, at delivery. Failed/cancelled speech has no effects.
-		if not topic.is_empty():
+		if heard != null:
+			var listened: Dictionary = {"belief": 1.0 if heard.believe else DOUBTED_BELIEF,
+				"remember": heard.remember, "importance": heard.importance,
+				"dispositions": heard.dispositions}
 			var account: Dictionary = state.rumors.hear(listener_id, speaker_id,
-				speaker.get_npc_profile().profile_name, topic, listener_policy, state.minute)
+				speaker.get_npc_profile().profile_name, topic, listened, state.minute)
 			if not account.is_empty():
-				store.record_hearsay(listener.get_npc_profile(), account, listener_policy)
+				store.record_hearsay(listener.get_npc_profile(), account, listened)
 		var summary: String = line if not line.is_empty() else ("Exchanged everyday greetings." if topic.is_empty()
 			else "Discussed %s's account: %s" % [topic.originator_name, topic.text])
 		state.remember_exchange(speaker_id, listener_id, summary, session_id, speaker_id, listener_id)
-		state.remember_exchange(listener_id, speaker_id, summary, session_id, speaker_id, listener_id,
-			listener_policy.get("affinity", 0.0))
+		state.remember_exchange(listener_id, speaker_id, summary, session_id, speaker_id, listener_id)
 		_refresh_knowledge(listener, listener_id)
 		_save()
-		if audible:
+		if not line.is_empty():
 			await get_tree().create_timer(clampf(line.length() * 0.055, 2.5, 6.0)).timeout
 			speaker.end_speech(session_id)
 			if not _live(token):
 				break
 			if not topic.is_empty():
-				var reply: String = await _say(listener, speaker, topic, listener_policy, "reply")
+				var reply: Dictionary = await _say(token, listener, speaker, topic, social.tone, "reply")
 				if not _live(token):
 					break
-				if not reply.is_empty() and _speak(listener, session_id, reply):
-					state.remember_exchange(listener_id, speaker_id, reply, session_id, listener_id, speaker_id)
+				if not reply.line.is_empty() and _speak(listener, session_id, reply.line):
+					state.remember_exchange(listener_id, speaker_id, reply.line, session_id, listener_id, speaker_id)
 					_save()
-					await get_tree().create_timer(clampf(reply.length() * 0.055, 2.5, 6.0)).timeout
+					await get_tree().create_timer(clampf(reply.line.length() * 0.055, 2.5, 6.0)).timeout
 					listener.end_speech(session_id)
 		# A greeting still gives the other person a turn to respond or bring up their own news.
-		if not policy.another_exchange and not topic.is_empty():
+		if not topic.is_empty():
 			break
 	_release(token)
+
+# Known accounts the speaker may pass on, keyed by origin id (which must be a protocol id).
+func _shareable(speaker_id: String, listener_id: String) -> Array[Dictionary]:
+	var shareable: Array[Dictionary] = []
+	for account: Dictionary in state.rumors.candidates(speaker_id, listener_id, state.minute):
+		if _is_id(account.origin_id):
+			shareable.append(account)
+	return shareable
+
+# The messenger, then whom the account is about: the player and its (absent) originator.
+static func _subjects(account: Dictionary, speaker_id: String, listener_id: String) -> Array[String]:
+	var subjects: Array[String] = [speaker_id]
+	if account.player_involved:
+		subjects.append("player")
+	var originator: String = account.originator
+	if _is_id(originator) and not originator in [speaker_id, listener_id, "player"]:
+		subjects.append(originator)
+	return subjects
+
+static func _evidence(account: Dictionary) -> Dictionary:
+	return {"id": account.origin_id, "modality": "spoken_report",
+		"text": ("%s reported: %s" % [account.originator_name, account.text]).substr(0, 1000),
+		"source_id": String(account.source_id).substr(0, 100), "participant_ids": []}
+
+static func _is_id(value: String) -> bool:
+	if _id_pattern == null:
+		_id_pattern = RegEx.create_from_string("^[A-Za-z0-9_:-]{1,100}$")
+	return _id_pattern.search(value) != null
+
+# A ticket bound to the live session: its id is the task, its token the generation.
+func _ticket(kind: StringName, npc_id: String, token: int) -> NpcDecisionTicket:
+	var session: Dictionary = _sessions[token]
+	var ticket := NpcDecisionTicket.create(npc_id, kind)
+	ticket.task_id = session.id
+	ticket.task_generation = token
+	ticket.created_minute = int(state.minute)
+	for id: String in [session.a, session.b]:
+		ticket.read_versions["life:" + id] = (session.actors[id] as BaseNpc).life_revision
+	return ticket
+
+# Runs one request as the session's current one, so leaving the session cancels it.
+func _decide(token: int, ticket: NpcDecisionTicket, payload: Dictionary,
+		text_path: String = "") -> NpcDecisionResult:
+	_sessions[token].request = ticket.request_id
+	var result: NpcDecisionResult
+	if text_path.is_empty():
+		result = await decisions.evaluate(ticket, payload)
+	else:
+		result = await decisions.run_text(ticket, text_path, payload)
+	if _sessions.has(token) and _sessions[token].get("request") == ticket.request_id:
+		_sessions[token].erase("request")
+	return result
 
 # A session line is protected: no other owner's speech can replace it while it shows.
 func _speak(npc: BaseNpc, session_id: String, line: String) -> bool:
@@ -256,6 +332,8 @@ func _release(token: int) -> void:
 		if is_instance_valid(brain):
 			(brain as NpcBrain).end_task(NpcSocialTask.owner_for(session.id), &"session_ended")
 			(brain as NpcBrain).finish_conversation(session.id)
+	if session.has("request"):
+		decisions.cancel(session.request)
 
 func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 	var profile: NpcProfile = speaker.get_npc_profile()
@@ -276,18 +354,44 @@ func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 		"current": current, "relationship": person.ties.get(String(other.npc_id), {}),
 		"recent_social": social_history(String(profile.npc_id))}
 
+# The v2 `state`: the speech payload without its v1 protocol marker.
+func _state(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
+	var described: Dictionary = _payload(speaker, listener)
+	described.erase("protocol_version")
+	return described
+
 func _status(a: String, b: String, outcome: String) -> void:
 	_diagnostics[a] = {"with": b, "outcome": outcome, "minute": state.minute}
 	_diagnostics[b] = {"with": a, "outcome": outcome, "minute": state.minute}
 
-func _say(speaker: BaseNpc, listener: BaseNpc, topic: Dictionary, policy: Dictionary, mode: String) -> String:
+# One line in `mode` (share | small_talk | reply): a v2 utterance judgment, then text only when it
+# speaks with that intent. {ok: false} when the judgment or text was unavailable or the session
+# ended; {ok: true, line: ""} when the person chose to stay quiet.
+func _say(token: int, speaker: BaseNpc, listener: BaseNpc, topic: Dictionary, tone: String,
+		mode: String) -> Dictionary:
+	var speaker_id: String = String(speaker.get_npc_profile().npc_id)
+	var described: Dictionary = _state(speaker, listener)
+	described.merge({"mode": mode, "tone": tone, "topic_id": topic.get("origin_id", "")})
+	var ticket: NpcDecisionTicket = _ticket(NpcDecisionTicket.UTTERANCE, speaker_id, token)
+	var judged: NpcDecisionResult = await _decide(token, ticket, {"state": described,
+		"evidence": [_evidence(topic)] if not topic.is_empty() else [], "intents": [mode, SILENCE]})
+	if not _live(token) or not judged.is_success():
+		return {"ok": false, "line": ""}
+	var decided: NpcDecisionPolicy.Utterance = NpcDecisionPolicy.utterance(judged, [mode], tuning)
+	if not decided.speak:
+		return {"ok": true, "line": ""}
 	var payload: Dictionary = _payload(speaker, listener)
 	payload.topic = topic if not topic.is_empty() else null
-	payload.policy = policy
 	payload.mode = mode
-	var result: Dictionary = await backend.request_life("say", payload)
-	var response: Variant = result.get("response")
-	return response if response is String and response.length() <= 160 else ""
+	payload.intent = decided.intent
+	payload.tone = tone
+	var text: NpcDecisionResult = await _decide(token,
+		_ticket(NpcDecisionTicket.UTTERANCE, speaker_id, token), payload, "/life/say")
+	var response: Variant = text.body.get("response")
+	if not _live(token) or not text.is_success() or not response is String \
+			or (response as String).strip_edges().is_empty() or (response as String).length() > 160:
+		return {"ok": false, "line": ""}
+	return {"ok": true, "line": response}
 
 func _near(a: BaseNpc, b: BaseNpc) -> bool:
 	return a.can_follow_routine() and b.can_follow_routine() \
@@ -308,18 +412,3 @@ func _save() -> void:
 		var error: Error = save_callback.call()
 		if error != OK:
 			push_warning("Social exchange could not be saved: %s" % error)
-
-static func _valid_social(policy: Dictionary, count: int) -> bool:
-	return policy.get("engage") is bool and policy.get("another_exchange") is bool \
-		and NpcMemory.is_integer(policy.get("topic_index")) and policy.topic_index >= -1 \
-		and policy.topic_index < count and policy.get("tone") in ["FRIENDLY", "RESERVED", "CONCERNED", "CURIOUS"]
-
-static func _valid_listen(policy: Dictionary) -> bool:
-	if not NpcMemory.is_unit(policy.get("belief")) or not NpcMemory.is_unit(policy.get("importance")) \
-		or not policy.get("remember") is bool:
-		return false
-	for key: String in ["affinity", "trust_player"]:
-		if not (policy.get(key) is int or policy.get(key) is float) \
-			or not is_finite(float(policy[key])) or absf(policy[key]) > 0.030001:
-			return false
-	return true

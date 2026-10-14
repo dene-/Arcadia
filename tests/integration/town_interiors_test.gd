@@ -1,9 +1,6 @@
 extends SceneTree
 
-class MockBackend extends DialogBackendClient:
-	var always_rest: bool = false
-	func request_life(kind: String, _payload: Dictionary) -> Dictionary:
-		return {"policy": {"activity": "REST" if always_rest else "PLAN", "duration_minutes": 75}} if kind == "routine" else {}
+const FakeDecisionService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -15,11 +12,10 @@ func _run() -> void:
 	cognition.save_game.legacy_memory_path = cognition.save_game.path + ".legacy-memory"
 	cognition.save_game.from_data(NpcWorldSave.new().to_data())
 	cognition.save_game.region_seed = 274415
-	var backend := MockBackend.new()
+	var backend := FakeDecisionService.new()
 	root.add_child(backend)
 	cognition.backend = backend
-	cognition.events.backend.observation_endpoint = "http://127.0.0.1:1/observe"
-	cognition.events.backend.reaction_endpoint = "http://127.0.0.1:1/react"
+	cognition.decisions.transport = backend
 	var world: Node2D = load("res://game/world/scenes/world.tscn").instantiate()
 	root.add_child(world)
 	current_scene = world
@@ -228,7 +224,7 @@ func _run() -> void:
 	life.save_game.life.minute = 1380
 	for resident_id: String in life._actors:
 		life.save_game.life.ensure_person(resident_id, 274415, life._actors.keys(), ["square"], life.save_game.population)
-	backend.always_rest = true
+	backend.set_default("select_goal", {"suitability:REST": 4.0})
 	cognition.save_game.life.minute = 1440 + 650
 	for frame: int in range(90):
 		await physics_frame

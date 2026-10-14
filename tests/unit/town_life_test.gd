@@ -64,14 +64,14 @@ func test_social_exchange_changes_known_ties_once_per_receipt_and_survives_save(
 	var state := TownLifeState.new()
 	state.ensure_person("a", 123, ["a", "b"], ["square"])
 	var before: Dictionary = state.get_person("a").ties.b
-	state.remember_exchange("a", "b", "Hello", "social:1", "a", "b", 0.5)
+	state.remember_exchange("a", "b", "Hello", "social:1", "a", "b")
 	var after: Dictionary = state.get_person("a").ties.b
 	assert_true(is_equal_approx(after.familiarity, minf(1.0, before.familiarity + 0.02)))
-	assert_true(is_equal_approx(after.affection, clampf(before.affection + 0.04, -1.0, 1.0)))
+	assert_eq(after.affection, before.affection)
 	assert_eq(after.trust, before.trust)
 	state.remember_exchange("a", "stranger", "Hello", "social:2", "a", "stranger")
 	assert_false(state.get_person("a").ties.has("stranger"))
-	state.remember_exchange("a", "b", "Again", "social:3", "b", "a", -0.5)
+	state.remember_exchange("a", "b", "Again", "social:3", "b", "a")
 	var data: Dictionary = JSON.parse_string(JSON.stringify(state.to_data()))
 	assert_eq(data.version, 2)
 	assert_eq(int(data.next_social_receipt), 4)
@@ -117,7 +117,8 @@ func _event(id: String = "event:1") -> Dictionary:
 	return {"origin_id": id, "text": "I saw Den hurt Garrin.", "sense": "sight", "player_involved": true}
 
 func _policy() -> Dictionary:
-	return {"remember": true, "importance": 0.8, "belief": 0.7, "affinity": 0.0, "trust_player": -0.03}
+	return {"remember": true, "importance": 0.8, "belief": 0.7, "affinity": 0.0,
+		"dispositions": {"player": {"trust": -0.03}}}
 
 func test_rumors_keep_provenance_do_not_loop_or_amplify_confidence() -> void:
 	var rumors := TownRumors.new()
@@ -230,6 +231,43 @@ func test_weak_accounts_cannot_change_trust_even_with_an_inconsistent_policy() -
 	memory.record_hearsay(profile, account, _policy())
 	assert_eq(memory.snapshot("listener").relationship.trust, 0.0)
 	assert_eq(memory.snapshot("listener").memories[0].confidence, 0.6)
+
+func test_hearsay_dispositions_pass_through_the_incident_budget() -> void:
+	var profile := NpcProfile.new()
+	profile.npc_id = &"listener"
+	var rumors := TownRumors.new()
+	rumors.observe("a", "Mirelle", _event(), _policy(), 500)
+	var account: Dictionary = rumors.hear("listener", "a", "Mirelle",
+		rumors.candidates("a", "listener", 500)[0], _policy(), 501)
+	var policy: Dictionary = _policy()
+	policy.dispositions = {"player": {"trust": -0.5, "fear": 0.5}}
+	var memory := NpcMemoryStore.new()
+	memory.record_hearsay(profile, account, policy)
+	var relationship: Dictionary = memory.snapshot("listener").relationship
+	assert_true(absf(relationship.trust + NpcIncidentBudget.MAX_CHANGE) < 0.0001, "trust %s" % relationship.trust)
+	assert_true(absf(relationship.fear - NpcIncidentBudget.MAX_CHANGE) < 0.0001, "fear %s" % relationship.fear)
+	var spent: Dictionary = memory.minds.get_mind("listener").incident_budget.spent("player", "event:1",
+		NpcIncidentBudget.ORDINARY)
+	assert_true(absf(float(spent.trust) - NpcIncidentBudget.MAX_CHANGE) < 0.0001, "spent %s" % [spent])
+
+func test_weak_accounts_change_only_how_the_listener_sees_the_messenger() -> void:
+	var profile := NpcProfile.new()
+	profile.npc_id = &"listener"
+	var rumors := TownRumors.new()
+	var event: Dictionary = _event()
+	event.basis = "player_claim"
+	rumors.observe("a", "Mirelle", event, _policy(), 500)
+	var account: Dictionary = rumors.hear("listener", "a", "Mirelle",
+		rumors.candidates("a", "listener", 500)[0], _policy(), 501)
+	assert_true(float(account.confidence) < 0.7)
+	var policy: Dictionary = _policy()
+	policy.dispositions = {"a": {"trust": -0.05}, "player": {"trust": -0.05}}
+	var memory := NpcMemoryStore.new()
+	memory.record_hearsay(profile, account, policy)
+	var graph: NpcRelationshipGraph = memory.minds.get_mind("listener").relationships
+	assert_true(absf(graph.get_relationship("a").trust + 0.05) < 0.0001)
+	assert_false(graph.has_subject("player"))
+	assert_eq(memory.snapshot("listener").relationship.trust, 0.0)
 
 func test_expired_accounts_are_not_known_and_stale_assessments_cannot_transfer_new_text() -> void:
 	var rumors := TownRumors.new()

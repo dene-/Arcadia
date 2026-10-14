@@ -34,7 +34,7 @@ func _run() -> void:
 	var backend := WatchTest.MockBackend.new()
 	root.add_child(backend)
 	cognition.backend = backend
-	cognition.events.backend = backend
+	cognition.decisions.transport = backend
 	var world: Node = load("res://game/world/scenes/world.tscn").instantiate()
 	root.add_child(world)
 	current_scene = world
