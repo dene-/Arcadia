@@ -76,8 +76,7 @@ func test_cancel_settles_once_aborts_and_frees_the_transport() -> void:
 	assert_eq(_results[0]["outcome"], DialogBackendClient.OUTCOME_CANCELLED)
 	assert_eq(fake.aborted, 1)
 	assert_false(client.is_pending("a"))
-	await _next_frame()
-	assert_false(is_instance_valid(fake))
+	assert_true(await _freed_within_frames(fake))
 
 func test_late_completion_after_cancel_or_deadline_is_ignored() -> void:
 	var client := _make_v2_client()
@@ -111,8 +110,7 @@ func test_transport_that_never_completes_times_out_at_its_deadline_and_is_freed(
 	var fake: FakeTransport = _fakes[0]
 	assert_eq(fake.aborted, 1)
 	assert_false(client.is_pending("a"))
-	await _next_frame()
-	assert_false(is_instance_valid(fake))
+	assert_true(await _freed_within_frames(fake))
 
 func test_completed_statuses_map_to_outcomes() -> void:
 	var expected := {
@@ -249,3 +247,12 @@ func _run(client: DialogBackendClient, handle: String, deadline_ms: int = 5000) 
 
 func _next_frame() -> void:
 	await (Engine.get_main_loop() as SceneTree).process_frame
+
+# Deferred frees land at the end of a frame; how many frames that takes depends on what else the
+# runner has queued, so wait a few frames at most.
+func _freed_within_frames(object: Object, frames: int = 3) -> bool:
+	for _frame: int in frames:
+		if not is_instance_valid(object):
+			return true
+		await _next_frame()
+	return not is_instance_valid(object)

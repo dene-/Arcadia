@@ -73,4 +73,19 @@ GODOT=/Applications/Godot.app/Contents/MacOS/Godot npm test
 
 The second command also runs a real Godot HTTP exchange against the in-process mock server: player dialogue through `/v2/dialogue/chat`, a v2 `appraise` and `utterance` judgment through `NpcDecisionService`, and `/v2/dialogue/say`. All inference is mocked, including the official SDK transport test; no API credentials or paid requests are used. The HTTP integration test is explicitly skipped when `GODOT` is unset.
 
+## Provider evaluation
+
+`evaluation/cognition-cases.json` is a labeled corpus (52 cases, `prompt_version: "cognition-1"`) over all seven kinds: appraise, select_goal, social, listen, utterance, `dialogue_chat` and `dialogue_say`. Every request is validated by the route's own contract code, and every primary case has a paired counterexample that flips one decisive fact (armed attack vs. routine sparring, bad-news messenger vs. implicated speaker, hungry vs. fed, farewell vs. "before I go" ...). Labels are expected judgment ranges or choices per question id, score orderings, speech-policy outcomes for chat, and text constraints (reference line, word limits, forbidden/required patterns) for generated lines.
+
+`evaluate-cognition.js` runs the cases through the real routes in an in-process app and prints a pass rate per kind:
+
+```bash
+npm run evaluate -- --mock                       # offline; a deterministic fake answers with the labels (used by tests)
+npm run evaluate -- --mock --kind listen         # or --case appraise.noon_bell
+npm run evaluate -- --live --limit 8             # prints the request estimate, then refuses without --yes
+npm run evaluate -- --live --limit 8 --yes       # spends real provider requests
+```
+
+`--live` is opt-in: it refuses (exit 2) without an explicit `--limit N` (cases are taken round-robin across kinds), without `TYPESAFE_API_KEY` (plus `OPENAI_API_KEY` and `OPENAI_MODEL` when text cases are selected; `.env` is read), and without `--yes`. Before executing it prints the case count, the estimated TypeSafe and OpenAI request counts and the worst-case duration; cost is not estimated. Results (model ids, `prompt_version`, timestamp, per-case output and failures) are written to `evaluation/results/` (gitignored); `--out file` also stores a mock run. Exit codes: 0 all labels passed, 1 a label failed, 2 refused or bad usage. `npm test` covers the corpus validation, the mock run, wrong-answer detection and the live refusals without any network access.
+
 See [NPC memory](../../docs/npc_memory.md) for authoring, persistence and tuning. Live model quality and thresholds still need evaluation on actual game dialogue after credentials are configured.

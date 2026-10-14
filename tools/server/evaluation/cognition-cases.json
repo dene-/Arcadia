@@ -1,0 +1,4317 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "description": "Labeled provider-evaluation corpus for the v2 cognition and dialogue contracts. Labels are expected judgment ranges (noul 0..1, score 0..4), choices, orderings and text constraints; paired counterexamples flip one decisive fact. The mock provider answers with the label midpoint; a live run judges real model output against the same labels.",
+  "cases": [
+    {
+      "id": "appraise.armed_attack_visible",
+      "kind": "appraise",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "armed-attack",
+        "role": "primary"
+      },
+      "note": "A visible armed attack is immediate danger and a serious, durable event.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:armed",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0
+          },
+          "relationships": {
+            "raider": {
+              "trust": 0
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A masked man stepped into the forge, drew a sword and swung it at Garrin's head.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "raider"
+            ]
+          }
+        ],
+        "subjects": [
+          "raider"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "immediate_danger": {
+            "min": 0.7
+          },
+          "remember": {
+            "min": 0.7
+          },
+          "importance": {
+            "min": 3
+          },
+          "fear": {
+            "min": 2.5
+          },
+          "disposition:raider:trust:direction": {
+            "one_of": [
+              "NEGATIVE"
+            ]
+          },
+          "disposition:raider:suspicion:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "disposition:raider:fear:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.sword_drill_far_away",
+      "kind": "appraise",
+      "tags": [],
+      "pair": {
+        "id": "armed-attack",
+        "role": "counterexample"
+      },
+      "note": "Visible blades are not danger when it is routine sparring far away.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:drill",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0
+          },
+          "relationships": {
+            "brannoch": {
+              "trust": 0.5
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Across the square two guards traded blows with blunt wooden practice swords in the training yard, as they do every morning.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "brannoch"
+            ]
+          }
+        ],
+        "subjects": [
+          "brannoch"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "immediate_danger": {
+            "max": 0.2
+          },
+          "remember": {
+            "max": 0.35
+          },
+          "importance": {
+            "max": 1
+          },
+          "fear": {
+            "max": 0.5
+          },
+          "disposition:brannoch:fear:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:brannoch:suspicion:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.unseen_cry_behind_door",
+      "kind": "appraise",
+      "tags": [
+        "uncertain_sound"
+      ],
+      "pair": {
+        "id": "heard-vs-seen",
+        "role": "primary"
+      },
+      "note": "Hearing alone does not identify an attacker; the player's dispositions stay put.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:cry",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1",
+            "ev:2"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0
+          },
+          "relationships": {
+            "player": {
+              "trust": 0.1,
+              "suspicion": 0.1
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Garrin heard a cry and a heavy thud from behind the closed storeroom door. He could not see who was there.",
+            "modality": "hearing",
+            "source_id": "",
+            "participant_ids": []
+          },
+          {
+            "id": "ev:2",
+            "text": "The player had been standing in the forge a few minutes earlier.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "player"
+            ]
+          }
+        ],
+        "subjects": [
+          "player"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "disposition:player:suspicion:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:player:trust:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:player:fear:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:player:suspicion:magnitude": {
+            "max": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.player_seen_striking_mirelle",
+      "kind": "appraise",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "heard-vs-seen",
+        "role": "counterexample"
+      },
+      "note": "The same dispositions move when the act is actually seen.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:seen",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "relationships": {
+            "player": {
+              "trust": 0.1,
+              "suspicion": 0.1
+            },
+            "mirelle": {
+              "affection": 0.6
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Garrin watched the player strike Mirelle across the face at her stall.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "player",
+              "mirelle"
+            ]
+          }
+        ],
+        "subjects": [
+          "player"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "disposition:player:suspicion:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "disposition:player:trust:direction": {
+            "one_of": [
+              "NEGATIVE"
+            ]
+          },
+          "disposition:player:suspicion:magnitude": {
+            "min": 2
+          },
+          "anger": {
+            "min": 2
+          },
+          "remember": {
+            "min": 0.7
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.noon_bell",
+      "kind": "appraise",
+      "tags": [],
+      "pair": {
+        "id": "routine-vs-loss",
+        "role": "primary"
+      },
+      "note": "Routine noise is neither danger nor worth remembering.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:bell",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "The market bell rang for noon, as it does every day.",
+            "modality": "hearing",
+            "source_id": "",
+            "participant_ids": []
+          }
+        ],
+        "subjects": []
+      },
+      "labels": {
+        "judgments": {
+          "immediate_danger": {
+            "max": 0.1
+          },
+          "remember": {
+            "max": 0.3
+          },
+          "importance": {
+            "max": 1
+          },
+          "fear": {
+            "max": 0.5
+          },
+          "anger": {
+            "max": 0.5
+          },
+          "grief": {
+            "max": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.brother_found_dead",
+      "kind": "appraise",
+      "tags": [
+        "family_loss"
+      ],
+      "pair": {
+        "id": "routine-vs-loss",
+        "role": "counterexample"
+      },
+      "note": "A family death is grief and a durable memory; the messenger is not at fault.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:loss",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "relationships": {
+            "joren": {
+              "affection": 0.8,
+              "role": "brother"
+            },
+            "mirelle": {
+              "trust": 0.5
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Mirelle told Garrin that his brother Joren had been found dead at the foot of the quarry cliff this morning.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle",
+              "joren"
+            ]
+          }
+        ],
+        "subjects": [
+          "mirelle"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "grief": {
+            "min": 3
+          },
+          "importance": {
+            "min": 3.5
+          },
+          "remember": {
+            "min": 0.85
+          },
+          "immediate_danger": {
+            "max": 0.2
+          },
+          "disposition:mirelle:trust:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:mirelle:affection:direction": {
+            "not": [
+              "NEGATIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.threat_ended_stranger_seized",
+      "kind": "appraise",
+      "tags": [],
+      "pair": {
+        "id": "threat-ended-vs-ongoing",
+        "role": "primary"
+      },
+      "note": "A threat that has passed is relief, not immediate danger.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:ended",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0.1
+          },
+          "relationships": {
+            "brannoch": {
+              "trust": 0.4
+            }
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Brannoch seized the stranger who had threatened Garrin and marched him to the cells.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "brannoch"
+            ]
+          }
+        ],
+        "subjects": [
+          "brannoch"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "relief": {
+            "min": 2
+          },
+          "immediate_danger": {
+            "max": 0.25
+          },
+          "fear": {
+            "max": 1.5
+          },
+          "disposition:brannoch:trust:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "appraise.threat_continues_club_raised",
+      "kind": "appraise",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "threat-ended-vs-ongoing",
+        "role": "counterexample"
+      },
+      "note": "The same stranger, now acting, is immediate danger.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:appraise:ongoing",
+        "npc_id": "garrin_holt",
+        "kind": "appraise",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Garrin",
+            "job": "Blacksmith",
+            "personality": {
+              "bravery": 0.4
+            }
+          },
+          "condition": {
+            "injury": 0.1
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "The stranger who threatened Garrin yesterday stepped in front of him in the lane with a club raised and shouted that this time he would finish it.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "stranger"
+            ]
+          }
+        ],
+        "subjects": [
+          "stranger"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "immediate_danger": {
+            "min": 0.75
+          },
+          "relief": {
+            "max": 1
+          },
+          "fear": {
+            "min": 2.5
+          },
+          "disposition:stranger:fear:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "select_goal.hungry_resident_at_noon",
+      "kind": "select_goal",
+      "tags": [],
+      "pair": {
+        "id": "hungry-vs-fed",
+        "role": "primary"
+      },
+      "note": "A very hungry resident at midday should rank eating above deferrable work.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:hungry",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "EAT_AT_HOME",
+            "WORK_FORGE",
+            "WALK_MARKET"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 750
+          },
+          "needs": {
+            "hunger": 0.9,
+            "rest": 0.2
+          },
+          "current_task": "WORK_FORGE",
+          "obligations": [
+            "Horseshoe order due tomorrow morning; not urgent."
+          ]
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "EAT_AT_HOME",
+            "description": "Go home and eat the midday meal; the pantry has bread and stew."
+          },
+          {
+            "id": "WORK_FORGE",
+            "description": "Keep working on the horseshoe order, due tomorrow morning."
+          },
+          {
+            "id": "WALK_MARKET",
+            "description": "Stroll to the market to look at the stalls."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:EAT_AT_HOME": {
+            "min": 3.5
+          },
+          "suitability:WORK_FORGE": {
+            "max": 2
+          },
+          "suitability:WALK_MARKET": {
+            "max": 2.5
+          },
+          "duration:EAT_AT_HOME": {
+            "one_of": [
+              "BRIEF",
+              "ORDINARY"
+            ]
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:EAT_AT_HOME",
+            "lower": "suitability:WORK_FORGE",
+            "margin": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "select_goal.fed_resident_with_deadline",
+      "kind": "select_goal",
+      "tags": [
+        "workload"
+      ],
+      "pair": {
+        "id": "hungry-vs-fed",
+        "role": "counterexample"
+      },
+      "note": "The same menu with a full stomach and a deadline favors work.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:deadline",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "EAT_AT_HOME",
+            "WORK_FORGE",
+            "WALK_MARKET"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 750
+          },
+          "needs": {
+            "hunger": 0.1,
+            "rest": 0.2
+          },
+          "current_task": "WORK_FORGE",
+          "obligations": [
+            "Horseshoe order must be delivered by sunset; two hours of work remain."
+          ]
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "EAT_AT_HOME",
+            "description": "Go home and eat the midday meal; the pantry has bread and stew."
+          },
+          {
+            "id": "WORK_FORGE",
+            "description": "Keep working on the horseshoe order, due tomorrow morning."
+          },
+          {
+            "id": "WALK_MARKET",
+            "description": "Stroll to the market to look at the stalls."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:WORK_FORGE": {
+            "min": 3.5
+          },
+          "suitability:EAT_AT_HOME": {
+            "max": 1.5
+          },
+          "suitability:WALK_MARKET": {
+            "max": 2
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:WORK_FORGE",
+            "lower": "suitability:EAT_AT_HOME",
+            "margin": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "select_goal.exhausted_late_evening",
+      "kind": "select_goal",
+      "tags": [
+        "fatigue"
+      ],
+      "pair": {
+        "id": "tired-vs-rested",
+        "role": "primary"
+      },
+      "note": "Late and exhausted: rest outranks work and visiting.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:tired",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "REST_HOME",
+            "WORK_LATE",
+            "VISIT_NEIGHBOR"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 1380
+          },
+          "needs": {
+            "rest": 0.95,
+            "hunger": 0.2
+          },
+          "current_task": "WORK_LATE"
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "REST_HOME",
+            "description": "Go home and sleep."
+          },
+          {
+            "id": "WORK_LATE",
+            "description": "Keep working at the forge by lamplight on the order."
+          },
+          {
+            "id": "VISIT_NEIGHBOR",
+            "description": "Visit Mirelle for a long evening talk."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:REST_HOME": {
+            "min": 3.5
+          },
+          "suitability:WORK_LATE": {
+            "max": 1.5
+          },
+          "suitability:VISIT_NEIGHBOR": {
+            "max": 1.5
+          },
+          "duration:REST_HOME": {
+            "one_of": [
+              "EXTENDED",
+              "ORDINARY"
+            ]
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:REST_HOME",
+            "lower": "suitability:WORK_LATE",
+            "margin": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "select_goal.rested_mid_morning",
+      "kind": "select_goal",
+      "tags": [
+        "workload"
+      ],
+      "pair": {
+        "id": "tired-vs-rested",
+        "role": "counterexample"
+      },
+      "note": "Rested mid-morning with the order waiting: work, not sleep.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:rested",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "REST_HOME",
+            "WORK_LATE",
+            "VISIT_NEIGHBOR"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 600
+          },
+          "needs": {
+            "rest": 0.05,
+            "hunger": 0.2
+          },
+          "current_task": "WORK_LATE",
+          "obligations": [
+            "The order is waiting at the forge."
+          ]
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "REST_HOME",
+            "description": "Go home and sleep."
+          },
+          {
+            "id": "WORK_LATE",
+            "description": "Keep working at the forge by lamplight on the order."
+          },
+          {
+            "id": "VISIT_NEIGHBOR",
+            "description": "Visit Mirelle for a long evening talk."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:WORK_LATE": {
+            "min": 3
+          },
+          "suitability:REST_HOME": {
+            "max": 1.5
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:WORK_LATE",
+            "lower": "suitability:REST_HOME",
+            "margin": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "select_goal.injured_arm_heavy_work",
+      "kind": "select_goal",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "injured-vs-healthy",
+        "role": "primary"
+      },
+      "note": "A badly injured arm makes treatment fit and heavy forging poor.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:injured",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "HEAL_AT_HEALER",
+            "HEAVY_FORGING",
+            "REST_HOME"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 660
+          },
+          "condition": {
+            "injury": 0.7,
+            "injured_part": "right arm"
+          },
+          "needs": {
+            "rest": 0.3,
+            "hunger": 0.2
+          },
+          "current_task": "HEAVY_FORGING"
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "HEAL_AT_HEALER",
+            "description": "Visit the healer to have the injured arm treated."
+          },
+          {
+            "id": "HEAVY_FORGING",
+            "description": "Hammer iron at the forge, which needs the right arm."
+          },
+          {
+            "id": "REST_HOME",
+            "description": "Go home and rest."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:HEAL_AT_HEALER": {
+            "min": 3
+          },
+          "suitability:HEAVY_FORGING": {
+            "max": 1.5
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:HEAL_AT_HEALER",
+            "lower": "suitability:HEAVY_FORGING",
+            "margin": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "select_goal.healthy_heavy_work_due",
+      "kind": "select_goal",
+      "tags": [
+        "workload"
+      ],
+      "pair": {
+        "id": "injured-vs-healthy",
+        "role": "counterexample"
+      },
+      "note": "Uninjured, the healer visit is weak and forging is good.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:select_goal:healthy",
+        "npc_id": "garrin_holt",
+        "kind": "select_goal",
+        "ticket": {
+          "task_id": "task:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [
+            "HEAL_AT_HEALER",
+            "HEAVY_FORGING",
+            "REST_HOME"
+          ],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "time": {
+            "minute_of_day": 660
+          },
+          "condition": {
+            "injury": 0
+          },
+          "needs": {
+            "rest": 0.3,
+            "hunger": 0.2
+          },
+          "current_task": "HEAVY_FORGING",
+          "obligations": [
+            "A plough blade is due this week."
+          ]
+        },
+        "evidence": [],
+        "candidates": [
+          {
+            "id": "HEAL_AT_HEALER",
+            "description": "Visit the healer to have the injured arm treated."
+          },
+          {
+            "id": "HEAVY_FORGING",
+            "description": "Hammer iron at the forge, which needs the right arm."
+          },
+          {
+            "id": "REST_HOME",
+            "description": "Go home and rest."
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "suitability:HEAVY_FORGING": {
+            "min": 3
+          },
+          "suitability:HEAL_AT_HEALER": {
+            "max": 1.5
+          }
+        },
+        "orderings": [
+          {
+            "higher": "suitability:HEAVY_FORGING",
+            "lower": "suitability:HEAL_AT_HEALER",
+            "margin": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "social.friendly_neighbor_idle",
+      "kind": "social",
+      "tags": [],
+      "pair": {
+        "id": "engage-vs-busy",
+        "role": "primary"
+      },
+      "note": "Idle and fond of the neighbor: stops, warm tone, keeps a private rumor to himself.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:friendly",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "mirelle",
+            "name": "Mirelle",
+            "relationship": {
+              "affection": 0.6,
+              "trust": 0.6
+            }
+          },
+          "activity": "strolling",
+          "urgency": 0,
+          "needs": {
+            "rest": 0.2
+          },
+          "recent_encounters": [],
+          "accounts": {
+            "news:market_prices": {
+              "summary": "Flour went up two coins at the mill.",
+              "shareable": true
+            },
+            "news:mirelle_husband_debt": {
+              "summary": "Uncertain rumor that Mirelle's husband owes money to the tavern keeper.",
+              "shareable": false,
+              "note": "concerns the counterpart's own household"
+            }
+          }
+        },
+        "evidence": [],
+        "topics": [
+          "news:market_prices",
+          "news:mirelle_husband_debt"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "engage": {
+            "min": 0.6
+          },
+          "topic": {
+            "not": [
+              "news:mirelle_husband_debt"
+            ]
+          },
+          "tone": {
+            "one_of": [
+              "friendly",
+              "curious"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "social.busy_with_urgent_delivery",
+      "kind": "social",
+      "tags": [
+        "workload"
+      ],
+      "pair": {
+        "id": "engage-vs-busy",
+        "role": "counterexample"
+      },
+      "note": "Rushing a delivery with a nearly unknown counterpart: no stop.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:busy",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "mirelle",
+            "name": "Mirelle",
+            "relationship": {
+              "affection": 0.1,
+              "trust": 0.2
+            }
+          },
+          "activity": "carrying finished horseshoes to the stable; the buyer leaves at noon, ten minutes away",
+          "urgency": 0.9,
+          "needs": {
+            "rest": 0.2
+          }
+        },
+        "evidence": [],
+        "topics": [
+          "news:market_prices"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "engage": {
+            "max": 0.3
+          }
+        }
+      }
+    },
+    {
+      "id": "social.distrusted_counterpart_tone",
+      "kind": "social",
+      "tags": [],
+      "pair": {
+        "id": "tone-by-relationship",
+        "role": "primary"
+      },
+      "note": "A distrusted man gets a reserved tone and no private grief.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:distrust",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "thorne",
+            "name": "Thorne",
+            "relationship": {
+              "trust": -0.7,
+              "suspicion": 0.8,
+              "affection": -0.3
+            }
+          },
+          "activity": "walking",
+          "needs": {
+            "rest": 0.3
+          },
+          "accounts": {
+            "news:joren_funeral": {
+              "summary": "Garrin's brother Joren will be buried tomorrow.",
+              "shareable": true,
+              "note": "private grief; share only with people he trusts"
+            }
+          }
+        },
+        "evidence": [],
+        "topics": [
+          "news:joren_funeral"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "tone": {
+            "one_of": [
+              "reserved",
+              "curt"
+            ]
+          },
+          "topic": {
+            "one_of": [
+              "SMALL_TALK"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "social.trusted_friend_grief_shared",
+      "kind": "social",
+      "tags": [
+        "family_loss"
+      ],
+      "pair": {
+        "id": "tone-by-relationship",
+        "role": "counterexample"
+      },
+      "note": "A trusted friend gets the private grief and a kind tone.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:friend",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "oris",
+            "name": "Oris",
+            "relationship": {
+              "trust": 0.8,
+              "affection": 0.7
+            }
+          },
+          "activity": "walking",
+          "needs": {
+            "rest": 0.3
+          },
+          "accounts": {
+            "news:joren_funeral": {
+              "summary": "Garrin's brother Joren died yesterday and will be buried tomorrow.",
+              "shareable": true,
+              "note": "private grief; share only with people he trusts"
+            }
+          }
+        },
+        "evidence": [],
+        "topics": [
+          "news:joren_funeral"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "topic": {
+            "one_of": [
+              "news:joren_funeral"
+            ]
+          },
+          "tone": {
+            "not": [
+              "curt"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "social.topic_already_discussed",
+      "kind": "social",
+      "tags": [],
+      "pair": {
+        "id": "repeat-topic",
+        "role": "primary"
+      },
+      "note": "A topic already covered minutes ago is not repeated.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:repeat",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "ilsa",
+            "name": "Ilsa",
+            "relationship": {
+              "affection": 0.4,
+              "trust": 0.4
+            }
+          },
+          "activity": "strolling",
+          "needs": {
+            "rest": 0.2
+          },
+          "accounts": {
+            "news:market_prices": {
+              "summary": "Flour went up two coins at the mill.",
+              "shareable": true
+            }
+          },
+          "already_discussed_with_counterpart": [
+            {
+              "topic": "news:market_prices",
+              "minutes_ago": 3
+            }
+          ]
+        },
+        "evidence": [],
+        "topics": [
+          "news:market_prices"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "topic": {
+            "one_of": [
+              "SMALL_TALK"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "social.fresh_relevant_topic",
+      "kind": "social",
+      "tags": [],
+      "pair": {
+        "id": "repeat-topic",
+        "role": "counterexample"
+      },
+      "note": "A fresh, relevant, shareable topic is the natural thing to bring up.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:social:fresh",
+        "npc_id": "garrin_holt",
+        "kind": "social",
+        "ticket": {
+          "task_id": "task:eval:social",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "counterpart": {
+            "id": "ilsa",
+            "name": "Ilsa",
+            "role": "baker who buys flour",
+            "relationship": {
+              "affection": 0.4,
+              "trust": 0.4
+            }
+          },
+          "activity": "strolling",
+          "needs": {
+            "rest": 0.2
+          },
+          "accounts": {
+            "news:market_prices": {
+              "summary": "Flour went up two coins at the mill.",
+              "shareable": true
+            }
+          },
+          "already_discussed_with_counterpart": []
+        },
+        "evidence": [],
+        "topics": [
+          "news:market_prices"
+        ],
+        "tones": [
+          "friendly",
+          "reserved",
+          "concerned",
+          "curious",
+          "curt"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "topic": {
+            "one_of": [
+              "news:market_prices"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.messenger_brings_bad_news",
+      "kind": "listen",
+      "tags": [],
+      "pair": {
+        "id": "messenger-vs-implicated",
+        "role": "primary"
+      },
+      "note": "Bad news from a trusted source is believed; the messenger is not blamed.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:messenger",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "mirelle",
+            "name": "Mirelle"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": 0.6,
+              "affection": 0.5
+            }
+          },
+          "account": {
+            "hops": 0,
+            "confidence": 0.9,
+            "origin": "mirelle",
+            "firsthand": true
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Mirelle says a thief climbed into Garrin's storeroom last night and carried off a sack of iron bars; she saw the open window on her way past.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle"
+            ]
+          }
+        ],
+        "subjects": [
+          "mirelle"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "min": 0.65
+          },
+          "remember": {
+            "min": 0.6
+          },
+          "importance": {
+            "min": 2
+          },
+          "disposition:mirelle:trust:direction": {
+            "not": [
+              "NEGATIVE"
+            ]
+          },
+          "disposition:mirelle:suspicion:direction": {
+            "one_of": [
+              "UNCHANGED",
+              "NEGATIVE"
+            ]
+          },
+          "disposition:mirelle:affection:direction": {
+            "not": [
+              "NEGATIVE"
+            ]
+          },
+          "disposition:mirelle:fear:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.messenger_implicated_by_evidence",
+      "kind": "listen",
+      "tags": [],
+      "pair": {
+        "id": "messenger-vs-implicated",
+        "role": "counterexample"
+      },
+      "note": "When the evidence itself implicates the speaker, suspicion rising is justified.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:implicated",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1",
+            "ev:2"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "mirelle",
+            "name": "Mirelle"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": 0.6,
+              "affection": 0.5
+            }
+          },
+          "account": {
+            "hops": 0,
+            "confidence": 0.9,
+            "origin": "mirelle",
+            "firsthand": true
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Mirelle says a thief took the iron bars from Garrin's storeroom.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle"
+            ]
+          },
+          {
+            "id": "ev:2",
+            "text": "Garrin found the missing iron bars under a tarp in Mirelle's own cart.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "mirelle"
+            ]
+          }
+        ],
+        "subjects": [
+          "mirelle"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "max": 0.3
+          },
+          "disposition:mirelle:suspicion:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "disposition:mirelle:trust:direction": {
+            "one_of": [
+              "NEGATIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.single_origin_repeated",
+      "kind": "listen",
+      "tags": [
+        "conflicting_rumor"
+      ],
+      "pair": {
+        "id": "repetition-vs-corroboration",
+        "role": "primary"
+      },
+      "note": "A second telling of one story from the same origin is not independent corroboration.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:repeated",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "oris",
+            "name": "Oris"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": 0.3
+            }
+          },
+          "account": {
+            "hops": 2,
+            "confidence": 0.5,
+            "origin": "dan",
+            "prior_hearings": [
+              {
+                "from": "mirelle",
+                "origin": "dan"
+              }
+            ]
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Oris says the tavern keeper Dan told her the quarry will close by winter. Mirelle told Garrin the same story yesterday, also from Dan.",
+            "modality": "hearing",
+            "source_id": "oris",
+            "participant_ids": [
+              "oris",
+              "dan"
+            ]
+          }
+        ],
+        "subjects": [
+          "oris"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "max": 0.5
+          },
+          "importance": {
+            "max": 2.5
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.independent_corroboration",
+      "kind": "listen",
+      "tags": [
+        "conflicting_rumor"
+      ],
+      "pair": {
+        "id": "repetition-vs-corroboration",
+        "role": "counterexample"
+      },
+      "note": "Two independent eyewitness accounts of the same notice are corroboration.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:corroborated",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1",
+            "ev:2"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "oris",
+            "name": "Oris"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": 0.3
+            }
+          },
+          "account": {
+            "hops": 0,
+            "confidence": 0.8,
+            "independent_sources": 2
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Oris says she watched the quarry foreman nail a closure notice to the gate herself.",
+            "modality": "hearing",
+            "source_id": "oris",
+            "participant_ids": [
+              "oris"
+            ]
+          },
+          {
+            "id": "ev:2",
+            "text": "Mirelle, who has not spoken to Oris, says she read the same notice on the quarry gate.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle"
+            ]
+          }
+        ],
+        "subjects": [
+          "oris"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "min": 0.75
+          },
+          "remember": {
+            "min": 0.6
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.rumor_contradicts_own_knowledge",
+      "kind": "listen",
+      "tags": [
+        "conflicting_rumor"
+      ],
+      "pair": {
+        "id": "rumor-vs-matching",
+        "role": "primary"
+      },
+      "note": "A distrusted speaker's claim that Garrin knows to be false is not believed and moves nothing.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:contradicted",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "thorne",
+            "name": "Thorne"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": -0.5
+            },
+            "knowledge": [
+              "Garrin was with the player in the forge from late morning until mid afternoon and knows the player did not leave."
+            ]
+          },
+          "account": {
+            "hops": 0,
+            "confidence": 0.6,
+            "origin": "thorne",
+            "firsthand": true
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Thorne says the player stole a loaf from Mirelle's stall at noon.",
+            "modality": "hearing",
+            "source_id": "thorne",
+            "participant_ids": [
+              "thorne",
+              "player"
+            ]
+          }
+        ],
+        "subjects": [
+          "thorne",
+          "player"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "max": 0.3
+          },
+          "disposition:player:suspicion:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:player:trust:direction": {
+            "one_of": [
+              "UNCHANGED"
+            ]
+          },
+          "disposition:thorne:trust:direction": {
+            "one_of": [
+              "NEGATIVE",
+              "UNCHANGED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "listen.trusted_account_matches_own_sighting",
+      "kind": "listen",
+      "tags": [],
+      "pair": {
+        "id": "rumor-vs-matching",
+        "role": "counterexample"
+      },
+      "note": "A trusted account that matches what Garrin himself saw is believed and lowers trust in the player.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:listen:matching",
+        "npc_id": "garrin_holt",
+        "kind": "listen",
+        "ticket": {
+          "task_id": "conversation:eval",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "speaker": {
+            "id": "mirelle",
+            "name": "Mirelle"
+          },
+          "listener": {
+            "relationship_to_speaker": {
+              "trust": 0.7
+            },
+            "knowledge": [
+              "Garrin saw the player pocket bread beside Mirelle's stall at noon."
+            ]
+          },
+          "account": {
+            "hops": 0,
+            "confidence": 0.9,
+            "origin": "mirelle",
+            "firsthand": true
+          }
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Mirelle says she saw the player take a loaf from her stall at noon and walk off without paying.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle",
+              "player"
+            ]
+          }
+        ],
+        "subjects": [
+          "mirelle",
+          "player"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "believe_account": {
+            "min": 0.75
+          },
+          "importance": {
+            "min": 2
+          },
+          "disposition:player:trust:direction": {
+            "one_of": [
+              "NEGATIVE"
+            ]
+          },
+          "disposition:player:suspicion:direction": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.quiet_work_no_speech",
+      "kind": "utterance",
+      "tags": [],
+      "pair": {
+        "id": "silence-vs-fire",
+        "role": "primary"
+      },
+      "note": "Nothing warrants speech: silence.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:quiet",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "hammering alone at the forge",
+          "verbal_reactivity": 0.6,
+          "alone": true
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Garrin set a cooled horseshoe on the rack and picked up the next bar of iron.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": []
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "max": 0.25
+          },
+          "intent": {
+            "one_of": [
+              "silence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.thatch_fire_near_neighbor",
+      "kind": "utterance",
+      "tags": [],
+      "pair": {
+        "id": "silence-vs-fire",
+        "role": "counterexample"
+      },
+      "note": "A fire over an unaware neighbor warrants a warning.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:fire",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "hammering at the forge",
+          "verbal_reactivity": 0.6
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Sparks from the forge chimney lit the thatch above Mirelle's stall and flames are spreading while she works below, unaware.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "mirelle"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "min": 0.75
+          },
+          "intent": {
+            "one_of": [
+              "warn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.reserved_resident_minor_jostle",
+      "kind": "utterance",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "reserved-vs-reactive",
+        "role": "primary"
+      },
+      "note": "A very reserved resident says nothing about a harmless brush.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:reserved",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "walking",
+          "verbal_reactivity": 0.1,
+          "temperament": "very reserved"
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A cart wheel brushed Garrin's coat as it passed; he was not hurt.",
+            "modality": "touch",
+            "source_id": "",
+            "participant_ids": []
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "max": 0.3
+          },
+          "intent": {
+            "one_of": [
+              "silence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.reactive_resident_struck",
+      "kind": "utterance",
+      "tags": [
+        "injury"
+      ],
+      "pair": {
+        "id": "reserved-vs-reactive",
+        "role": "counterexample"
+      },
+      "note": "A talkative resident who is struck speaks up.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:reactive",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "working",
+          "verbal_reactivity": 0.9,
+          "temperament": "outspoken"
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A stranger struck Garrin's shoulder with a club outside the forge.",
+            "modality": "touch",
+            "source_id": "",
+            "participant_ids": [
+              "player"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "min": 0.7
+          },
+          "intent": {
+            "one_of": [
+              "protest",
+              "request_help",
+              "warn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.guard_sees_drawn_weapon",
+      "kind": "utterance",
+      "tags": [
+        "guard_warning"
+      ],
+      "pair": {
+        "id": "guard-warning-vs-lawful",
+        "role": "primary"
+      },
+      "note": "A guard on patrol warns when a weapon is drawn on a vendor.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:guard",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Brannoch",
+            "job": "Guard"
+          },
+          "activity": "patrolling the market",
+          "duty": "keep the peace and warn before acting",
+          "verbal_reactivity": 0.7
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A man at the cheese stall drew a knife and shouted at the seller, who stepped back with her hands up.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "knife_man"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "min": 0.75
+          },
+          "intent": {
+            "one_of": [
+              "warn"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.guard_sees_craftsman_sharpening",
+      "kind": "utterance",
+      "tags": [
+        "guard_warning"
+      ],
+      "pair": {
+        "id": "guard-warning-vs-lawful",
+        "role": "counterexample"
+      },
+      "note": "The same guard says nothing about a craftsman at his trade.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:lawful",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "npc": {
+            "name": "Brannoch",
+            "job": "Guard"
+          },
+          "activity": "patrolling the market",
+          "duty": "keep the peace and warn before acting",
+          "verbal_reactivity": 0.7
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A cutler at his own stall sharpened a knife on a whetstone, as he does every market day.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "cutler"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "max": 0.3
+          },
+          "intent": {
+            "one_of": [
+              "silence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.companion_leaving_farewell",
+      "kind": "utterance",
+      "tags": [
+        "farewell"
+      ],
+      "pair": {
+        "id": "farewell-vs-passerby",
+        "role": "primary"
+      },
+      "note": "A companion taking leave in the middle of a chat is answered.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:leaving",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "chatting with Mirelle at the well",
+          "verbal_reactivity": 0.6
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "Mirelle said she had to get home before dark, smiled and began walking away.",
+            "modality": "hearing",
+            "source_id": "mirelle",
+            "participant_ids": [
+              "mirelle"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "min": 0.5
+          },
+          "intent": {
+            "one_of": [
+              "farewell",
+              "acknowledge"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "utterance.stranger_passes_far_away",
+      "kind": "utterance",
+      "tags": [],
+      "pair": {
+        "id": "farewell-vs-passerby",
+        "role": "counterexample"
+      },
+      "note": "A stranger far away does not draw a word.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:utterance:passerby",
+        "npc_id": "garrin_holt",
+        "kind": "utterance",
+        "ticket": {
+          "task_id": "task:eval:speech",
+          "task_generation": 1,
+          "created_minute": 750,
+          "read_versions": {
+            "knowledge": 1,
+            "relationships": 1,
+            "condition": 1,
+            "task": 1
+          },
+          "evidence_ids": [
+            "ev:1"
+          ],
+          "candidate_ids": [],
+          "context_hash": "h:eval"
+        },
+        "state": {
+          "activity": "chatting with Mirelle at the well",
+          "verbal_reactivity": 0.6
+        },
+        "evidence": [
+          {
+            "id": "ev:1",
+            "text": "A traveler Garrin has never met crossed the far side of the square without looking at him.",
+            "modality": "sight",
+            "source_id": "",
+            "participant_ids": [
+              "traveler"
+            ]
+          }
+        ],
+        "intents": [
+          "warn",
+          "protest",
+          "request_help",
+          "acknowledge",
+          "farewell",
+          "silence"
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "speak": {
+            "max": 0.3
+          },
+          "intent": {
+            "one_of": [
+              "silence"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.farewell_thanks",
+      "kind": "dialogue_chat",
+      "tags": [
+        "farewell"
+      ],
+      "pair": {
+        "id": "farewell-vs-before-i-go",
+        "role": "primary"
+      },
+      "note": "A present-tense leave-taking ends the conversation and the reply asks nothing.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:farewell",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Right, I have to go now. Thanks, Garrin.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [
+          {
+            "speaker": "player",
+            "text": "Any horseshoes?"
+          },
+          {
+            "speaker": "npc",
+            "text": "Two on the rack. Four coins."
+          }
+        ],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "should_end_conversation": {
+            "min": 0.85
+          },
+          "interaction_intent": {
+            "one_of": [
+              "FAREWELL"
+            ]
+          }
+        },
+        "policy": {
+          "end_conversation": true,
+          "interaction_intent": "FAREWELL"
+        },
+        "response": {
+          "reference": "Take care on the road.",
+          "forbid_patterns": [
+            "\\?"
+          ],
+          "max_words": 20
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.before_i_go_question",
+      "kind": "dialogue_chat",
+      "tags": [
+        "farewell"
+      ],
+      "pair": {
+        "id": "farewell-vs-before-i-go",
+        "role": "counterexample"
+      },
+      "note": "'Before I go' with a question does not end the conversation yet.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:beforego",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Before I go, where is the inn?",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "should_end_conversation": {
+            "max": 0.4
+          },
+          "interaction_intent": {
+            "one_of": [
+              "QUESTION"
+            ]
+          }
+        },
+        "policy": {
+          "end_conversation": false,
+          "interaction_intent": "QUESTION"
+        },
+        "response": {
+          "reference": "Past the well, on the left.",
+          "max_words": 30
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.promise_hammer",
+      "kind": "dialogue_chat",
+      "tags": [
+        "promise"
+      ],
+      "pair": {
+        "id": "promise-vs-greeting",
+        "role": "primary"
+      },
+      "note": "A concrete promise is remembered and important.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:promise",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "I promise I will bring your hammer back by tomorrow noon.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [
+          {
+            "speaker": "npc",
+            "text": "That hammer is the only one I trust."
+          }
+        ],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "should_remember": {
+            "min": 0.75
+          },
+          "memory_importance": {
+            "min": 2
+          },
+          "interaction_intent": {
+            "one_of": [
+              "PROMISE"
+            ]
+          }
+        },
+        "policy": {
+          "remember": true,
+          "interaction_intent": "PROMISE"
+        },
+        "response": {
+          "reference": "Noon, then. Don't be late.",
+          "forbid_patterns": [
+            "thank you for returning",
+            "\\bas an ai\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.plain_greeting",
+      "kind": "dialogue_chat",
+      "tags": [
+        "greeting"
+      ],
+      "pair": {
+        "id": "promise-vs-greeting",
+        "role": "counterexample"
+      },
+      "note": "A plain greeting is routine: not remembered, low importance.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:greeting",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Good morning.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "should_remember": {
+            "max": 0.3
+          },
+          "memory_importance": {
+            "max": 1
+          },
+          "interaction_intent": {
+            "one_of": [
+              "GREETING"
+            ]
+          }
+        },
+        "policy": {
+          "remember": false,
+          "interaction_intent": "GREETING"
+        },
+        "response": {
+          "reference": "Morning.",
+          "max_words": 15,
+          "forbid_patterns": [
+            "how can i help",
+            "\\bas an ai\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.guard_player_surrenders",
+      "kind": "dialogue_chat",
+      "tags": [
+        "surrender",
+        "guard_warning"
+      ],
+      "pair": {
+        "id": "surrender-vs-demand-of-other",
+        "role": "primary"
+      },
+      "note": "A present-tense surrender is understood as one and the guard does not invent arrest, fines or forgiveness.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:surrender",
+        "npc_id": "brannoch",
+        "npc": {
+          "id": "brannoch",
+          "profile": {
+            "name": "Brannoch",
+            "job": "Guard",
+            "age": 38,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "MEASURED",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "I give up. I'm putting my weapon down.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "patrolling the market",
+          "location": "market",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          },
+          "recent_events": [
+            "The player attacked a villager in the market and Brannoch drew his sword."
+          ]
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "interaction_intent": {
+            "one_of": [
+              "SURRENDER"
+            ]
+          }
+        },
+        "policy": {
+          "interaction_intent": "SURRENDER"
+        },
+        "response": {
+          "reference": "Good. Hands where I can see them.",
+          "forbid_patterns": [
+            "\\b(arrest(ed)?|jail(ed)?|prison|fine[ds]?|forgiv\\w*)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.surrender_demanded_of_other",
+      "kind": "dialogue_chat",
+      "tags": [
+        "surrender"
+      ],
+      "pair": {
+        "id": "surrender-vs-demand-of-other",
+        "role": "counterexample"
+      },
+      "note": "Telling someone else to surrender is not a surrender.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:demand",
+        "npc_id": "brannoch",
+        "npc": {
+          "id": "brannoch",
+          "profile": {
+            "name": "Brannoch",
+            "job": "Guard",
+            "age": 38,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "MEASURED",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Tell the bandit to surrender, not me.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "patrolling the market",
+          "location": "market",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "interaction_intent": {
+            "not": [
+              "SURRENDER"
+            ]
+          }
+        },
+        "response": {
+          "reference": "Stay back. I'll deal with him.",
+          "forbid_patterns": [
+            "\\b(arrest(ed)?|jail(ed)?|prison|forgiv\\w*)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.player_threatens_forge",
+      "kind": "dialogue_chat",
+      "tags": [],
+      "pair": {
+        "id": "threat-vs-kindness",
+        "role": "primary"
+      },
+      "note": "A threat is remembered, read as a threat, and answered defensively; suspicion and fear rise.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:threat",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "I will burn down your forge.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": -0.2,
+            "respect": 0,
+            "affection": -0.1,
+            "fear": 0.3,
+            "suspicion": 0.4
+          }
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "should_remember": {
+            "min": 0.7
+          },
+          "interaction_intent": {
+            "one_of": [
+              "THREAT"
+            ]
+          },
+          "response_mode": {
+            "one_of": [
+              "DEFENSIVE",
+              "GUARDED",
+              "REFUSE"
+            ]
+          },
+          "suspicion_change": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "fear_change": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "trust_change": {
+            "one_of": [
+              "NEGATIVE"
+            ]
+          }
+        },
+        "policy": {
+          "remember": true,
+          "interaction_intent": "THREAT"
+        },
+        "response": {
+          "reference": "Try it and see what happens.",
+          "forbid_patterns": [
+            "how can i help",
+            "\\bas an ai\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.player_offers_bread",
+      "kind": "dialogue_chat",
+      "tags": [],
+      "pair": {
+        "id": "threat-vs-kindness",
+        "role": "counterexample"
+      },
+      "note": "A gift made in front of the NPC is kindness: warm or neutral, trust rises, suspicion does not.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:bread",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Here, I brought you fresh bread. Take it.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          },
+          "recent_events": [
+            "The player set a loaf of fresh bread on the forge bench."
+          ]
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "interaction_intent": {
+            "one_of": [
+              "KINDNESS"
+            ]
+          },
+          "response_mode": {
+            "one_of": [
+              "WARM",
+              "NEUTRAL"
+            ]
+          },
+          "trust_change": {
+            "one_of": [
+              "POSITIVE"
+            ]
+          },
+          "suspicion_change": {
+            "not": [
+              "POSITIVE"
+            ]
+          }
+        },
+        "policy": {
+          "interaction_intent": "KINDNESS"
+        },
+        "response": {
+          "reference": "That's kind of you. Thank you.",
+          "forbid_patterns": [
+            "how can i help"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.greeting_from_recent_attacker",
+      "kind": "dialogue_chat",
+      "tags": [
+        "greeting",
+        "injury"
+      ],
+      "pair": {
+        "id": "attacker-vs-neighbor-greeting",
+        "role": "primary"
+      },
+      "note": "A hello does not erase an assault: guarded, no trust gain.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:attacker",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Hello, Garrin. Nice day.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.4,
+            "trust": -0.6,
+            "respect": 0,
+            "affection": -0.2,
+            "fear": 0.6,
+            "suspicion": 0.7
+          },
+          "current_concerns": [
+            "The player struck Garrin's shoulder with a club outside the forge an hour ago."
+          ]
+        },
+        "recent_dialogue": [],
+        "memories": [
+          {
+            "id": "mem:garrin:4",
+            "type": "episodic",
+            "gist": "Den struck me outside the forge.",
+            "confidence": 0.8
+          }
+        ]
+      },
+      "labels": {
+        "judgments": {
+          "interaction_intent": {
+            "one_of": [
+              "GREETING"
+            ]
+          },
+          "response_mode": {
+            "one_of": [
+              "GUARDED",
+              "DEFENSIVE",
+              "REFUSE"
+            ]
+          },
+          "trust_change": {
+            "not": [
+              "POSITIVE"
+            ]
+          }
+        },
+        "policy": {
+          "interaction_intent": "GREETING"
+        },
+        "response": {
+          "reference": "Don't. Not after the forge.",
+          "forbid_patterns": [
+            "\\b(welcome|good to see you)\\b",
+            "how can i help"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_chat.greeting_from_neighbor",
+      "kind": "dialogue_chat",
+      "tags": [
+        "greeting"
+      ],
+      "pair": {
+        "id": "attacker-vs-neighbor-greeting",
+        "role": "counterexample"
+      },
+      "note": "The same hello from a trusted neighbor gets an ordinary reply.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:chat:neighbor",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "player": {
+          "message": "Hello, Garrin. Nice day.",
+          "identity": {
+            "name": "Den",
+            "sex": "Male"
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.7,
+            "trust": 0.6,
+            "respect": 0.3,
+            "affection": 0.5,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "recent_dialogue": [],
+        "memories": []
+      },
+      "labels": {
+        "judgments": {
+          "interaction_intent": {
+            "one_of": [
+              "GREETING"
+            ]
+          },
+          "response_mode": {
+            "one_of": [
+              "WARM",
+              "NEUTRAL"
+            ]
+          }
+        },
+        "policy": {
+          "interaction_intent": "GREETING"
+        },
+        "response": {
+          "reference": "Morning. Fine day for it.",
+          "forbid_patterns": [
+            "how can i help"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.warn_unseen_noise_no_culprit",
+      "kind": "dialogue_say",
+      "tags": [
+        "uncertain_sound",
+        "guard_warning"
+      ],
+      "pair": {
+        "id": "say-warn",
+        "role": "primary"
+      },
+      "note": "A warning about an unidentified sound names no culprit and claims no arrest.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:warn_unseen",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            },
+            {
+              "id": "thorne",
+              "name": "Thorne",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "warn",
+        "event": {
+          "text": "A shout and a crash came from the alley behind the forge. Nobody was seen.",
+          "sense": "hearing",
+          "player_involved": false
+        },
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Mirelle, keep back from the alley. Something crashed.",
+          "max_words": 25,
+          "forbid_patterns": [
+            "\\bThorne\\b",
+            "\\b(arrest|robber|thief|bandit)\\w*"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.warn_named_culprit_supplied",
+      "kind": "dialogue_say",
+      "tags": [],
+      "pair": {
+        "id": "say-warn",
+        "role": "counterexample"
+      },
+      "note": "When the culprit and deed are supplied the warning may use them, but no completed action beyond them.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:warn_named",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            },
+            {
+              "id": "thorne",
+              "name": "Thorne",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "warn",
+        "event": {
+          "text": "Thorne swung a club at Garrin outside the forge.",
+          "sense": "sight",
+          "player_involved": false
+        },
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Mirelle, stay clear of Thorne. He swung a club at me.",
+          "max_words": 25,
+          "require_any": [
+            "\\bThorne\\b",
+            "\\bclub\\b"
+          ],
+          "forbid_patterns": [
+            "\\b(arrested|locked up|dead|killed)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.farewell_no_question",
+      "kind": "dialogue_say",
+      "tags": [
+        "farewell"
+      ],
+      "pair": {
+        "id": "say-question",
+        "role": "primary"
+      },
+      "note": "A farewell asks no question and opens no topic.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:farewell",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "18:40",
+          "world_minute": 1120,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "farewell",
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Mind the dark. Good night, Mirelle.",
+          "max_words": 12,
+          "forbid_patterns": [
+            "\\?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.request_help_asks",
+      "kind": "dialogue_say",
+      "tags": [],
+      "pair": {
+        "id": "say-question",
+        "role": "counterexample"
+      },
+      "note": "Requesting help does ask, and does not claim the help already arrived.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:request_help",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "request_help",
+        "event": {
+          "text": "The forge roof timber cracked and a beam hangs over the anvil.",
+          "sense": "sight",
+          "player_involved": false
+        },
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Mirelle, I need a hand with this beam. Can you help?",
+          "max_words": 25,
+          "require_any": [
+            "\\?",
+            "\\bhelp\\b",
+            "\\bhand\\b",
+            "\\bneed\\b",
+            "\\bplease\\b"
+          ],
+          "forbid_patterns": [
+            "\\b(fixed|repaired|already)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.share_rumor_keeps_attribution",
+      "kind": "dialogue_say",
+      "tags": [
+        "conflicting_rumor"
+      ],
+      "pair": {
+        "id": "hearsay-vs-firsthand",
+        "role": "primary"
+      },
+      "note": "A shared rumor keeps who said it and that it is hearsay.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:share",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            },
+            {
+              "id": "oris",
+              "name": "Oris",
+              "relationship": "neighbor"
+            },
+            {
+              "id": "dan",
+              "name": "Dan",
+              "relationship": "tavern keeper"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "share",
+        "topic": {
+          "account": "Oris says Dan the tavern keeper told her the quarry will close by winter.",
+          "certainty": "hearsay",
+          "originator": "Oris"
+        },
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Oris says Dan told her the quarry closes by winter. Don't know if it's true.",
+          "max_words": 25,
+          "require_any": [
+            "\\bOris\\b",
+            "\\bDan\\b",
+            "\\b(heard|says|said|told)\\b"
+          ],
+          "forbid_patterns": [
+            "\\bI (saw|watched|know)\\b",
+            "\\bfor certain\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.report_firsthand_plain",
+      "kind": "dialogue_say",
+      "tags": [],
+      "pair": {
+        "id": "hearsay-vs-firsthand",
+        "role": "counterexample"
+      },
+      "note": "A firsthand report is stated plainly, not as rumor.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:report",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "report",
+        "topic": {
+          "account": "Garrin saw the mill wheel crack this morning.",
+          "certainty": "firsthand"
+        },
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "The mill wheel cracked this morning. I saw it.",
+          "max_words": 25,
+          "forbid_patterns": [
+            "\\b(heard|they say|rumou?rs?|told me)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.small_talk_spare_voice",
+      "kind": "dialogue_say",
+      "tags": [],
+      "pair": {
+        "id": "voice-spare-vs-expansive",
+        "role": "primary"
+      },
+      "note": "A spare, blunt speaker makes small talk in a few words with no news.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:small_spare",
+        "npc_id": "garrin_holt",
+        "npc": {
+          "id": "garrin_holt",
+          "profile": {
+            "name": "Garrin Holt",
+            "job": "Blacksmith",
+            "age": 46,
+            "voice": {
+              "register": "PLAIN",
+              "cadence": "BRISK",
+              "verbosity": "SPARE",
+              "directness": "BLUNT"
+            }
+          }
+        },
+        "context": {
+          "activity": "working at the forge",
+          "location": "forge",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "mirelle",
+              "name": "Mirelle",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "small_talk",
+        "listener": {
+          "id": "mirelle",
+          "name": "Mirelle"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Busy day. Iron won't wait.",
+          "max_words": 8,
+          "forbid_patterns": [
+            "\\b(rumou?rs?|heard that|they say|danger|attack|thief)\\b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dialogue_say.small_talk_expansive_voice",
+      "kind": "dialogue_say",
+      "tags": [],
+      "pair": {
+        "id": "voice-spare-vs-expansive",
+        "role": "counterexample"
+      },
+      "note": "An expansive, familiar speaker makes the same small talk in more words, still with no news.",
+      "request": {
+        "protocol_version": 2,
+        "prompt_version": "cognition-1",
+        "request_id": "eval:say:small_expansive",
+        "npc_id": "mirelle_vance",
+        "npc": {
+          "id": "mirelle_vance",
+          "profile": {
+            "name": "Mirelle Vance",
+            "job": "Baker",
+            "age": 34,
+            "voice": {
+              "register": "FAMILIAR",
+              "cadence": "UNHURRIED",
+              "verbosity": "EXPANSIVE",
+              "directness": "TACTFUL",
+              "humor": "PLAYFUL",
+              "disclosure": "OPEN",
+              "questions": "INQUISITIVE"
+            }
+          }
+        },
+        "context": {
+          "activity": "kneading dough at the bakery",
+          "location": "bakery",
+          "world_time": "09:12",
+          "world_minute": 552,
+          "sleeping": false,
+          "known_townspeople": [
+            {
+              "id": "garrin_holt",
+              "name": "Garrin",
+              "relationship": "neighbor"
+            }
+          ],
+          "relationship": {
+            "familiarity": 0.3,
+            "trust": 0,
+            "respect": 0,
+            "affection": 0,
+            "fear": 0,
+            "suspicion": 0
+          }
+        },
+        "intent": "small_talk",
+        "listener": {
+          "id": "garrin_holt",
+          "name": "Garrin"
+        }
+      },
+      "labels": {
+        "response": {
+          "reference": "Morning, Garrin. The bread is rising nicely, and the whole lane smells of it already.",
+          "min_words": 8,
+          "max_words": 25,
+          "forbid_patterns": [
+            "\\b(rumou?rs?|heard that|they say|danger|attack|thief)\\b"
+          ]
+        }
+      }
+    }
+  ]
+}
