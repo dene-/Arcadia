@@ -8,6 +8,9 @@ var store: NpcMemoryStore = NpcMemoryStore.new()
 var retriever: NpcMemoryRetriever = NpcMemoryRetriever.new()
 var persist: bool = true
 var save_callback: Callable
+## The player session exchanges belong to, and the store minute it started at.
+var session_id: String = ""
+var session_start: float = -1.0
 var _generation: int = 0
 
 func cancel() -> void:
@@ -35,7 +38,8 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 		"player": {"message": message, "identity": current.get("player_identity",
 			preload("res://game/resources/actors/player_data.tres").social_identity())},
 		"context": {"current": perception, "relationship": state.relationship,
-			"recent_dialogue": state.recent_dialogue, "memories": candidates},
+			"recent_dialogue": NpcMemoryStore.history_for_prompt(state.recent_dialogue,
+				store.world_minute, session_id, session_start), "memories": candidates},
 	}
 	var judgment: Dictionary = await backend.request_decision(payload)
 	if not _is_current(generation, current_guard) or not NpcMemoryStore.is_valid_policy(judgment.get("policy")):
@@ -55,7 +59,8 @@ func request(profile: NpcProfile, current: Dictionary, message: String,
 		return {}
 	if store.revision(id) != revision:
 		return {"interrupted": true}
-	if not store.commit_exchange(id, message, result, policy, recalled, state.recent_events):
+	if not store.commit_exchange(id, message, result, policy, recalled, state.recent_events,
+			session_id):
 		return {}
 	if persist:
 		if not save_callback.is_valid():

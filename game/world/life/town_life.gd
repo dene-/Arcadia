@@ -73,6 +73,15 @@ func _ready() -> void:
 		_revisions[id] = npc.life_revision
 		ids.append(id)
 	ids.sort()
+	encounters = TownEncounters.new()
+	encounters.state = save_game.life
+	encounters.store = save_game.memory
+	encounters.backend = backend
+	encounters.seed_value = save_game.get_npc_seed()
+	encounters.save_callback = _save
+	encounters.brains = brain_for
+	encounters.tuning = tuning
+	add_child(encounters)
 	for id: String in ids:
 		var npc: BaseNpc = _actors[id]
 		save_game.life.ensure_person(id, save_game.get_npc_seed(), ids, ["market", "garden", "square"], save_game.population)
@@ -84,15 +93,6 @@ func _ready() -> void:
 		_revisions[id] = npc.life_revision
 		_update_context(npc, id)
 	_bootstrap_knowledge(ids)
-	encounters = TownEncounters.new()
-	encounters.state = save_game.life
-	encounters.store = save_game.memory
-	encounters.backend = backend
-	encounters.seed_value = save_game.get_npc_seed()
-	encounters.save_callback = _save
-	encounters.brains = brain_for
-	encounters.tuning = tuning
-	add_child(encounters)
 	watch = TownWatch.new()
 	watch.life = self
 	add_child(watch)
@@ -480,7 +480,8 @@ func brain_for(id: String) -> NpcBrain:
 
 func _add_brain(npc: BaseNpc, id: String) -> void:
 	var brain := NpcBrain.new()
-	brain.name = "NpcBrain"
+	brain.name = NpcBrain.NODE_NAME
+	brain.memory = save_game.memory
 	npc.add_child(brain)
 	brain.setup(id, save_game.minds.get_mind(id), npc, buildings, tuning, save_game.get_npc_seed())
 	brain.controller.transitioned.connect(_on_task_transition.bind(id))
@@ -524,13 +525,13 @@ func _update_context(npc: BaseNpc, id: String) -> void:
 	npc.life_context = {"world_time": save_game.life.clock_text(), "world_minute": save_game.life.minute,
 		"safety_response": NpcSafetyState.context(person.safety, save_game.life.minute),
 		"daily_plan": person.plan, "known_townspeople": neighbors,
-		"recent_social": person.recent_social, "town_rumors": save_game.life.rumors.get_known(id, save_game.life.minute).slice(-4),
+		"town_rumors": save_game.life.rumors.get_known(id, save_game.life.minute).slice(-4),
 		"routine_decision": person.decision, "personality": npc.get_npc_profile().personality,
 		"family_members": save_game.population.family_context(id),
 		"household": save_game.population.household_for(id),
 		"household_economy": save_game.economy.context(save_game.population.household_for(id))}
-	if encounters != null:
-		npc.life_context.social_status = encounters.diagnostics(id)
+	npc.life_context.social_status = encounters.diagnostics(id)
+	npc.life_context.recent_social = encounters.social_history(id)
 	if funerals != null:
 		npc.life_context.known_deaths = funerals.known_losses(id)
 	if npc.is_in_group(&"town_guards"):

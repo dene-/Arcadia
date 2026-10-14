@@ -24,7 +24,7 @@ class SpeakingNpc extends BaseNpc:
 	func get_cognitive_context() -> Dictionary:
 		return {"activity": "idle"}
 	var spoken: Array[String] = []
-	func show_spoken_reaction(text: String) -> bool:
+	func show_spoken_reaction(text: String, _owner: String = "") -> bool:
 		spoken.append(text)
 		return true
 

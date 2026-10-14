@@ -14,6 +14,8 @@ func _run() -> void:
 	var profile: NpcProfile = load("res://game/resources/actors/humans/blacksmith_npc_profile.tres")
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = "player:http-test"
+	conversation.session_start = conversation.store.world_minute
 	var result: Dictionary = await conversation.request(profile, {},
 		"I will burn down your forge.", backend)
 	var state: Dictionary = conversation.store.snapshot(String(profile.npc_id))

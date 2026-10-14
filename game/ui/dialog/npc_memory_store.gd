@@ -180,9 +180,10 @@ func complete_intention(npc_id: String, memory_id: String) -> bool:
 			return true
 	return false
 
+## Commits one delivered player exchange of conversation session `session_id`.
 func commit_exchange(npc_id: String, message: String, result: Dictionary,
-		policy: Dictionary, recalled: Array, consumed_events: Array) -> bool:
-	if message.length() > 2000 or not _states.has(npc_id) \
+		policy: Dictionary, recalled: Array, consumed_events: Array, session_id: String) -> bool:
+	if message.length() > 2000 or not _states.has(npc_id) or session_id.is_empty() \
 		or not is_valid_result(result) or not is_valid_policy(policy):
 		return false
 	var state: Dictionary = _states[npc_id]
@@ -192,8 +193,10 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 		"exchange:%s:%d" % [npc_id, turn])
 	var history: Array = state.recent_dialogue
 	if not message.is_empty():
-		history.append({"speaker": "player", "text": message})
-	history.append({"speaker": "npc", "text": result.response})
+		history.append({"speaker": "player", "text": message, "session_id": session_id,
+			"minute": world_minute, "delivered": true})
+	history.append({"speaker": "npc", "text": result.response, "session_id": session_id,
+		"minute": world_minute, "delivered": true})
 	while history.size() > MAX_HISTORY:
 		history.pop_front()
 	var recalled_ids: Array = result.get("recalled_memory_ids", [])
@@ -345,9 +348,37 @@ func _valid_history(value: Variant) -> bool:
 		return false
 	for entry: Variant in value:
 		if not entry is Dictionary or not entry.get("speaker") in ["npc", "player"] \
-			or not entry.get("text") is String or entry.text.length() > 6000:
+			or not entry.get("text") is String or entry.text.length() > 6000 \
+			or not is_valid_session_entry(entry):
 			return false
 	return true
+
+static func is_valid_session_entry(entry: Dictionary) -> bool:
+	var minute: Variant = entry.get("minute")
+	return entry.get("session_id") is String and not (entry.session_id as String).is_empty() \
+		and (minute is float or minute is int) and is_finite(float(minute)) \
+		and (float(minute) >= 0.0 or float(minute) == -1.0) and entry.get("delivered") is bool
+
+## Prompt view of dialogue or social history: each entry's minute becomes `age_game_minutes`
+## ("unknown" when it was never recorded) and `session` says whether it belongs to `current_session`
+## (started at `session_start`), an earlier session, or the pre-session legacy history.
+static func history_for_prompt(entries: Array, now: float, current_session: String = "",
+		session_start: float = -1.0) -> Array[Dictionary]:
+	var view: Array[Dictionary] = []
+	for entry: Dictionary in entries:
+		var shown: Dictionary = entry.duplicate()
+		var minute: float = float(entry.get("minute", -1.0))
+		shown.erase("minute")
+		shown["age_game_minutes"] = "unknown" if minute < 0.0 else maxf(0.0, now - minute)
+		if entry.get("session_id") == NpcSaveMigration.LEGACY_SESSION:
+			shown["session"] = "legacy"
+		elif not current_session.is_empty() and entry.get("session_id") == current_session \
+				and minute >= session_start:
+			shown["session"] = "current"
+		else:
+			shown["session"] = "earlier"
+		view.append(shown)
+	return view
 
 func _valid_events(value: Variant) -> bool:
 	if not value is Array or value.size() > 8:

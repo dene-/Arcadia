@@ -1,5 +1,7 @@
 extends "res://tests/test_case.gd"
 
+const SESSION: String = "player:1"
+
 func _profile(id: StringName = &"test_npc") -> NpcProfile:
 	var profile := NpcProfile.new()
 	profile.npc_id = id
@@ -22,7 +24,7 @@ func test_small_talk_remains_short_term_and_history_is_bounded() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
 	for index: int in range(20):
-		assert_true(store.commit_exchange("test_npc", "Hello", _result(), _policy(false), [], []))
+		assert_true(store.commit_exchange("test_npc", "Hello", _result(), _policy(false), [], [], SESSION))
 	var state: Dictionary = store.snapshot("test_npc")
 	assert_eq(state.memories.size(), 0)
 	assert_eq(state.recent_dialogue.size(), 12)
@@ -33,11 +35,11 @@ func test_small_talk_remains_short_term_and_history_is_bounded() -> void:
 func test_claim_admission_does_not_create_a_belief_without_jev_gate() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
-	store.commit_exchange("test_npc", "Threat", _result("semantic"), _policy(), [], [])
+	store.commit_exchange("test_npc", "Threat", _result("semantic"), _policy(), [], [], SESSION)
 	assert_eq(store.snapshot("test_npc").memories.size(), 0)
 	var policy: Dictionary = _policy()
 	policy.update_belief = true
-	store.commit_exchange("test_npc", "Threat", _result("semantic"), policy, [], [])
+	store.commit_exchange("test_npc", "Threat", _result("semantic"), policy, [], [], SESSION)
 	var memory: Dictionary = store.snapshot("test_npc").memories[0]
 	assert_eq(memory.source, "player_claim")
 	assert_eq(memory.confidence, 0.6)
@@ -47,7 +49,7 @@ func test_repeated_claim_does_not_duplicate_or_increase_confidence() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
 	for index: int in range(3):
-		store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+		store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
 	var state: Dictionary = store.snapshot("test_npc")
 	assert_eq(state.memories.size(), 1)
 	assert_eq(state.memories[0].confidence, 0.6)
@@ -57,7 +59,7 @@ func test_npcs_are_isolated_and_renaming_does_not_change_identity() -> void:
 	var profile: NpcProfile = _profile()
 	store.ensure_npc(profile)
 	store.ensure_npc(_profile(&"other"))
-	store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
 	profile.profile_name = "Renamed"
 	store.ensure_npc(profile)
 	assert_eq(store.snapshot("test_npc").memories.size(), 1)
@@ -119,7 +121,8 @@ func test_only_available_used_memories_are_reinforced_and_events_consumed_once()
 	store.record_event(profile, "Someone arrived.")
 	var result: Dictionary = _result()
 	result.recalled_memory_ids = ["legacy:0", "legacy:1"]
-	store.commit_exchange("test_npc", "Hello", result, _policy(false), [{"id": "legacy:0"}], old_events)
+	store.commit_exchange("test_npc", "Hello", result, _policy(false), [{"id": "legacy:0"}], old_events,
+		SESSION)
 	var state: Dictionary = store.snapshot("test_npc")
 	assert_eq(state.memories[0].recall_count, 1)
 	assert_eq(state.memories[1].recall_count, 0)
@@ -132,16 +135,17 @@ func test_invalid_exchange_does_not_mutate_state() -> void:
 	var before: Dictionary = store.to_save_data()
 	var result: Dictionary = _result()
 	result.replies = ["One"]
-	assert_false(store.commit_exchange("test_npc", "Hello", result, _policy(), [], []))
+	assert_false(store.commit_exchange("test_npc", "Hello", result, _policy(), [], [], SESSION))
 	var policy: Dictionary = _policy()
 	policy.importance = NAN
-	assert_false(store.commit_exchange("test_npc", "Hello", _result(), policy, [], []))
+	assert_false(store.commit_exchange("test_npc", "Hello", _result(), policy, [], [], SESSION))
+	assert_false(store.commit_exchange("test_npc", "Hello", _result(), _policy(), [], [], ""))
 	assert_eq(store.to_save_data(), before)
 
 func test_prospective_memories_are_resolved_by_game_code() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
-	store.commit_exchange("test_npc", "Promise", _result("prospective"), _policy(), [], [])
+	store.commit_exchange("test_npc", "Promise", _result("prospective"), _policy(), [], [], SESSION)
 	assert_false(store.snapshot("test_npc").memories[0].completed)
 	assert_true(store.complete_intention("test_npc", "mem:1"))
 	assert_true(store.snapshot("test_npc").memories[0].completed)
@@ -149,7 +153,7 @@ func test_prospective_memories_are_resolved_by_game_code() -> void:
 func test_save_round_trip_is_independent_and_invalid_load_is_atomic() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
-	store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	store.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
 	var data: Variant = JSON.parse_string(JSON.stringify(store.to_save_data()))
 	assert_false(data.npcs.test_npc.has("relationship"))
 	var restored := NpcMemoryStore.new()
@@ -182,6 +186,34 @@ func test_save_shape_requires_version_two_without_relationship() -> void:
 	legacy.version = 1
 	assert_false(restored.from_save_data(legacy))
 
+func test_dialogue_history_carries_its_session_and_prompts_see_its_age() -> void:
+	var store := NpcMemoryStore.new()
+	store.ensure_npc(_profile())
+	store.set_world_minute(600.0)
+	assert_true(store.commit_exchange("test_npc", "Hello", _result(), _policy(false), [], [], "player:1"))
+	store.set_world_minute(640.0)
+	assert_true(store.commit_exchange("test_npc", "Again", _result(), _policy(false), [], [], "player:2"))
+	var history: Array = store.snapshot("test_npc").recent_dialogue
+	assert_eq([history[0].speaker, history[0].session_id, history[0].minute, history[0].delivered],
+		["player", "player:1", 600.0, true])
+	assert_eq([history[3].speaker, history[3].session_id, history[3].minute], ["npc", "player:2", 640.0])
+	var legacy: Dictionary = {"speaker": "npc", "text": "Old words.", "session_id": "legacy",
+		"minute": -1.0, "delivered": true}
+	var view: Array[Dictionary] = NpcMemoryStore.history_for_prompt(history + [legacy], 650.0,
+		"player:2", 640.0)
+	assert_eq([view[0].session, view[0].age_game_minutes], ["earlier", 50.0])
+	assert_eq([view[2].session, view[2].age_game_minutes], ["current", 10.0])
+	assert_eq([view[4].session, view[4].age_game_minutes], ["legacy", "unknown"])
+	assert_false(view[0].has("minute"))
+	var data: Dictionary = store.to_save_data()
+	var restored := NpcMemoryStore.new()
+	assert_true(restored.minds.from_data(store.minds.to_data()))
+	assert_true(restored.from_save_data(data.duplicate(true)))
+	for key: String in ["session_id", "minute", "delivered"]:
+		var broken: Dictionary = data.duplicate(true)
+		broken.npcs.test_npc.recent_dialogue[0].erase(key)
+		assert_false(restored.from_save_data(broken), key)
+
 func test_all_authored_profiles_have_unique_ids_and_valid_memories() -> void:
 	var ids: Array[StringName] = []
 	for profession: String in ["alchemist", "blacksmith", "butcher", "carpenter", "cooker", "dyer", "furrier", "jeweller", "tailor"]:
@@ -211,7 +243,7 @@ func test_grounding_evidence_is_saved_but_not_exposed_as_perfect_recall() -> voi
 	store.ensure_npc(_profile())
 	var result: Dictionary = _result()
 	result.memory_writes[0].evidence = "I will burn down your forge."
-	store.commit_exchange("test_npc", "I will burn down your forge.", result, _policy(), [], [])
+	store.commit_exchange("test_npc", "I will burn down your forge.", result, _policy(), [], [], SESSION)
 	var loaded := NpcMemoryStore.new()
 	assert_true(loaded.from_save_data(JSON.parse_string(JSON.stringify(store.to_save_data()))))
 	var memory: Dictionary = loaded.snapshot("test_npc").memories[0]
@@ -223,7 +255,7 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 	var save := NpcWorldSave.new()
 	var profile: NpcProfile = _profile()
 	save.memory.ensure_npc(profile)
-	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
 	var memory: Dictionary = save.memory.snapshot("test_npc").memories[0]
 	var retriever := NpcMemoryRetriever.new()
 	var cognition := NpcCognitionProfile.new()
@@ -246,7 +278,7 @@ func test_memory_aging_uses_world_time_not_other_residents_activity() -> void:
 func test_legacy_migration_preserves_retention_without_inventing_an_event_date() -> void:
 	var save := NpcWorldSave.new()
 	save.memory.ensure_npc(_profile())
-	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [])
+	save.memory.commit_exchange("test_npc", "Threat", _result(), _policy(), [], [], SESSION)
 	var data: Dictionary = save.to_data()
 	data.memory.turn = 501
 	data.memory.erase("world_minute")
@@ -276,7 +308,7 @@ func test_authored_memories_and_rehearsal_are_independent_of_global_turn_count()
 	var result: Dictionary = _result()
 	result.recalled_memory_ids = ["legacy:0"]
 	store.set_world_minute(1200.0)
-	store.commit_exchange("test_npc", "Forge", result, _policy(false), [{"id": "legacy:0"}], [])
+	store.commit_exchange("test_npc", "Forge", result, _policy(false), [{"id": "legacy:0"}], [], SESSION)
 	assert_eq(store.snapshot("test_npc").memories[0].last_recalled_minute, 1200.0)
 	var invalid: Dictionary = store.to_save_data()
 	invalid.npcs.test_npc.memories[0].created_minute = NAN

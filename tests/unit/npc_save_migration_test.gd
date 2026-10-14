@@ -22,7 +22,8 @@ func _loaded(data: Dictionary) -> NpcWorldSave:
 	return save
 
 # The per-NPC memory state a v1 source should keep, with the migration's documented defaults and
-# the revision-2 rewrites: unappraised display entries point at their inbox evidence.
+# the revision-2 rewrites: unappraised display entries point at their inbox evidence. Revision 3
+# puts every legacy dialogue line, delivered and untimed, into the legacy session.
 func _expected_state(id: String, state: Dictionary) -> Dictionary:
 	var observations: Array = []
 	for entry: Dictionary in state.get("observations", []):
@@ -37,10 +38,28 @@ func _expected_state(id: String, state: Dictionary) -> Dictionary:
 			for memory: Dictionary in memories:
 				if memory.gist == entry.text:
 					memory.sensory_cues = []
-	return {"recent_dialogue": state.recent_dialogue, "memories": memories,
+	var dialogue: Array = []
+	for entry: Dictionary in state.recent_dialogue:
+		dialogue.append(_legacy_dialogue(entry))
+	return {"recent_dialogue": dialogue, "memories": memories,
 		"recent_events": state.recent_events, "observations": observations,
 		"next_observation_id": state.get("next_observation_id", 1),
 		"heard_origins": state.get("heard_origins", {})}
+
+func _legacy_dialogue(entry: Dictionary) -> Dictionary:
+	var expected: Dictionary = entry.duplicate(true)
+	expected.merge({"session_id": NpcSaveMigration.LEGACY_SESSION, "minute": -1.0, "delivered": true})
+	return expected
+
+# A legacy social line keeps its minute and names both participants from its owner and "with".
+func _legacy_social(id: String, person: Dictionary) -> Array:
+	var lines: Array = []
+	for entry: Dictionary in person.recent_social:
+		var expected: Dictionary = entry.duplicate(true)
+		expected.merge({"session_id": NpcSaveMigration.LEGACY_SESSION, "speaker_id": id,
+			"listener_id": entry.with, "delivered": true})
+		lines.append(expected)
+	return lines
 
 func test_every_v1_fixture_migrates_to_a_valid_current_v2_root() -> void:
 	for name: String in V1:
@@ -77,6 +96,7 @@ func test_world_and_memory_inventories_are_preserved() -> void:
 			expected.erase("ties")
 			if not expected.has("safety"):
 				expected.safety = {}
+			expected.recent_social = _legacy_social(id, life.people[id])
 			assert_eq(data.world.life.people[id], expected, name + " " + id)
 		var memory: Dictionary = source.memory
 		for key: String in ["turn", "world_minute", "next_memory_id"]:
@@ -291,8 +311,22 @@ func test_reported_body_memory_loses_the_fighting_cue_but_combat_noise_keeps_it(
 		if memory.id == "mem:5":
 			assert_eq(memory.sensory_cues, ["sounds of fighting"])
 
+# A revision-2 root: dialogue and social history have no session fields yet.
+func _revision_two(data: Dictionary) -> Dictionary:
+	var r2: Dictionary = data.duplicate(true)
+	r2.migration.revision = 2
+	for state: Dictionary in r2.memory.npcs.values():
+		for entry: Dictionary in state.recent_dialogue:
+			for key: String in ["session_id", "minute", "delivered"]:
+				entry.erase(key)
+	for person: Dictionary in r2.world.life.people.values():
+		for entry: Dictionary in person.recent_social:
+			for key: String in ["session_id", "speaker_id", "listener_id", "delivered"]:
+				entry.erase(key)
+	return r2
+
 func _downgraded(data: Dictionary) -> Dictionary:
-	var r1: Dictionary = data.duplicate(true)
+	var r1: Dictionary = _revision_two(data)
 	r1.migration.revision = 1
 	for mind: Dictionary in r1.minds.minds.values():
 		mind.version = 1
@@ -300,17 +334,34 @@ func _downgraded(data: Dictionary) -> Dictionary:
 		mind.erase("evidence")
 	return r1
 
-func test_revision_one_roots_upgrade_to_revision_two() -> void:
+func test_revision_one_roots_upgrade_to_the_current_revision() -> void:
 	var current: Dictionary = _migrated("v1_town")
 	var r1: Dictionary = _downgraded(current)
 	assert_false(NpcWorldSave.new().from_data(r1), "A revision-1 root is not loadable as is.")
 	var result: Dictionary = NpcSaveMigration.upgrade(r1)
 	assert_true(result.ok, str(result.error))
 	assert_eq(result.data, current)
-	assert_eq(result.data.migration.revision, 2)
+	assert_eq(result.data.migration.revision, NpcSaveMigration.REVISION)
 	var zero: Dictionary = _downgraded(current)
 	zero.migration.revision = 0
 	assert_eq(NpcSaveMigration.upgrade(zero).error, "invalid_source")
+
+func test_revision_two_history_joins_the_legacy_session() -> void:
+	var current: Dictionary = _migrated("v1_town")
+	assert_eq(current.migration.revision, 3)
+	var r2: Dictionary = _revision_two(current)
+	assert_false(NpcWorldSave.new().from_data(r2), "History without sessions is not loadable as is.")
+	var result: Dictionary = NpcSaveMigration.upgrade(r2)
+	assert_true(result.ok, str(result.error))
+	assert_eq(result.data, current)
+	var line: Dictionary = result.data.memory.npcs.garrin_holt.recent_dialogue[0]
+	assert_eq([line.session_id, line.minute, line.delivered], ["legacy", -1.0, true])
+	var social: Dictionary = result.data.world.life.people.garrin_holt.recent_social[0]
+	assert_eq([social.session_id, social.speaker_id, social.listener_id, social.delivered, social.minute],
+		["legacy", "garrin_holt", "holt_partner", true, 3435.0])
+	var broken: Dictionary = _revision_two(current)
+	broken.world.life.people.garrin_holt.recent_social = [7]
+	assert_eq(NpcSaveMigration.upgrade(broken).error, "invalid_source")
 
 func test_revision_one_display_entries_use_saved_space_and_legacy_origin() -> void:
 	var r1: Dictionary = _downgraded(_migrated("v1_town"))

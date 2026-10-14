@@ -67,7 +67,7 @@ func test_inspector_reads_live_commits_and_cannot_mutate_nested_memories() -> vo
 		"memory_writes": [{"type": "episodic", "gist": "The player threatened me.",
 			"source": "player_claim", "topics": ["threat"]}], "recalled_memory_ids": []}
 	assert_true(_store.commit_exchange("inspector_test_npc", "I will hurt you.", result,
-		policy, [], []))
+		policy, [], [], "player:1"))
 	assert_eq(_npc.get("runtime_memory_status"), "Live memory state.")
 	assert_eq(_npc.get("runtime_memory_turn"), _store.turn)
 	assert_eq(_npc.get("runtime_memory_recent_dialogue")[1].text, "Leave.")

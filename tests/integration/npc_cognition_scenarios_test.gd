@@ -24,6 +24,10 @@ func _run() -> void:
 	await _scenario_sleeper_shelters()
 	await _scenario_safety_ends_session()
 	await _scenario_reload_mid_travel()
+	await _scenario_crossing_invitations()
+	await _scenario_player_takes_over_session()
+	await _scenario_urgent_resident_refuses_player()
+	await _scenario_commitment_survives_reload()
 	for failure: String in failures:
 		push_error(failure)
 	print("NPC cognition scenarios: ", "PASS" if failures.is_empty() else "FAIL")
@@ -356,22 +360,12 @@ func _scenario_sleeper_shelters() -> void:
 	_check_single_owner(sim, id, start_minute, "(a)")
 	await sim.teardown()
 
-## (b) A safety task on one participant ends the session for both, and the session's late
-## release cannot take the safety task's claims.
+## (b) A safety task on one participant ends the session for both; the session's late
+## release cannot take the safety task's claims and its late assessment delivers no rumor.
 func _scenario_safety_ends_session() -> void:
 	var sim: Simulation = await _start(600.0)
 	await sim.advance(2.0)
-	var pair: Array[BaseNpc] = []
-	for id: String in sim.resident_ids():
-		var npc: BaseNpc = sim.resident(id)
-		if npc.is_in_group(&"town_guards") or npc.world_space != &"outdoors" or npc.is_sleeping() \
-				or npc.daily_routine.activity == "rest" or not npc.can_speak_reaction() \
-				or sim.life.encounters.is_busy(id) or sim.life.funerals.is_assigned(id) \
-				or float(sim.save_game().life.get_person(id).social_after) > sim.save_game().life.minute:
-			continue
-		pair.append(npc)
-		if pair.size() == 2:
-			break
+	var pair: Array[BaseNpc] = _free_residents(sim, 2)
 	_check(pair.size() == 2, "(b) Fewer than two free residents are outdoors")
 	if pair.size() < 2:
 		await sim.teardown()
@@ -381,20 +375,29 @@ func _scenario_safety_ends_session() -> void:
 	var first_id: String = String(first.get_npc_profile().npc_id)
 	var second_id: String = String(second.get_npc_profile().npc_id)
 	second.global_position = first.global_position + Vector2(12.0, 0.0)
-	sim.backend.hold("life/social")
+	var life_state: TownLifeState = sim.save_game().life
+	life_state.rumors.observe(first_id, first.get_npc_profile().profile_name,
+		{"origin_id": "test:m4b", "text": SYNTHETIC_TEXT, "sense": "sight", "player_involved": false},
+		{"remember": true, "importance": 1.0}, life_state.minute)
+	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
+		"topic_index": 0, "tone": "FRIENDLY"}})
+	sim.backend.queue_response("life/listen", {"policy": {"belief": 0.9, "importance": 0.8,
+		"remember": true, "affinity": 0.01, "trust_player": 0.0}})
+	sim.backend.hold("life/listen")
 	sim.life.encounters.consider(first, second)
-	_check(sim.life.encounters.is_busy(first_id) and sim.life.encounters.is_busy(second_id),
-		"(b) The session did not start: %s / %s" % [sim.life.brain_for(first_id).debug_snapshot(),
+	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
+		and sim.life.encounters.session_phase(second_id) == TownEncounters.PHASE_CONVERSE,
+		"(b) The session did not reach conversation: %s / %s" % [sim.life.encounters.diagnostics(first_id),
 			sim.life.brain_for(second_id).debug_snapshot()])
 	if not sim.life.encounters.is_busy(first_id):
-		sim.backend.release("life/social")
+		sim.backend.release("life/listen")
 		await sim.teardown()
 		return
 	var session_owner: String = String(_claims(sim, first_id).conversation)
 	for id: String in [first_id, second_id]:
-		var hold: NpcTask = _task(sim, id)
-		_check(hold != null and hold.kind == &"hold", "(b) %s is not held by the session" % id)
-		_check(hold != null and _claims(sim, id) == {"locomotion": hold.task_id, "conversation": session_owner},
+		var social: NpcTask = _task(sim, id)
+		_check(social != null and social.kind == &"social", "(b) %s is not held by a social task" % id)
+		_check(social != null and _claims(sim, id) == {"locomotion": social.task_id, "conversation": session_owner},
 			"(b) %s claims do not belong to the session: %s" % [id, _claims(sim, id)])
 	_check(session_owner.begins_with("session:"), "(b) The conversation claim has no session owner")
 	var event: Dictionary = {"origin_id": "attack:m3b", "text": "Someone struck me.",
@@ -409,21 +412,289 @@ func _scenario_safety_ends_session() -> void:
 			break
 	_check(safety != null, "(b) The SHELTER concern produced no safety task")
 	if safety == null:
-		sim.backend.release("life/social")
+		sim.backend.release("life/listen")
 		await sim.teardown()
 		return
 	_check(not sim.life.encounters.is_busy(first_id) and not sim.life.encounters.is_busy(second_id),
 		"(b) The session outlived a participant's safety task")
 	_check(_claims(sim, first_id).conversation != session_owner, "(b) The partner kept the session's conversation claim")
 	var partner: NpcTask = _task(sim, first_id)
-	_check(partner == null or partner.kind != &"hold", "(b) The partner is still held")
-	sim.backend.release("life/social")
+	_check(partner == null or partner.kind != &"social", "(b) The partner is still held by the session")
+	sim.backend.release("life/listen")
 	await sim.advance(0.5)
 	_check(_task(sim, second_id) == safety and safety.status == NpcTask.Status.RUNNING,
 		"(b) The session's late release ended the safety task")
 	_check(_claims(sim, second_id) == {"locomotion": safety.task_id, "conversation": safety.task_id},
 		"(b) The session's late release took the safety task's claims: %s" % [_claims(sim, second_id)])
+	_check(not _mentions_rumor(life_state, second_id),
+		"(b) The ended session's late assessment delivered the rumor")
 	await sim.teardown()
+
+## Awake residents outdoors that are free to start a social session or be spoken to.
+func _free_residents(sim: Simulation, count: int) -> Array[BaseNpc]:
+	var found: Array[BaseNpc] = []
+	for id: String in sim.resident_ids():
+		var npc: BaseNpc = sim.resident(id)
+		if npc.is_in_group(&"town_guards") or npc.world_space != &"outdoors" or npc.is_sleeping() \
+				or npc.daily_routine.activity == "rest" or not npc.can_speak_reaction() \
+				or sim.life.encounters.is_busy(id) or sim.life.funerals.is_assigned(id) \
+				or float(sim.save_game().life.get_person(id).social_after) > sim.save_game().life.minute \
+				or _task(sim, id) == null:
+			continue
+		found.append(npc)
+		if found.size() == count:
+			break
+	return found
+
+func _resident_id(npc: BaseNpc) -> String:
+	return String(npc.get_npc_profile().npc_id)
+
+## Puts the player within earshot of `npc`; the check fails when no landing spot was found.
+func _place_player_near(sim: Simulation, npc: BaseNpc) -> BasePlayer:
+	var player: BasePlayer = sim.world.get_node("BasePlayer")
+	player.set_physics_process(false)
+	var placed: bool = false
+	for offset: Vector2 in [Vector2(10, 0), Vector2(-10, 0), Vector2(0, 30), Vector2(0, -30), Vector2(60, 0)]:
+		if sim.life.buildings._transfer(player, "player:%d" % player.get_instance_id(), &"outdoors",
+				npc.global_position + offset):
+			placed = true
+			break
+	_check(placed and player.world_space == npc.world_space
+		and player.global_position.distance_to(npc.global_position) <= 150.0,
+		"The player could not be placed near %s (placed %s, %s at %s, npc %s at %s)" % [_resident_id(npc), placed,
+			player.world_space, player.global_position, npc.world_space, npc.global_position])
+	return player
+
+func _bubble_shows(npc: BaseNpc, text: String) -> bool:
+	var bubble: Node2D = npc.get_node("ReactionBubble")
+	return bubble.visible and (bubble.get_node("Panel/Text") as Label).text == text
+
+## (d) Crossing invitations: the second invitation is dropped, one session holds both residents and
+## nothing is left claimed when it ends.
+func _scenario_crossing_invitations() -> void:
+	var sim: Simulation = await _start(600.0)
+	await sim.advance(2.0)
+	var pair: Array[BaseNpc] = _free_residents(sim, 2)
+	_check(pair.size() == 2, "(d) Fewer than two free residents are outdoors")
+	if pair.size() < 2:
+		await sim.teardown()
+		return
+	var first_id: String = _resident_id(pair[0])
+	var second_id: String = _resident_id(pair[1])
+	pair[1].global_position = pair[0].global_position + Vector2(12.0, 0.0)
+	var encounters: TownEncounters = sim.life.encounters
+	var before: Dictionary = {first_id: _claims(sim, first_id), second_id: _claims(sim, second_id)}
+	var tasks: Dictionary = {first_id: _task(sim, first_id), second_id: _task(sim, second_id)}
+	var judgments: int = sim.backend.call_count("life/social")
+	sim.backend.hold("life/social")
+	encounters.consider(pair[0], pair[1])
+	encounters.consider(pair[1], pair[0])
+	for id: String in [first_id, second_id]:
+		_check(encounters.session_phase(id) == TownEncounters.PHASE_INVITE,
+			"(d) %s is not waiting on one invitation: '%s'" % [id, encounters.session_phase(id)])
+		_check(_claims(sim, id) == before[id], "(d) An invitation took claims for %s: %s" % [id, _claims(sim, id)])
+		_check(_task(sim, id) == tasks[id], "(d) An invitation replaced the task of %s" % id)
+	_check(sim.backend.call_count("life/social") == judgments + 1,
+		"(d) The crossing invitation made %d social judgments" % (sim.backend.call_count("life/social") - judgments))
+	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
+		"topic_index": -1, "tone": "FRIENDLY"}})
+	sim.backend.queue_response("life/social", {"policy": {"engage": false, "another_exchange": false,
+		"topic_index": -1, "tone": "RESERVED"}})
+	sim.backend.release("life/social")
+	_check(not encounters.is_busy(first_id) and not encounters.is_busy(second_id),
+		"(d) The session never ended: %s" % [encounters.diagnostics(first_id)])
+	_check(encounters.diagnostics(first_id).get("outcome") in ["offscreen_exchange", "declined", "bubble_displayed"],
+		"(d) The session did not complete: %s" % [encounters.diagnostics(first_id)])
+	for id: String in [first_id, second_id]:
+		_check(_claims(sim, id) == before[id], "(d) %s kept session claims after it ended: %s" % [id, _claims(sim, id)])
+		_check(_task(sim, id) == tasks[id], "(d) %s did not return to its own task" % id)
+		var history: Array = sim.save_game().life.get_person(id).recent_social
+		var sessions: Dictionary = {}
+		for entry: Dictionary in history:
+			sessions[entry.session_id] = true
+		_check(sessions.size() == 1, "(d) %s took part in %d sessions" % [id, sessions.size()])
+	await sim.advance(2.0)
+	_check(not encounters.is_busy(first_id) and not encounters.is_busy(second_id), "(d) A session restarted at once")
+	await sim.teardown()
+
+## (e) The player takes over a resident in a session: both residents are released, and a late
+## reply of the ended session neither speaks nor delivers the rumor, nor ends the player's session.
+func _scenario_player_takes_over_session() -> void:
+	var sim: Simulation = await _start(600.0)
+	await sim.advance(2.0)
+	var pair: Array[BaseNpc] = _free_residents(sim, 2)
+	_check(pair.size() == 2, "(e) Fewer than two free residents are outdoors")
+	if pair.size() < 2:
+		await sim.teardown()
+		return
+	var first: BaseNpc = pair[0]
+	var second: BaseNpc = pair[1]
+	var first_id: String = _resident_id(first)
+	var second_id: String = _resident_id(second)
+	second.global_position = first.global_position + Vector2(12.0, 0.0)
+	_place_player_near(sim, first)
+	var life_state: TownLifeState = sim.save_game().life
+	life_state.rumors.observe(first_id, first.get_npc_profile().profile_name,
+		{"origin_id": "test:m4e", "text": SYNTHETIC_TEXT, "sense": "sight", "player_involved": false},
+		{"remember": true, "importance": 1.0}, life_state.minute)
+	var late_line: String = "The copper bell rang at the old well."
+	sim.backend.queue_response("life/social", {"policy": {"engage": true, "another_exchange": false,
+		"topic_index": 0, "tone": "FRIENDLY"}})
+	sim.backend.queue_response("life/listen", {"policy": {"belief": 0.9, "importance": 0.8,
+		"remember": true, "affinity": 0.01, "trust_player": 0.0}})
+	sim.backend.queue_response("life/say", {"response": late_line})
+	sim.backend.hold("life/say")
+	sim.life.encounters.consider(first, second)
+	var session_owner: String = String(_claims(sim, second_id).conversation)
+	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
+		and sim.life.encounters.session_phase(second_id) == TownEncounters.PHASE_CONVERSE
+		and sim.backend.call_count("life/say") == 1,
+		"(e) The session did not reach its spoken line: %s" % [sim.life.encounters.diagnostics(first_id)])
+	_check(session_owner.begins_with("session:social:"), "(e) The conversation claim has no session owner")
+	var dialog: Node = root.get_node("DialogManager")
+	_check(dialog._bind_dialog_ui(), "(e) World dialogue UI could not be bound")
+	_check(dialog._start_dialog(second), "(e) The player was refused by a resident in a plain conversation")
+	var player_owner: String = String(_claims(sim, second_id).conversation)
+	_check(player_owner.begins_with("session:player:"), "(e) The player did not take the conversation claim: %s" % [_claims(sim, second_id)])
+	_check(_claims(sim, second_id).locomotion == player_owner and _task(sim, second_id).kind == &"social",
+		"(e) The player's hold is not a social task owning both claims: %s" % [_claims(sim, second_id)])
+	_check(not sim.life.encounters.is_busy(first_id) and not sim.life.encounters.is_busy(second_id),
+		"(e) The encounter outlived the player's takeover")
+	_check(String(_claims(sim, first_id).conversation) != session_owner and not String(_claims(sim, first_id).locomotion).begins_with("session:social:"),
+		"(e) The partner kept the session's claims: %s" % [_claims(sim, first_id)])
+	var partner: NpcTask = _task(sim, first_id)
+	_check(partner == null or partner.kind != &"social", "(e) The partner is still held by the session")
+	var calls_before: int = sim.backend.call_count("life/say")
+	sim.backend.release("life/say")
+	_check(sim.backend.call_count("life/say") == calls_before, "(e) The ended session asked for another line")
+	await sim.advance(0.5)
+	for npc: BaseNpc in [first, second]:
+		_check(not _bubble_shows(npc, late_line), "(e) The ended session's late reply was spoken by %s" % _resident_id(npc))
+	_check(not _mentions_rumor(life_state, second_id), "(e) The ended session's late reply delivered the rumor")
+	_check(dialog.is_dialog_open() and String(_claims(sim, second_id).conversation) == player_owner,
+		"(e) The ended session's late reply disturbed the player's session: %s" % [_claims(sim, second_id)])
+	dialog.close_dialog()
+	_check(String(_claims(sim, second_id).conversation).is_empty()
+		and not _claims(sim, second_id).locomotion.begins_with("session:"),
+		"(e) Closing the dialog left the player's claims: %s" % [_claims(sim, second_id)])
+	await sim.teardown()
+
+## (f) A resident on an urgent safety task refuses the player with a short line and keeps its task.
+func _scenario_urgent_resident_refuses_player() -> void:
+	var sim: Simulation = await _start(600.0)
+	await sim.advance(2.0)
+	var free: Array[BaseNpc] = _free_residents(sim, 1)
+	_check(free.size() == 1, "(f) No free resident is outdoors")
+	if free.is_empty():
+		await sim.teardown()
+		return
+	var npc: BaseNpc = free[0]
+	var id: String = _resident_id(npc)
+	var event: Dictionary = {"origin_id": "attack:m4f", "text": "Someone struck me.",
+		"sense": "touch", "danger_possible": true, "directly_affected": true}
+	sim.save_game().life.notice_perception(id, event, String(npc.world_space))
+	var safety: NpcTask = null
+	for frame: int in 90:
+		await sim.advance(1.0 / 60.0)
+		var current: NpcTask = _task(sim, id)
+		if current != null and current.kind == &"safety":
+			safety = current
+			break
+	_check(safety != null, "(f) The danger produced no safety task")
+	if safety == null:
+		await sim.teardown()
+		return
+	var claims: Dictionary = _claims(sim, id)
+	var dialog: Node = root.get_node("DialogManager")
+	_check(dialog._bind_dialog_ui(), "(f) World dialogue UI could not be bound")
+	_check(not dialog._start_dialog(npc), "(f) A resident on an urgent task accepted the player")
+	_check(not dialog.is_dialog_open(), "(f) A dialog opened with a refusing resident")
+	var bubble: Node2D = npc.get_node("ReactionBubble")
+	var shown: String = (bubble.get_node("Panel/Text") as Label).text
+	_check(bubble.visible and shown in dialog.REFUSAL_LINES, "(f) The refusal line was not shown: '%s'" % shown)
+	_check(_task(sim, id) == safety and safety.status == NpcTask.Status.RUNNING, "(f) The refusal changed the safety task")
+	_check(_claims(sim, id) == claims, "(f) The refusal changed the claims: %s" % [_claims(sim, id)])
+	await sim.advance(1.0)
+	_check(_task(sim, id) == safety and _claims(sim, id) == claims and not dialog.is_dialog_open(),
+		"(f) The refused session left a trace: %s" % [_claims(sim, id)])
+	await sim.teardown()
+
+## (g) A commitment backed by a prospective memory completes once when its task arrives, across reloads.
+func _scenario_commitment_survives_reload() -> void:
+	var sim: Simulation = await _start(480.0)
+	await sim.advance(2.0)
+	var free: Array[BaseNpc] = _free_residents(sim, 1)
+	_check(free.size() == 1, "(g) No free resident is outdoors")
+	if free.is_empty():
+		await sim.teardown()
+		return
+	var id: String = _resident_id(free[0])
+	var memory: NpcMemoryStore = sim.save_game().memory
+	memory.ensure_npc(free[0].get_npc_profile())
+	var result: Dictionary = {"response": "I will tell the guard.", "replies": ["Thanks.", "Good.", "Bye."],
+		"memory_writes": [{"type": "prospective", "gist": "Promised to report the copper bell.",
+			"source": "player_claim", "topics": ["bell"], "people": ["player"]}], "recalled_memory_ids": []}
+	_check(memory.commit_exchange(id, "Tell the guard.", result, Simulation.FakeService.valid_policy(), [], [], "player:m4g"),
+		"(g) The prospective memory was not committed")
+	var memory_id: String = ""
+	for record: Dictionary in memory.snapshot(id).memories:
+		if record.type == "prospective":
+			memory_id = String(record.id)
+	_check(not memory_id.is_empty(), "(g) No prospective memory was stored")
+	var minute: float = sim.save_game().life.minute
+	var commitments: NpcCommitments = sim.save_game().minds.get_mind(id).commitments
+	var evidence: Array[String] = ["memory:" + memory_id]
+	var promise: String = commitments.create("report_discovery", [] as Array[String], evidence, minute)
+	_check(not promise.is_empty(), "(g) The commitment was not created")
+	var target: Vector2 = sim.life.navigation.nearest(free[0].global_position + Vector2(220.0, 0.0))
+	var errand := NpcDirectedTravelTask.create({"owner": "m4scenario", "activity": "report", "label": "Reporting",
+		"space": "outdoors", "point": [target.x, target.y], "priority": sim.life.tuning.directed_travel_priority,
+		"hold_on_arrival": false})
+	errand.commitment_ids = [promise] as Array[String]
+	_check(sim.life.brain_for(id).request_task(errand), "(g) The errand was refused")
+	await sim.advance(0.5)
+	_check(_task(sim, id) == errand and errand.status == NpcTask.Status.RUNNING, "(g) The errand is not running")
+	await sim.reload_world()
+	_check(sim.problems.is_empty(), "(g) Reload problems: %s" % [sim.problems])
+	var mind: NpcMindState = sim.save_game().minds.get_mind(id)
+	_check(mind.commitments.get_commitment(promise).get("status") == "open", "(g) The commitment was resolved by the reload")
+	var restored: NpcTask = _task(sim, id)
+	_check(restored != null and restored.task_id == errand.task_id and restored.commitment_ids == errand.commitment_ids,
+		"(g) The errand was not restored with its commitment: %s" % [restored.checkpoint() if restored != null else {}])
+	_check(not _completed(sim, id, memory_id), "(g) The intention completed before the errand did")
+	var arrived: bool = false
+	for second: int in 60:
+		await sim.advance(1.0)
+		if mind.commitments.get_commitment(promise).get("status") != "open":
+			arrived = true
+			break
+	mind = sim.save_game().minds.get_mind(id)
+	_check(arrived or mind.commitments.get_commitment(promise).get("status") != "open", "(g) The restored errand never finished")
+	var record: Dictionary = mind.commitments.get_commitment(promise)
+	_check(record.get("status") == "completed", "(g) The commitment ended as %s" % record.get("status"))
+	_check(_completed(sim, id, memory_id), "(g) The completed commitment did not complete its intention")
+	var resolved_minute: float = float(record.get("resolved_minute", -1.0))
+	await sim.reload_world()
+	await sim.advance_minutes(5.0)
+	mind = sim.save_game().minds.get_mind(id)
+	record = mind.commitments.get_commitment(promise)
+	_check(record.get("status") == "completed" and absf(float(record.get("resolved_minute", -1.0)) - resolved_minute) < 0.001,
+		"(g) The commitment resolved again after reload (was %s): %s" % [resolved_minute, record])
+	_check(_completed(sim, id, memory_id), "(g) The intention lost its completion across reload")
+	_check(mind.commitments.open_commitments().is_empty(), "(g) A commitment stayed open: %s" % [mind.commitments.open_commitments()])
+	await sim.teardown()
+
+func _completed(sim: Simulation, id: String, memory_id: String) -> bool:
+	for record: Dictionary in sim.save_game().memory.snapshot(id).memories:
+		if record.id == memory_id:
+			return record.get("completed") == true
+	return false
+
+func _mentions_rumor(life_state: TownLifeState, id: String) -> bool:
+	for rumor: Dictionary in life_state.rumors.get_known(id, life_state.minute):
+		if SYNTHETIC_TEXT in str(rumor):
+			return true
+	return false
 
 ## (c) Reloading mid-travel restores the task, which re-routes from the saved position; no state is
 ## left without an owning task and nobody stays inactive for long.

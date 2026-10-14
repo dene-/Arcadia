@@ -64,24 +64,27 @@ func test_social_exchange_changes_known_ties_once_per_receipt_and_survives_save(
 	var state := TownLifeState.new()
 	state.ensure_person("a", 123, ["a", "b"], ["square"])
 	var before: Dictionary = state.get_person("a").ties.b
-	state.remember_exchange("a", "b", "Hello", 0.5)
+	state.remember_exchange("a", "b", "Hello", "social:1", "a", "b", 0.5)
 	var after: Dictionary = state.get_person("a").ties.b
 	assert_true(is_equal_approx(after.familiarity, minf(1.0, before.familiarity + 0.02)))
 	assert_true(is_equal_approx(after.affection, clampf(before.affection + 0.04, -1.0, 1.0)))
 	assert_eq(after.trust, before.trust)
-	state.remember_exchange("a", "stranger", "Hello")
+	state.remember_exchange("a", "stranger", "Hello", "social:2", "a", "stranger")
 	assert_false(state.get_person("a").ties.has("stranger"))
-	state.remember_exchange("a", "b", "Again", -0.5)
+	state.remember_exchange("a", "b", "Again", "social:3", "b", "a", -0.5)
 	var data: Dictionary = JSON.parse_string(JSON.stringify(state.to_data()))
 	assert_eq(data.version, 2)
 	assert_eq(int(data.next_social_receipt), 4)
 	assert_false(data.people.a.has("ties"))
+	var last: Dictionary = data.people.a.recent_social[-1]
+	assert_eq([last.session_id, last.speaker_id, last.listener_id, last.delivered],
+		["social:3", "b", "a", true])
 	var loaded := TownLifeState.new()
 	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(state.minds.to_data()))))
 	assert_true(loaded.from_data(data))
 	for key: String in ["familiarity", "trust", "affection"]:
 		assert_true(is_equal_approx(loaded.get_person("a").ties.b[key], state.get_person("a").ties.b[key]))
-	loaded.remember_exchange("a", "b", "Third")
+	loaded.remember_exchange("a", "b", "Third", "social:4", "a", "b")
 	var receipts: Array = loaded.minds.get_mind("a").relationships.to_data().receipts
 	assert_eq(receipts, ["social:a:b:1", "social:a:b:3", "social:a:b:4"])
 
@@ -102,6 +105,12 @@ func test_life_data_rejects_v1_shapes() -> void:
 	broken = data.duplicate(true)
 	broken.erase("next_social_receipt")
 	assert_false(restored.from_data(broken))
+	state.remember_exchange("a", "b", "Hello", "social:1", "a", "b")
+	data = state.to_data()
+	for key: String in ["session_id", "speaker_id", "listener_id", "delivered"]:
+		broken = data.duplicate(true)
+		broken.people.a.recent_social[0].erase(key)
+		assert_false(restored.from_data(broken), key)
 	assert_true(restored.from_data(data))
 
 func _event(id: String = "event:1") -> Dictionary:

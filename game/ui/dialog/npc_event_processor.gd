@@ -118,7 +118,8 @@ func _appraise(id: String, job: Dictionary, observation: NpcObservation,
 		"npc": {"id": id, "profile": job.profile.to_backend_profile()},
 		"player": {"message": ""}, "event": event,
 		"context": {"current": current, "relationship": state.get("relationship", {}),
-			"recent_dialogue": state.get("recent_dialogue", []),
+			"recent_dialogue": NpcMemoryStore.history_for_prompt(
+				state.get("recent_dialogue", []), store.world_minute),
 			"memories": NpcMemoryRetriever.new().retrieve(state.get("memories", []), event.text,
 				current, job.profile.get_cognition(), store.world_minute)}}
 	var judgment: Dictionary = await backend.request_observation(payload)

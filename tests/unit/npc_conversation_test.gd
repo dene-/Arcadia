@@ -26,6 +26,8 @@ class FakeBackend extends DialogBackendClient:
 			await dialogue_ready
 		return result
 
+const SESSION: String = "player:1"
+
 var _completed: bool = false
 var _result: Dictionary = {}
 
@@ -43,6 +45,7 @@ func _start(conversation: NpcConversation, backend: FakeBackend) -> void:
 func test_decision_preview_precedes_dialogue_but_commit_waits_for_success() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	_start(conversation, backend)
@@ -61,6 +64,7 @@ func test_decision_preview_precedes_dialogue_but_commit_waits_for_success() -> v
 func test_opening_greeting_reaches_both_models_and_history_without_replacing_player_text() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	await conversation.request(_profile(), {}, "", backend)
 	var greeting: String = backend.decision_payload.player.message
@@ -76,6 +80,7 @@ func test_opening_greeting_reaches_both_models_and_history_without_replacing_pla
 func test_cancel_during_decision_never_generates_dialogue_or_commits() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_decision = true
 	_start(conversation, backend)
@@ -90,6 +95,7 @@ func test_cancel_during_decision_never_generates_dialogue_or_commits() -> void:
 func test_surrender_comes_from_assessed_intent_never_dialogue_metadata() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.result.surrender = true
 	var first: Dictionary = await conversation.request(_profile(), {}, "What does surrender mean?", backend)
@@ -102,6 +108,7 @@ func test_surrender_comes_from_assessed_intent_never_dialogue_metadata() -> void
 func test_cancel_during_dialogue_drops_late_response() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	backend.policy["end_conversation"] = true
@@ -116,6 +123,7 @@ func test_cancel_during_dialogue_drops_late_response() -> void:
 func test_farewell_commits_response_before_returning_end_decision() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.policy["end_conversation"] = true
 	backend.result.response = "Until next time."
@@ -132,6 +140,7 @@ func test_farewell_commits_response_before_returning_end_decision() -> void:
 func test_generated_metadata_cannot_end_conversation() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.result["end_conversation"] = true
 	var result: Dictionary = await conversation.request(_profile(), {}, "Wait.", backend)
@@ -144,6 +153,7 @@ func test_generated_metadata_cannot_end_conversation() -> void:
 func test_retrieval_gate_and_failed_dialogue_do_not_change_memory() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.policy.retrieve = false
 	backend.result = {}
@@ -158,6 +168,7 @@ func test_retrieval_gate_and_failed_dialogue_do_not_change_memory() -> void:
 func test_new_observation_during_decision_invalidates_old_judgment() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_decision = true
 	_start(conversation, backend)
@@ -173,6 +184,7 @@ func test_new_observation_during_decision_invalidates_old_judgment() -> void:
 func test_event_during_dialogue_does_not_commit_stale_response_or_feelings() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	_start(conversation, backend)
@@ -189,6 +201,7 @@ func test_event_during_dialogue_does_not_commit_stale_response_or_feelings() -> 
 func test_other_npc_and_diagnostics_do_not_cancel_valid_exchange() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	conversation.store.record_observation(_profile(), {
@@ -207,6 +220,7 @@ func test_other_npc_and_diagnostics_do_not_cancel_valid_exchange() -> void:
 func test_reopened_same_npc_cannot_commit_previous_request() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var old_backend := FakeBackend.new()
 	old_backend.hold_dialogue = true
 	_start(conversation, old_backend)
@@ -227,6 +241,7 @@ func _start_guarded(conversation: NpcConversation, backend: FakeBackend, guard: 
 func test_source_lost_before_next_frame_cannot_commit_dialogue() -> void:
 	var conversation := NpcConversation.new()
 	conversation.persist = false
+	conversation.session_id = SESSION
 	var backend := FakeBackend.new()
 	backend.hold_dialogue = true
 	var source := Node.new()
@@ -238,4 +253,25 @@ func test_source_lost_before_next_frame_cannot_commit_dialogue() -> void:
 	assert_true(_completed)
 	assert_true(_result.is_empty())
 	assert_eq(conversation.store.turn, 0)
+	backend.free()
+
+func test_exchanges_belong_to_their_session_and_need_one_to_commit() -> void:
+	var conversation := NpcConversation.new()
+	conversation.persist = false
+	var backend := FakeBackend.new()
+	assert_true((await conversation.request(_profile(), {}, "Hello", backend)).is_empty())
+	assert_eq(conversation.store.turn, 0)
+	conversation.store.set_world_minute(600.0)
+	conversation.session_id = "player:1"
+	conversation.session_start = 600.0
+	await conversation.request(_profile(), {}, "Hello", backend)
+	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue[1].session_id, "player:1")
+	conversation.store.set_world_minute(630.0)
+	conversation.session_id = "player:2"
+	conversation.session_start = 630.0
+	await conversation.request(_profile(), {}, "Back again", backend)
+	var history: Array = backend.decision_payload.context.recent_dialogue
+	assert_eq(history.size(), 2)
+	assert_eq([history[0].session, history[0].age_game_minutes], ["earlier", 30.0])
+	assert_eq(conversation.store.snapshot("test_npc").recent_dialogue[3].session_id, "player:2")
 	backend.free()

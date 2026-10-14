@@ -2,8 +2,9 @@ class_name NpcSaveMigration
 extends RefCounted
 
 ## Pure conversion of older NPC saves into the current v2 world root. Never reads or writes files.
-## Revision 1 is the first v2 shape; revision 2 adds per-mind knowledge and the evidence inbox.
-const REVISION: int = 2
+## Revision 1 is the first v2 shape; revision 2 adds per-mind knowledge and the evidence inbox;
+## revision 3 adds session fields to dialogue and social history.
+const REVISION: int = 3
 const FIRST_REVISION: int = 1
 const SOURCE_NEW_WORLD: int = 0
 const SOURCE_WORLD_V1: int = 1
@@ -12,6 +13,8 @@ const _MEMORY_STATE_KEYS: Array[String] = ["recent_dialogue", "memories", "recen
 	"observations", "next_observation_id", "heard_origins"]
 const _OTHER_DIMENSIONS: Array[String] = ["respect", "fear", "suspicion"]
 const _LEGACY_UNAVAILABLE: String = "legacy_unavailable"
+## Session id of history entries written before sessions existed.
+const LEGACY_SESSION: String = "legacy"
 
 ## Returns {"ok", "data", "error"}; data is a validated current-revision v2 root, or {} on failure.
 static func upgrade(source: Dictionary) -> Dictionary:
@@ -29,10 +32,13 @@ static func upgrade(source: Dictionary) -> Dictionary:
 		candidate = source.duplicate(true)
 		if revision == 1:
 			candidate = _to_revision_2(candidate)
+		if revision <= 2:
+			candidate = _to_revision_3(candidate)
 	elif _is_int(version, 1) and source.has("world"):
-		candidate = _to_revision_2(_from_world_v1(source.duplicate(true), SOURCE_WORLD_V1))
+		candidate = _to_revision_3(_to_revision_2(
+			_from_world_v1(source.duplicate(true), SOURCE_WORLD_V1)))
 	elif _is_int(version, 1) and source.has("npcs"):
-		candidate = _to_revision_2(_from_memory_only(source.duplicate(true)))
+		candidate = _to_revision_3(_to_revision_2(_from_memory_only(source.duplicate(true))))
 	else:
 		return _failure("unsupported_version")
 	if candidate.is_empty():
@@ -184,6 +190,42 @@ static func _to_revision_2(root: Dictionary) -> Dictionary:
 		mind["version"] = NpcMindState.SCHEMA_VERSION
 		mind["knowledge"] = NpcKnowledge.new().to_data()
 		mind["evidence"] = inboxes.get(id, NpcEvidenceInbox.new().to_data())
+	(migration as Dictionary)["revision"] = 2
+	return root
+
+# Revision 2 -> 3: legacy dialogue and social history entries belong to the "legacy" session.
+# Dialogue had no time (minute -1); social entries keep their minute and gain both participants
+# from the owner and its "with". Every legacy line was delivered. Returns {} for invalid roots.
+static func _to_revision_3(root: Dictionary) -> Dictionary:
+	if root.is_empty():
+		return {}
+	var migration: Variant = root.get("migration")
+	var memory: Variant = root.get("memory")
+	var world: Variant = root.get("world")
+	if not migration is Dictionary or not memory is Dictionary \
+			or not (memory as Dictionary).get("npcs") is Dictionary or not world is Dictionary \
+			or not (world as Dictionary).get("life") is Dictionary \
+			or not ((world as Dictionary)["life"] as Dictionary).get("people") is Dictionary:
+		return {}
+	for state: Variant in ((memory as Dictionary)["npcs"] as Dictionary).values():
+		if not state is Dictionary or not (state as Dictionary).get("recent_dialogue") is Array:
+			return {}
+		for entry: Variant in (state as Dictionary)["recent_dialogue"]:
+			if not entry is Dictionary:
+				return {}
+			(entry as Dictionary).merge({"session_id": LEGACY_SESSION, "minute": -1.0,
+				"delivered": true})
+	var people: Dictionary = ((world as Dictionary)["life"] as Dictionary)["people"]
+	for id: Variant in people:
+		var person: Variant = people[id]
+		if not person is Dictionary or not (person as Dictionary).get("recent_social") is Array:
+			return {}
+		for entry: Variant in (person as Dictionary)["recent_social"]:
+			if not entry is Dictionary:
+				return {}
+			var other: Variant = (entry as Dictionary).get("with", "")
+			(entry as Dictionary).merge({"session_id": LEGACY_SESSION, "speaker_id": id,
+				"listener_id": other, "delivered": true})
 	(migration as Dictionary)["revision"] = REVISION
 	return root
 

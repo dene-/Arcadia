@@ -28,7 +28,7 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 | M1 | done: `NpcMindStore`/`NpcMindState`/`NpcRelationshipGraph`/`NpcCommitments`; v2 save with load resolution v2 → v1 world → memory-only → new; `NpcSaveMigration` revision 1; reset tooling on v2; relationships single-owned with receipts | see git log |
 | M2 | done: `NpcObservation` evidence per observer in a per-mind `NpcEvidenceInbox` (fair 32-item window, noise coalescing, protected evidence never dropped, deferred retry); `NpcKnowledge` with provenance/contradiction rules, public bootstrap (runtime-only, not saved), throttled first-hand sightings; `WorldEventSnapshot`; migration revision 2 | see git log |
 | M3 | done: `NpcTaskController` (owner-checked claims, one suspended task, checkpoints), `NpcBrain` per resident, routine/safety tasks, directed-travel/hold adapter tasks; `TownBuildings` is a task-owned executor (no sleep/wake decisions); `NpcDailyRoutine.hold` and the `maintain` priority chain removed | see git log |
-| M4 | pending | |
+| M4 | done: `NpcSocialTask`; encounter sessions invite (no claims, 8 s) → approach → converse → leave; player dialogue through the brain (urgent duties refuse with a short line); protected speech tokens; session id/minute/delivery in dialogue and social history (migration revision 3, legacy = unknown time); commitments resolved by task outcome, intentions completed only through commitments | see git log |
 | M5 | pending | |
 | M6 | pending | |
 | M7 | pending | |
@@ -53,12 +53,17 @@ Implementation continuity for `docs/plans/2026-09-21-npc-cognition-architecture.
 - Grep for `daily_routine.hold`, `buildings.travel(`, `.travel_to(`, `investigate(`, `sleep_at(` outside the executor/tasks finds only `BaseNpc.sleep_at`'s definition.
 - Behavior changes: an investigating guard (caution priority) refuses conversations; a conversation replaces a patrol leg, which is re-requested after the session; a restored watch investigation is dropped on reload; safety tasks interrupt player dialogue.
 
+### M4 evidence
+
+- Unit 406 passed; all 13 integrations passed (new world scenarios: crossing invitations, danger releases both participants and the late reply cannot deliver a rumor, the player takes over a session, an urgent resident refuses the player, a commitment completes once across a world reload); backend 64 passed with `GODOT` set.
+- Behavior changes: invitations take no claims until both agree; `NpcConversation` commits require a session id.
+
 ## Remaining migration adapters
 
 - `NpcMemoryStore.snapshot(id).relationship` (player relationship read adapter) and `TownLifeState.get_person(id).ties` (resident tie read adapter). Removed when context building moves to cognition (M6/M9).
-- `NpcDirectedTravelTask` / `NpcHoldTask` adapters used by `TownWatch` (patrol, investigation), `TownFunerals` (errands, pauses) and `TownEncounters` (session holds). Replaced by social/guard/recovery tasks in M4/M5.
+- `NpcDirectedTravelTask` / `NpcHoldTask` adapters used by `TownWatch` (patrol, investigation) and `TownFunerals` (errands, pauses). Replaced by guard/recovery tasks in M5. Encounters now use `NpcSocialTask`.
 - `TownLifeState.select_activity` activity/place/until remain as a saved context projection of the current routine/safety task (M9).
 
 ## Next step
 
-M4: social task with invitation before holding, player dialogue through the brain's availability boundary, session ids/timestamps/delivery status in dialogue and social history, commitments resolved by task outcome.
+M5: guard and recovery tasks over the `TownDeaths` intent API; knowledge-based reporting; role-derived guard shifts; bereavement concerns.

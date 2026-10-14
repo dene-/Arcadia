@@ -97,14 +97,46 @@ func test_session_holds_both_residents_until_it_ends() -> void:
 	_encounters.consider(_first, _second)
 	for id: String in ["social_a", "social_b"]:
 		var task: Dictionary = (_brains[id] as NpcBrain).current_activity()
-		assert_eq(task.get("kind"), "hold")
+		assert_eq(task.get("kind"), "social")
 		assert_eq(_claims(id).locomotion, task.task_id)
-		assert_ne(_claims(id).conversation, "")
+		assert_eq(_claims(id).conversation, task.task_id)
+		assert_eq(_encounters.session_phase(id), TownEncounters.PHASE_CONVERSE)
 	_backend.fail_speech = true
 	_backend.released.emit()
 	assert_false(_encounters.is_busy("social_a"))
 	_assert_released("social_a")
 	_assert_released("social_b")
+
+func test_invitation_takes_no_claims_and_a_crossing_invitation_is_dropped() -> void:
+	_backend.hold_stage = "social"
+	await _scene.get_tree().physics_frame
+	_encounters.consider(_first, _second)
+	_encounters.consider(_second, _first)
+	for id: String in ["social_a", "social_b"]:
+		assert_eq(_encounters.session_phase(id), TownEncounters.PHASE_INVITE)
+		_assert_released(id)
+	_backend.hold_stage = ""
+	_backend.fail_speech = true
+	_backend.released.emit()
+	assert_eq(_encounters.diagnostics("social_a").outcome, "speech_cancelled_or_unavailable")
+	assert_false(_encounters.is_busy("social_a"))
+	assert_false(_encounters.is_busy("social_b"))
+	_assert_released("social_a")
+	_assert_released("social_b")
+
+func test_invitation_is_dropped_when_a_resident_becomes_unavailable() -> void:
+	_backend.hold_stage = "social"
+	await _scene.get_tree().physics_frame
+	_encounters.consider(_first, _second)
+	var duty := NpcHoldTask.create({"owner": "funerals", "reason": "absorbing a death",
+		"priority": _tuning.caution_priority})
+	assert_true((_brains["social_b"] as NpcBrain).request_task(duty))
+	_encounters._process(0.01)
+	assert_false(_encounters.is_busy("social_a"))
+	_backend.released.emit()
+	_assert_released("social_a")
+	assert_eq(_claims("social_b").locomotion, duty.task_id)
+	assert_eq(_claims("social_b").conversation, "")
 
 func test_refusing_participant_releases_the_other_immediately() -> void:
 	await _scene.get_tree().physics_frame

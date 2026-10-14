@@ -49,6 +49,9 @@ var _target_attack_side_sign: int = 1
 var _attack_cooldown_remaining: float = 0.0
 var _drops_spawned: bool = false
 var _reaction_cooldown_until: int = 0
+# The current utterance's owner; a protected one (a session line) blocks every other owner.
+var _speech_owner: String = ""
+var _speech_protected: bool = false
 var _fallen_frame: int = -1
 
 @onready var blood_particles: CPUParticles2D = $BloodParticles
@@ -131,7 +134,7 @@ func get_perceived_name() -> String:
 	return "a hostile creature" if npc_data != null and npc_data.ai_enabled else "a creature"
 
 func can_speak_reaction() -> bool:
-	return health > 0 and not _dialog_locked and not _sleeping \
+	return health > 0 and not _dialog_locked and not _sleeping and not _speech_protected \
 		and Time.get_ticks_msec() >= _reaction_cooldown_until
 
 func reserve_spoken_reaction() -> bool:
@@ -140,8 +143,26 @@ func reserve_spoken_reaction() -> bool:
 	_reaction_cooldown_until = Time.get_ticks_msec() + int(npc_data.reaction_cooldown * 1000.0)
 	return true
 
-func show_spoken_reaction(text: String) -> bool:
+## Takes the speech token for `owner`; refused while another owner's protected line is active.
+func begin_speech(owner: String, protected: bool) -> bool:
+	if owner.is_empty() or health <= 0 or _dialog_locked or _sleeping \
+		or (_speech_protected and _speech_owner != owner):
+		return false
+	_speech_owner = owner
+	_speech_protected = protected
+	return true
+
+func end_speech(owner: String) -> void:
+	if not owner.is_empty() and _speech_owner == owner:
+		_speech_owner = ""
+		_speech_protected = false
+
+## Shows a line in the reaction bubble. Without `owner` it is an unprotected reaction that
+## never interrupts a protected line; with `owner` that owner must hold the speech token.
+func show_spoken_reaction(text: String, owner: String = "") -> bool:
 	if health <= 0 or _dialog_locked or _sleeping:
+		return false
+	if (owner.is_empty() and _speech_protected) or (not owner.is_empty() and _speech_owner != owner):
 		return false
 	var bubble: Node2D = get_node_or_null("ReactionBubble") as Node2D
 	if bubble == null:

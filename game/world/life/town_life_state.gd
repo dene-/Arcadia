@@ -132,9 +132,13 @@ func reserve_encounter(id: String, seed_value: int) -> void:
 	var random := NpcRoutinePlan.random_for(seed_value, "%s:meeting:%s" % [id, person.encounters])
 	person.social_after = minute + random.randf_range(35, 85)
 
-func remember_exchange(id: String, other: String, text: String, disposition: float = 0.0) -> void:
+## Records a delivered line of session `session_id` in `id`'s social history.
+func remember_exchange(id: String, other: String, text: String, session_id: String,
+		speaker_id: String, listener_id: String, disposition: float = 0.0) -> void:
 	var person: Dictionary = _people[id]
-	person.recent_social.append({"with": other, "text": text.substr(0, 500), "minute": minute})
+	person.recent_social.append({"with": other, "text": text.substr(0, 500), "minute": minute,
+		"session_id": session_id, "speaker_id": speaker_id, "listener_id": listener_id,
+		"delivered": true})
 	while person.recent_social.size() > 6:
 		person.recent_social.pop_front()
 	var receipt: String = "social:%s:%s:%d" % [id, other, _next_social_receipt]
@@ -219,6 +223,8 @@ static func _valid_person(person: Variant) -> bool:
 		return false
 	for entry: Variant in person.recent_social:
 		if not entry is Dictionary or not entry.get("with") is String or not entry.get("text") is String \
-			or entry.text.length() > 500 or not _number(entry.get("minute")):
+			or entry.text.length() > 500 or not _number(entry.get("minute")) \
+			or not entry.get("speaker_id") is String or not entry.get("listener_id") is String \
+			or not NpcMemoryStore.is_valid_session_entry(entry):
 			return false
 	return person.get("decision") is Dictionary
