@@ -9,11 +9,23 @@ signal interacted(interactor: Node)
 
 const RUN_ANIMATION_NAME: StringName = &"run"
 const WALK_ANIMATION_NAME: StringName = &"walk"
+## A resident who woke this many game minutes ago or less still mentions why it woke.
+const RECENT_WAKE_MINUTES: float = 5.0
 const MEMORY_DEBUG_PROPERTIES: Dictionary[String, int] = {
 	"npc_id": TYPE_STRING, "status": TYPE_STRING, "turn": TYPE_INT,
 	"memories": TYPE_ARRAY, "recent_dialogue": TYPE_ARRAY,
-	"relationship": TYPE_DICTIONARY, "recent_events": TYPE_ARRAY, "observations": TYPE_ARRAY,
+	"recent_events": TYPE_ARRAY, "observations": TYPE_ARRAY,
 }
+## Read-only Remote Inspector view of the resident's mind and brain (debug builds only).
+const COGNITION_DEBUG_PROPERTIES: Dictionary[String, int] = {
+	"goal_scores": TYPE_DICTIONARY, "current_task": TYPE_DICTIONARY,
+	"suspended_task": TYPE_DICTIONARY, "claims": TYPE_DICTIONARY, "perceived_threats": TYPE_ARRAY,
+	"knowledge_sources": TYPE_ARRAY, "condition": TYPE_DICTIONARY, "relationships": TYPE_DICTIONARY,
+	"commitments": TYPE_ARRAY, "pending_evidence": TYPE_DICTIONARY, "request_outcomes": TYPE_ARRAY,
+	"last_save_failure": TYPE_DICTIONARY, "trace": TYPE_ARRAY,
+}
+const COGNITION_DEBUG_KNOWLEDGE: int = 32
+const COGNITION_DEBUG_REQUESTS: int = 8
 
 ## Data resource containing movement, combat, AI, interaction, and animation tuning.
 @export var npc_data: NpcData
@@ -32,7 +44,6 @@ var _awake_hurt_position: Vector2
 var _awake_sprite_z: int
 var _sleep_center := Vector2(0, -20)
 var _sleeping: bool = false
-var _woke_at: int = -90001
 var _woke_world_minute: float = -100.0
 var _woke_space: StringName
 var _wake_reason: String = ""
@@ -53,6 +64,9 @@ var _reaction_cooldown_until: int = 0
 var _speech_owner: String = ""
 var _speech_protected: bool = false
 var _fallen_frame: int = -1
+# Inspector Cognition snapshot and the state key it was built from; rebuilt only on change.
+var _cognition_cache: Dictionary = {}
+var _cognition_key: Array = []
 
 @onready var blood_particles: CPUParticles2D = $BloodParticles
 @onready var interaction_area: Area2D = $InteractionArea
@@ -180,38 +194,61 @@ func show_spoken_reaction(text: String, owner: String = "") -> bool:
 		get_node("/root/WorldEvents").publish(WorldEvent.speech(self, text))
 	return true
 
-func get_cognitive_context() -> Dictionary:
+## What `consumer` (NpcCognitiveContext.DIALOGUE, REACTION, SOCIAL or DECISION) may know right
+## now; `participants` are the ids whose relationship to this resident the consumer needs.
+func get_cognitive_context(consumer: StringName = NpcCognitiveContext.DIALOGUE,
+		participants: Array[String] = []) -> Dictionary:
+	return NpcCognitiveContext.for_consumer(consumer, _context_facts(participants))
+
+# Every fact a consumer could need, before NpcCognitiveContext applies its whitelist. The actor
+# is the authority for what it is doing; the brain's current task names the plan behind it.
+func _context_facts(participants: Array[String]) -> Dictionary:
 	var profile: NpcProfile = get_npc_profile()
-	var current: Dictionary = {"location": profile.home if profile != null else "",
-		"activity": "conversation" if _dialog_locked else String(state_machine.get_current_state_name()),
-		"physical_state": "injured" if health < max_health else "well",
-		"sensory_cues": []}
-	current.merge(life_context.duplicate(true), true)
-	current.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
+	var facts: Dictionary = life_context.duplicate(true)
+	var minute: float = float(facts.get("world_minute", 0.0))
+	facts.physical_state = "injured" if health < max_health else "well"
+	facts.sensory_cues = []
+	facts.player_identity = preload("res://game/resources/actors/player_data.tres").social_identity()
+	facts.relationships = {}
+	var activity: String = String(state_machine.get_current_state_name())
+	var brain: NpcBrain = NpcBrain.of(self) if is_inside_tree() else null
+	if brain != null:
+		facts.current_task = brain.current_activity()
+	if daily_routine != null:
+		activity = daily_routine.activity
+		facts.destination = daily_routine.place
+		facts.traveling = daily_routine.has_route(global_position)
+	var task_activity: String = String(facts.get("current_task", {}).get("activity", ""))
+	if not task_activity.is_empty():
+		activity = task_activity
+	facts.activity = activity
+	if _dialog_locked:
+		facts.activity = "conversation"
+		facts.interrupted_activity = activity
 	if is_inside_tree():
 		if profile != null:
+			var id: String = String(profile.npc_id)
 			var cognition: Node = get_node("/root/NpcCognition")
-			current.recent_ambient = cognition.ambient.recent(String(profile.npc_id))
+			facts.recent_ambient = cognition.ambient.recent(id, minute)
 			var minds: NpcMindStore = cognition.save_game.minds
-			if minds.has_mind(String(profile.npc_id)):
-				current.merge(NpcCognitiveContext.mind_context(minds.get_mind(String(profile.npc_id)),
-					float(current.get("world_minute", NAN)), self), true)
+			if minds.has_mind(id):
+				var mind: NpcMindState = minds.get_mind(id)
+				facts.merge(NpcCognitiveContext.mind_context(mind,
+					float(facts.get("world_minute", NAN)), self), true)
+				for other: String in participants:
+					facts.relationships[other] = mind.relationships.get_relationship(other)
 		var players: Array[Node] = get_tree().get_nodes_in_group(&"players")
 		if not players.is_empty() and players[0] is BasePlayer:
-			current.player_identity = players[0].get_social_identity()
-	if daily_routine != null:
-		current.merge(daily_routine.context(global_position), true)
-		if _dialog_locked:
-			current.activity = "conversation (interrupted " + daily_routine.activity + ")"
-	current.world_space = String(world_space)
-	current.location = world_space_label
-	current.sleeping = _sleeping
-	current.alert_phase = alert_response.phase
-	var awake_minutes: float = float(current.get("world_minute", 0)) - _woke_world_minute
-	current.recently_awakened = not _sleeping and world_space == _woke_space \
-		and awake_minutes >= 0 and awake_minutes < 5 and Time.get_ticks_msec() - _woke_at < 30000
-	current.wake_reason = _wake_reason if current.recently_awakened else ""
-	return current
+			facts.player_identity = players[0].get_social_identity()
+	facts.world_space = String(world_space)
+	facts.location = world_space_label
+	facts.sleeping = _sleeping
+	facts.alert_phase = alert_response.phase
+	var awake_minutes: float = minute - _woke_world_minute
+	facts.recently_awakened = not _sleeping and world_space == _woke_space \
+		and awake_minutes >= 0.0 and awake_minutes < RECENT_WAKE_MINUTES
+	facts.wake_reason = _wake_reason if facts.recently_awakened else ""
+	return facts
 
 func can_follow_routine() -> bool:
 	return health > 0 and not _dialog_locked and not has_enemy_target() and not alert_response.active() \
@@ -249,7 +286,6 @@ func show_sleep_pose(sleeping: bool) -> void:
 		if indicator != null:
 			indicator.position = (_sleep_center + Vector2(5, -14)).round()
 	else:
-		_woke_at = Time.get_ticks_msec()
 		_woke_world_minute = float(life_context.get("world_minute", 0))
 		_woke_space = world_space
 		body_collision_shape.set_deferred("disabled", health <= 0)
@@ -720,6 +756,12 @@ func _get_property_list() -> Array[Dictionary]:
 		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_life"})
 	properties.append({"name": "runtime_life", "type": TYPE_DICTIONARY,
 		"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
+	properties.append({"name": "Cognition", "type": TYPE_NIL,
+		"usage": PROPERTY_USAGE_GROUP, "hint_string": "runtime_cognition_"})
+	for field: String in COGNITION_DEBUG_PROPERTIES:
+		properties.append({"name": "runtime_cognition_" + field,
+			"type": COGNITION_DEBUG_PROPERTIES[field],
+			"usage": PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY})
 	return properties
 
 func _get(property: StringName) -> Variant:
@@ -730,6 +772,12 @@ func _get(property: StringName) -> Variant:
 			snapshot.position = global_position
 			snapshot.destination_position = daily_routine.destination
 		return snapshot
+	if String(property).begins_with("runtime_cognition_"):
+		var cognition_field: String = String(property).trim_prefix("runtime_cognition_")
+		if not COGNITION_DEBUG_PROPERTIES.has(cognition_field):
+			return null
+		var value: Variant = _cognition_snapshot()[cognition_field]
+		return value.duplicate(true)
 	if not String(property).begins_with("runtime_memory_"):
 		return null
 	var field: String = String(property).trim_prefix("runtime_memory_")
@@ -751,10 +799,88 @@ func _get(property: StringName) -> Variant:
 			return "Not initialized yet." if state.is_empty() else "Live memory state."
 		"turn":
 			return store.turn if store != null else 0
-		"relationship":
-			return state.get(field, {})
 		_:
 			return state.get(field, [])
+
+# The Cognition inspector snapshot. It is rebuilt only when a polled read finds that a mind,
+# brain, trace, task, claim, threat or condition-band version differs from the cached one.
+func _cognition_snapshot() -> Dictionary:
+	var profile: NpcProfile = get_npc_profile()
+	var id: String = String(profile.npc_id) if profile != null else ""
+	var cognition: Node = get_node_or_null("/root/NpcCognition") if is_inside_tree() else null
+	var save: NpcWorldSave = cognition.save_game if cognition != null else null
+	var minute: float = save.life.minute if save != null else NAN
+	var mind: NpcMindState = save.minds.get_mind(id) \
+		if save != null and not id.is_empty() and save.minds.has_mind(id) else null
+	var brain: NpcBrain = NpcBrain.of(self) if is_inside_tree() else null
+	var concern: Dictionary = save.life.get_person(id).get("safety", {}) \
+		if save != null and not id.is_empty() else {}
+	if not NpcSafetyState.active(concern, minute):
+		concern = {}
+	var key: Array = [id, concern, alert_response.phase, has_enemy_target(), health]
+	if mind != null:
+		key.append_array([mind.get_instance_id(), mind.versions(),
+			mind.condition_version(minute) if is_finite(minute) else ""])
+	if brain != null:
+		var controller: NpcTaskController = brain.controller
+		key.append_array([brain.get_instance_id(), brain.trace.version, controller.generation,
+			controller.claims(), _cognition_task_key(controller.current),
+			_cognition_task_key(controller.suspended)])
+	if key == _cognition_key and not _cognition_cache.is_empty():
+		return _cognition_cache
+	var snapshot: Dictionary = {"goal_scores": {}, "current_task": {}, "suspended_task": {},
+		"claims": {}, "perceived_threats": [], "knowledge_sources": [], "condition": {},
+		"relationships": {}, "commitments": [], "pending_evidence": {}, "request_outcomes": [],
+		"last_save_failure": {}, "trace": []}
+	if not concern.is_empty():
+		var threat: Dictionary = concern.duplicate(true)
+		threat.source = "safety_concern"
+		snapshot.perceived_threats.append(threat)
+	if alert_response.active():
+		snapshot.perceived_threats.append({"source": "alert_reflex", "phase": alert_response.phase})
+	if has_enemy_target():
+		snapshot.perceived_threats.append({"source": "enforcement_target", "target": _target.name})
+	if mind != null:
+		snapshot.knowledge_sources = mind.knowledge.newest_personal(COGNITION_DEBUG_KNOWLEDGE)
+		if is_finite(minute):
+			var context: Dictionary = NpcCognitiveContext.mind_context(mind, minute, self)
+			snapshot.condition = {"bands": context.condition,
+				"emotion_causes": context.emotion_causes, "personal_concerns": context.personal_concerns}
+		for subject: String in mind.relationships.subjects():
+			snapshot.relationships[subject] = mind.relationships.get_relationship(subject)
+		snapshot.commitments = mind.commitments.open_commitments()
+		var counts: Dictionary = {}
+		for observation: NpcObservation in mind.evidence.pending_observations():
+			var status: String = String(mind.evidence.item(observation.observation_id).get("status", ""))
+			counts[status] = int(counts.get(status, 0)) + 1
+		snapshot.pending_evidence = {"by_status": counts, "receipts": mind.evidence.receipt_count()}
+	if brain != null:
+		snapshot.goal_scores = brain.trace.latest(NpcDecisionTrace.GOAL)
+		snapshot.current_task = _cognition_task_view(brain.controller.current)
+		snapshot.suspended_task = _cognition_task_view(brain.controller.suspended)
+		snapshot.claims = brain.controller.claims()
+		snapshot.last_save_failure = brain.trace.latest(NpcDecisionTrace.SAVE_FAILURE)
+		snapshot.trace = brain.trace.entries()
+		var requests: Array[Dictionary] = []
+		for entry: Dictionary in snapshot.trace:
+			if entry.kind == NpcDecisionTrace.REQUEST:
+				requests.append(entry)
+		snapshot.request_outcomes = requests.slice(maxi(0, requests.size() - COGNITION_DEBUG_REQUESTS))
+	_cognition_key = key
+	_cognition_cache = snapshot
+	return snapshot
+
+static func _cognition_task_key(task: NpcTask) -> Array:
+	return [task.task_id, task.phase, task.status] if task != null else []
+
+# A task's checkpoint without its per-tick progress, so the view stays valid until the key changes.
+static func _cognition_task_view(task: NpcTask) -> Dictionary:
+	if task == null:
+		return {}
+	var view: Dictionary = task.checkpoint()
+	view.erase("progress")
+	view.erase("suspended")
+	return view
 
 func _configure_blood_particles() -> void:
 	blood_particles.amount = npc_data.blood_particle_count

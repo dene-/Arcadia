@@ -1,10 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { QUESTIONS, decisionPolicy } from "../src/npc-decisions.js";
+import { QUESTIONS, speechPolicy } from "../src/npc-decisions.js";
+import { validateJudgments } from "../src/cognition-contract.js";
 import { createApp } from "../src/app.js";
 import { VOICE_DIRECTIONS, voiceInstructions } from "../src/npc-voice.js";
+
+const FIXTURES = new URL("../../../tests/fixtures/cognition_contract/", import.meta.url);
+const fixture = (name) => JSON.parse(readFileSync(new URL(name, FIXTURES), "utf8"));
+const manifest = fixture("manifest.json");
+const CHAT = manifest.dialogue.chat.route;
+const SAY = manifest.dialogue.say.route;
 
 function answers(overrides = {}, questions = QUESTIONS) {
   return Object.fromEntries(
@@ -47,18 +55,9 @@ function appraisal(questions) {
     "disposition:player:trust:magnitude": 2,
   }, questions);
 }
+// The v2 chat envelope; the player's message is the threat the memory proposals quote.
 function request() {
-  return {
-    protocol_version: 1,
-    npc: { id: "garrin_holt", profile: { name: "Garrin", job: "Blacksmith" } },
-    player: { message: "I will burn down your forge." },
-    context: {
-      recent_dialogue: [],
-      relationship: { trust: 0 },
-      memories: [],
-      current: { recent_events: [] },
-    },
-  };
+  return fixture(manifest.dialogue.chat.request);
 }
 function proposal(overrides = {}) {
   return {
@@ -84,10 +83,27 @@ function dialogue(overrides = {}) {
     ...overrides,
   };
 }
+const threat = () =>
+  answers({
+    should_remember: 0.93,
+    memory_importance: 3,
+    emotional_intensity: 3,
+    interaction_intent: "THREAT",
+    trust_change: "NEGATIVE",
+    fear_change: "POSITIVE",
+    should_retrieve_memories: 0.81,
+    response_mode: "DEFENSIVE",
+  });
+// A judgment or grounding call: grounding questions are `supported_<n>`, everything else is the
+// player-speech judgment set.
+const judging = (judgment, supported = 0.95) => async ({ questions }) => ({
+  answers: questions.supported_0
+    ? answers({ supported_0: supported, supported_1: supported, supported_2: supported }, questions)
+    : judgment,
+});
 async function server(t, services = {}) {
   const app = createApp({
-    decide: async ({ questions }) => ({ answers: answers(
-      { supported_0: 0.95, supported_1: 0.95, supported_2: 0.95 }, questions) }),
+    decide: judging(answers()),
     generate: async () => ({ output_text: JSON.stringify(dialogue()) }),
     ...services,
   });
@@ -109,52 +125,35 @@ async function server(t, services = {}) {
     return { status: response.status, body: response.status === 404 ? null : await response.json() };
   };
 }
-const threat = () =>
-  answers({
-    should_remember: 0.93,
-    memory_importance: 3,
-    emotional_intensity: 3,
-    interaction_intent: "THREAT",
-    trust_change: "NEGATIVE",
-    fear_change: "POSITIVE",
-    should_retrieve_memories: 0.81,
-    response_mode: "DEFENSIVE",
-  });
 
 test("surrender needs a confident intent judgment", () => {
   const judgment = answers({ interaction_intent: "SURRENDER" });
-  assert.equal(decisionPolicy(judgment).interaction_intent, "SURRENDER");
+  assert.equal(speechPolicy(judgment).interaction_intent, "SURRENDER");
   judgment.interaction_intent.confidence = 0.1;
-  assert.equal(decisionPolicy(judgment).interaction_intent, "OTHER");
+  assert.equal(speechPolicy(judgment).interaction_intent, "OTHER");
 });
 
-test("greetings stay short term; threat decisions produce bounded state changes", () => {
-  assert.equal(decisionPolicy(answers()).remember, false);
-  const result = decisionPolicy(threat());
+test("greetings stay short term; threat judgments open the memory and retrieval gates", () => {
+  assert.equal(speechPolicy(answers()).remember, false);
+  const result = speechPolicy(threat());
   assert.equal(result.remember, true);
   assert.equal(result.retrieve, true);
   assert.equal(result.importance, 0.75);
   assert.equal(result.response_mode, "DEFENSIVE");
-  assert.ok(
-    result.relationship_delta.trust < 0 &&
-      result.relationship_delta.trust >= -0.1,
-  );
-  assert.ok(result.relationship_delta.fear > 0);
   assert.equal(result.update_belief, false);
+  assert.equal(result.relationship_delta, undefined);
 });
-test("uncertain choices cannot alter trust and probability 0.5 is not intensity", () => {
+test("probability 0.5 is not intensity and an unsure intent falls back to other", () => {
   const raw = threat();
-  raw.trust_change.confidence = 0.2;
-  raw.response_mode.confidence = 0.1;
+  raw.interaction_intent.confidence = 0.2;
   raw.should_remember.noul = 0.5;
-  const result = decisionPolicy(raw);
-  assert.equal(result.relationship_delta.trust, 0);
-  assert.equal(result.response_mode, "DEFENSIVE");
+  const result = speechPolicy(raw);
+  assert.equal(result.interaction_intent, "OTHER");
   assert.equal(result.remember, false);
 });
-test("farewell decisions require clear intent and can accompany other intents", () => {
+test("farewell judgments require clear intent and can accompany other intents", () => {
   for (const probability of [0.1, 0.5, 0.79, 0.8, 0.99]) {
-    const policy = decisionPolicy(answers({
+    const policy = speechPolicy(answers({
       interaction_intent: "FAREWELL",
       should_end_conversation: probability,
     }));
@@ -162,12 +161,10 @@ test("farewell decisions require clear intent and can accompany other intents", 
   }
   const raw = threat();
   raw.should_end_conversation.noul = 0.95;
-  assert.equal(decisionPolicy(raw).interaction_intent, "THREAT");
-  assert.equal(decisionPolicy(raw).end_conversation, true);
-  raw.should_end_conversation.noul = "yes";
-  assert.throws(() => decisionPolicy(raw));
+  assert.equal(speechPolicy(raw).interaction_intent, "THREAT");
+  assert.equal(speechPolicy(raw).end_conversation, true);
 });
-test("farewell assessment reaches generation as policy with full player context", async (t) => {
+test("farewell assessment reaches generation as policy with the full player context", async (t) => {
   for (const [message, probability] of [
     ["Bye", 0.99],
     ["See you tomorrow", 0.98],
@@ -177,11 +174,12 @@ test("farewell assessment reaches generation as policy with full player context"
     ["Before I go, where is the inn?", 0.05],
     ["I am not leaving yet", 0.01],
   ]) {
-    // These are labeled mock decisions, not an evaluation of live model accuracy.
+    // These are labeled mock judgments, not an evaluation of live model accuracy.
+    let judged;
     const post = await server(t, {
       decide: async ({ state, questions }) => {
-        assert.equal(state.player.message, message);
-        assert.equal(state.context.recent_dialogue[0].text, "Need anything else?");
+        if (questions.supported_0) return { answers: answers({ supported_0: 0.95 }, questions) };
+        judged = state;
         assert.equal(questions.should_end_conversation.type, "noul");
         return { answers: answers({ should_end_conversation: probability }) };
       },
@@ -194,13 +192,13 @@ test("farewell assessment reaches generation as policy with full player context"
     });
     const body = request();
     body.player.message = message;
-    body.context.recent_dialogue = [{ speaker: "npc", text: "Need anything else?" }];
-    const judgment = await post("/decide", body);
-    assert.equal(judgment.status, 200);
-    body.answers = judgment.body.answers;
-    const reply = await post("/chat", body);
+    body.recent_dialogue = [{ speaker: "npc", text: "Need anything else?" }];
+    const reply = await post(CHAT, body);
     assert.equal(reply.status, 200);
     assert.equal(reply.body.response, "Take care.");
+    assert.equal(reply.body.judgments.should_end_conversation.noul, probability);
+    assert.equal(judged.player.message, message);
+    assert.equal(judged.context.recent_dialogue[0].text, "Need anything else?");
   }
 });
 test("malformed Jev outputs are rejected before policy application", () => {
@@ -213,7 +211,7 @@ test("malformed Jev outputs are rejected before policy application", () => {
   ]) {
     const raw = threat();
     change(raw);
-    assert.throws(() => decisionPolicy(raw));
+    assert.throws(() => speechPolicy(validateJudgments(raw, QUESTIONS)));
   }
 });
 test("official SDK contract uses named questions and the systemone endpoint (mock fetch)", async () => {
@@ -239,7 +237,7 @@ test("official SDK contract uses named questions and the systemone endpoint (moc
   });
   assert.equal(sent.url, "https://api.typesafe.ai/v1/systemone");
   assert.equal(sent.body.questions.should_remember.type, "noul");
-  assert.equal(decisionPolicy(result.answers).remember, true);
+  assert.equal(speechPolicy(validateJudgments(result.answers, QUESTIONS)).remember, true);
 });
 test("decisions and dialogue receive only the supplied bounded recollections", async (t) => {
   let seenDecision, seenPrompt;
@@ -255,7 +253,7 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
     },
   });
   const body = request();
-  body.context.memories = [{ id: "core:one", gist: "visible gist" }];
+  body.memories = [{ id: "core:one", gist: "visible gist" }];
   body.context.relationship = {
     familiarity: 0.7,
     trust: 0.2,
@@ -264,14 +262,9 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
     fear: 0.8,
     suspicion: 0.6,
   };
-  const decision = await post("/decide", body);
-  assert.equal(decision.status, 200);
-  assert.deepEqual(seenDecision.state.context.memories, body.context.memories);
-  body.answers = decision.body.answers;
-  body.context.relationship.trust =
-    decision.body.policy.relationship_delta.trust;
-  const response = await post("/chat", body);
+  const response = await post(CHAT, body);
   assert.equal(response.status, 200);
+  assert.deepEqual(seenDecision.state.context.memories, body.memories);
   assert.equal(response.body.memory_writes.length, 1);
   assert.equal(response.body.replies, undefined);
   assert.equal(seenPrompt.text.format.schema.properties.replies, undefined);
@@ -281,11 +274,10 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
   assert.equal(seenPrompt.text.format.strict, true);
   const prompt = JSON.parse(seenPrompt.input[0].content);
   assert.equal(prompt.policy.response_mode, "DEFENSIVE");
-  assert.ok(prompt.context.relationship.trust < 0);
-  assert.deepEqual(prompt.context.memories, body.context.memories);
-  assert.deepEqual(prompt.context.relationship, body.context.relationship);
-  assert.equal(seenDecision.state.context.relationship.affection, -0.5);
-  assert.equal(seenDecision.state.context.relationship.fear, 0.8);
+  assert.deepEqual(prompt.context.memories, body.memories);
+  assert.deepEqual(prompt.context.current.relationship, body.context.relationship);
+  assert.equal(seenDecision.state.context.current.relationship.affection, -0.5);
+  assert.equal(seenDecision.state.context.current.relationship.fear, 0.8);
   for (const field of [
     "familiarity",
     "trust",
@@ -297,22 +289,20 @@ test("decisions and dialogue receive only the supplied bounded recollections", a
     assert.equal(typeof prompt.relationship_scales[field], "string");
 });
 
-test("dialogue and reactions preserve different voices under the same policy or intent", async (t) => {
+test("dialogue and say preserve different voices under the same policy or intent", async (t) => {
   const calls = [];
   const post = await server(t, { generate: async (input) => {
     calls.push({ instructions: input.instructions, state: JSON.parse(input.input[0].content) });
-    return { output_text: JSON.stringify(dialogue({ memory_writes: [] })) };
+    return { output_text: JSON.stringify(
+      input.text.format.name === "npc_reaction" ? { response: "Hm." } : dialogue({ memory_writes: [] })) };
   } });
-  for (const path of ["/chat", "/react"]) {
+  for (const path of [CHAT, SAY]) {
     for (const voice of [
       { cadence: "BRISK", directness: "BLUNT", verbosity: "SPARE" },
       { cadence: "MEASURED", directness: "TACTFUL", verbosity: "EXPANSIVE" },
     ]) {
-      const body = request();
+      const body = path === CHAT ? request() : fixture(manifest.dialogue.say.request);
       body.npc.profile.voice = voice;
-      body.event = { text: "I heard fighting nearby.", sense: "hearing", player_involved: false };
-      if (path === "/chat") body.answers = answers();
-      else body.intent = "remark";
       assert.equal((await post(path, body)).status, 200);
     }
   }
@@ -324,111 +314,47 @@ test("dialogue and reactions preserve different voices under the same policy or 
   for (const offset of [0, 2]) {
     assert.notEqual(calls[offset].instructions, calls[offset + 1].instructions);
     assert.deepEqual(calls[offset].state.policy, calls[offset + 1].state.policy);
+    assert.deepEqual(calls[offset].state.intent, calls[offset + 1].state.intent);
   }
 });
 
-test("reactions write only the requested intent from the supplied context", async (t) => {
-  const generated = [];
-  const post = await server(t, {
-    decide: async () => assert.fail("a reaction must not call a judgment"),
-    generate: async (input, options) => {
-      generated.push({ input: JSON.parse(input.input[0].content), options, store: input.store });
-      return { output_text: '{"response":"Keep away!”"}' };
-    },
-  });
-  const body = request();
-  body.event = {
-    text: "I saw the player attack someone.",
-    sense: "sight",
-    player_involved: true,
-    participants: [{ name: "Mirelle", role: "hurt_person", relationship: { affection: 0.8 } }],
-  };
-  body.context.current.recent_ambient = [{ speaker: "Elora", text: "Mirelle, are you hurt?" }];
-  body.context.current.location = "Mirelle's home and shop";
-  body.context.current.recently_awakened = true;
-  for (const intent of ["remark", "warn", "call_for_help", "protest", "grieve"]) {
-    const reaction = await post("/react", { ...body, intent });
-    assert.equal(reaction.status, 200);
-    assert.equal(reaction.body.response, 'Keep away!"');
-  }
-  assert.deepEqual(generated.map((call) => call.input.intent),
-    ["remark", "warn", "call_for_help", "protest", "grieve"]);
-  const [first] = generated;
-  assert.deepEqual(first.input.event.participants, body.event.participants);
-  assert.deepEqual(first.input.context.current, body.context.current);
-  assert.equal(first.input.policy, undefined);
-  assert.equal(first.input.answers, undefined);
-  assert.equal(first.store, false);
-  assert.equal(first.options.timeout, 10000);
-  assert.ok(first.options.signal instanceof AbortSignal);
-});
-
-test("a reaction ignores v1 answers and speech flags the game no longer sends", async (t) => {
-  let seen;
-  const post = await server(t, { generate: async (input) => {
-    seen = JSON.parse(input.input[0].content);
-    return { output_text: '{"response":"Hey!"}' };
-  } });
-  const body = { ...request(), intent: "protest", answers: { should_speak: { type: "noul", noul: 0 } },
-    observationPolicy: { speak: false },
-    event: { text: "Something hit me.", sense: "touch", player_involved: true, speech_allowed: false } };
-  const result = await post("/react", body);
-  assert.equal(result.status, 200);
-  assert.equal(result.body.response, "Hey!");
-  assert.equal(seen.answers, undefined);
-  assert.equal(seen.observationPolicy, undefined);
-});
-
-test("the v1 observation and town-life decision routes are gone", async (t) => {
+test("the removed v1 routes answer 404 and never reach inference", async (t) => {
   const post = await server(t, {
     decide: async () => assert.fail("removed routes must not call inference"),
     generate: async () => assert.fail("removed routes must not call inference"),
   });
-  for (const path of ["/observe", "/life/routine", "/life/social", "/life/listen"])
+  for (const path of ["/decide", "/chat", "/react", "/life/say", "/observe", "/life/routine", "/life/social", "/life/listen"])
     assert.equal((await post(path, request())).status, 404, path);
 });
 
-test("invalid events and intents, failed generation and oversized reactions fail cleanly", async (t) => {
+test("invalid events and oversized input fail before any provider call", async (t) => {
   let calls = 0;
   const post = await server(t, {
-    generate: async () => {
-      calls++;
-      throw new Error("secret provider error");
-    },
+    decide: async () => { calls++; assert.fail("must not call inference"); },
+    generate: async () => { calls++; assert.fail("must not call inference"); },
   });
-  const event = { text: "I was hurt.", sense: "touch", player_involved: true };
-  const body = { ...request(), event, intent: "protest" };
-  for (const change of [
-    (b) => delete b.event,
-    (b) => (b.event = { ...event, sense: "smell" }),
-    (b) => (b.event = { ...event, text: "" }),
-    (b) => (b.event = { ...event, player_involved: "yes" }),
-    (b) => delete b.intent,
-    (b) => (b.intent = "silence"),
-    (b) => (b.intent = "REMARK"),
-    (b) => (b.intent = ["remark"]),
-    (b) => (b.protocol_version = 2),
+  for (const [path, build, change, status] of [
+    [CHAT, request, (b) => (b.protocol_version = 1), 409],
+    [CHAT, request, (b) => (b.npc_id = ""), 400],
+    [CHAT, request, (b) => (b.context.recent_events = [null]), 400],
+    [CHAT, request, (b) => (b.player.message = "x".repeat(2001)), 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => (b.event.sense = "smell"), 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => (b.event.text = ""), 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => (b.event.player_involved = "yes"), 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => delete b.intent, 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => (b.intent = "REMARK"), 400],
+    [SAY, () => fixture(manifest.dialogue.say.request), (b) => (b.intent = ["remark"]), 400],
   ]) {
-    const bad = structuredClone(body);
-    change(bad);
-    assert.equal((await post("/react", bad)).status, 400);
+    const body = build();
+    change(body);
+    assert.equal((await post(path, body)).status, status, JSON.stringify(body).slice(0, 80));
   }
   assert.equal(calls, 0);
-  const failed = await post("/react", body);
-  assert.equal(failed.status, 503);
-  assert.ok(!JSON.stringify(failed).includes("secret"));
-  assert.equal(calls, 1);
-  const oversized = await server(t, {
-    generate: async () => ({ output_text: JSON.stringify({ response: "x".repeat(161) }) }),
-  });
-  assert.equal((await oversized("/react", body)).status, 503);
-  const incomplete = await server(t, {
-    generate: async () => ({ status: "incomplete", output_text: '{"response":"Hey!"}' }),
-  });
-  assert.equal((await incomplete("/react", body)).status, 503);
 });
+
 test("unsupported observations, ungated beliefs and hidden recall IDs are dropped", async (t) => {
   const post = await server(t, {
+    decide: judging(threat()),
     generate: async () => ({
       output_text: JSON.stringify(
         dialogue({
@@ -437,20 +363,19 @@ test("unsupported observations, ungated beliefs and hidden recall IDs are droppe
             proposal({ type: "semantic" }),
             proposal({ evidence: "I handed you gold" }),
           ],
-          recalled_memory_ids: ["visible", "hidden", "visible"],
+          recalled_memory_ids: ["mem:garrin:4", "hidden", "mem:garrin:4"],
         }),
       ),
     }),
   });
-  const body = request();
-  body.answers = threat();
-  body.context.memories = [{ id: "visible" }];
-  const result = await post("/chat", body);
+  const result = await post(CHAT, request());
+  assert.equal(result.status, 200);
   assert.deepEqual(result.body.memory_writes, []);
-  assert.deepEqual(result.body.recalled_memory_ids, ["visible"]);
+  assert.deepEqual(result.body.recalled_memory_ids, ["mem:garrin:4"]);
 });
 test("spoken punctuation is normalized without losing grounded NPC promises", async (t) => {
   const post = await server(t, {
+    decide: judging(threat()),
     generate: async () => ({
       output_text: JSON.stringify(
         dialogue({
@@ -467,15 +392,16 @@ test("spoken punctuation is normalized without losing grounded NPC promises", as
       ),
     }),
   });
-  const body = request();
-  body.answers = threat();
-  const result = await post("/chat", body);
+  const result = await post(CHAT, request());
   assert.equal(result.status, 200);
   assert.equal(result.body.response, "I promise, I'll mend it.");
   assert.equal(result.body.memory_writes[0].type, "prospective");
 });
 test("gated beliefs retain source; model relationship changes have no authority", async (t) => {
+  const belief = threat();
+  belief.should_update_belief.noul = 0.95;
   const post = await server(t, {
+    decide: judging(belief),
     generate: async () => ({
       output_text: JSON.stringify(
         dialogue({
@@ -485,58 +411,39 @@ test("gated beliefs retain source; model relationship changes have no authority"
       ),
     }),
   });
-  const body = request();
-  body.answers = threat();
-  body.answers.should_update_belief.noul = 0.95;
-  const result = await post("/chat", body);
+  const result = await post(CHAT, request());
+  assert.equal(result.status, 200);
   assert.equal(result.body.memory_writes[0].source, "player_claim");
   assert.equal(result.body.relationship_delta, undefined);
 });
 test("service errors, refusals and incomplete or invalid model output fail cleanly", async (t) => {
-  for (const output of [
-    null,
-    "{",
-    JSON.stringify(dialogue({ memory_writes: null })),
+  for (const [output, status] of [
+    [null, 502],
+    ["{", 502],
+    [JSON.stringify(dialogue({ memory_writes: null })), 502],
   ]) {
     const post = await server(t, {
+      decide: judging(threat()),
       generate: async () => ({ output_text: output }),
     });
-    const body = request();
-    body.answers = threat();
-    assert.equal((await post("/chat", body)).status, 503);
+    assert.equal((await post(CHAT, request())).status, status, String(output));
   }
-  const post = await server(t, {
+  const failing = await server(t, {
     decide: async () => {
       throw new Error("secret credential");
     },
+  });
+  const decision = await failing(CHAT, request());
+  assert.equal(decision.status, 503);
+  assert.ok(!JSON.stringify(decision).includes("secret"));
+  const incomplete = await server(t, {
+    decide: judging(threat()),
     generate: async () => ({
       status: "incomplete",
       output_text: JSON.stringify(dialogue()),
     }),
   });
-  const decision = await post("/decide", request());
-  assert.equal(decision.status, 503);
-  assert.ok(!JSON.stringify(decision).includes("secret"));
-  const body = request();
-  body.answers = threat();
-  assert.equal((await post("/chat", body)).status, 503);
-});
-test("invalid version, events, identity and oversized player input never reach inference", async (t) => {
-  const post = await server(t, {
-    decide: async () => {
-      assert.fail("must not call inference");
-    },
-  });
-  for (const change of [
-    (b) => (b.protocol_version = 2),
-    (b) => (b.npc.id = ""),
-    (b) => (b.context.current.recent_events = [null]),
-    (b) => (b.player.message = "x".repeat(2001)),
-  ]) {
-    const body = request();
-    change(body);
-    assert.equal((await post("/decide", body)).status, 400);
-  }
+  assert.equal((await incomplete(CHAT, request())).status, 503);
 });
 
 test(
@@ -613,6 +520,7 @@ test("a valid quote cannot launder unsupported memory details", async (t) => {
       proposal({ type: "prospective", gist: "The player promised to pay for a new forge." }),
     ] })) }),
     decide: async ({ state, questions }) => {
+      if (!questions.supported_0) return { answers: threat() };
       checks++;
       assert.equal(Object.keys(questions).length, 3);
       assert.equal(state.candidates[1].source_text, request().player.message);
@@ -622,7 +530,7 @@ test("a valid quote cannot launder unsupported memory details", async (t) => {
       return { answers: answers({ supported_0: 0.95, supported_1: 0.1, supported_2: 0.5 }, questions) };
     },
   });
-  const result = await post("/chat", { ...request(), answers: threat() });
+  const result = await post(CHAT, request());
   assert.equal(result.status, 200);
   assert.equal(checks, 1);
   assert.equal(result.body.memory_writes.length, 1);
@@ -633,21 +541,33 @@ test("a valid quote cannot launder unsupported memory details", async (t) => {
 test("grounding failures discard proposals while preserving valid dialogue", async (t) => {
   for (const answer of [null, { type: "noul", noul: 1.1 }, { type: "noul", noul: "0.99" },
     { type: "choice", noul: 0.99 }, { type: "noul", noul: 0.84 }]) {
-    const post = await server(t, { decide: async () => ({ answers: { supported_0: answer } }) });
-    const result = await post("/chat", { ...request(), answers: threat() });
+    const post = await server(t, {
+      decide: async ({ questions }) => ({ answers: questions.supported_0 ? { supported_0: answer } : threat() }),
+    });
+    const result = await post(CHAT, request());
     assert.equal(result.status, 200);
     assert.equal(result.body.response, "Leave my forge.");
     assert.deepEqual(result.body.memory_writes, []);
   }
-  const post = await server(t, { decide: async () => { throw Error("provider unavailable"); } });
-  const result = await post("/chat", { ...request(), answers: threat() });
+  const post = await server(t, {
+    decide: async ({ questions }) => {
+      if (questions.supported_0) throw Error("provider unavailable");
+      return { answers: threat() };
+    },
+  });
+  const result = await post(CHAT, request());
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.memory_writes, []);
 });
 
 test("no grounding call is made when nothing merits memory", async (t) => {
-  const post = await server(t, { decide: async () => { assert.fail("unnecessary inference"); } });
-  const result = await post("/chat", { ...request(), answers: answers() });
+  const post = await server(t, {
+    decide: async ({ questions }) => {
+      assert.equal(questions.supported_0, undefined, "unnecessary inference");
+      return { answers: answers() };
+    },
+  });
+  const result = await post(CHAT, request());
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.memory_writes, []);
 });

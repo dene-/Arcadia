@@ -111,7 +111,7 @@ func test_memory_only_legacy_file_loads_when_the_world_file_is_missing_and_migra
 	assert_eq(save.memory.world_minute, 1234.0)
 	var source: Dictionary = _fixture("memory_only_legacy")
 	for id: String in source.npcs:
-		assert_eq(save.memory.snapshot(id).relationship, source.npcs[id].relationship, id)
+		assert_eq(save.memory.minds.get_mind(id).relationships.get_relationship("player"), source.npcs[id].relationship, id)
 		assert_eq(save.memory.snapshot(id).memories, source.npcs[id].memories.map(_undated), id)
 	assert_true(save.dead_npcs.is_empty())
 	assert_true(save.population.people.is_empty())
@@ -197,8 +197,9 @@ func test_town_fixture_holds_population_economy_justice_safety_and_two_memory_st
 	var life: Dictionary = save.life.to_data()
 	assert_eq(life.people.size(), 33)
 	assert_eq(life.personalities.size(), 33)
-	assert_eq(save.life.get_person("garrin_holt").ties.size(), 32)
-	assert_eq(save.life.get_person("garrin_holt").ties.holt_partner.familiarity, 1.0, "Kin ties are initialized.")
+	var garrin_graph: NpcRelationshipGraph = save.minds.get_mind("garrin_holt").relationships
+	assert_eq(garrin_graph.subjects().filter(func(id: String) -> bool: return id != "player").size(), 32)
+	assert_eq(garrin_graph.get_relationship("holt_partner").familiarity, 1.0, "Kin ties are initialized.")
 	assert_true(life.rumors.known.is_empty())
 	var total: int = save.economy.treasury
 	var changed: int = 0
@@ -229,8 +230,9 @@ func test_town_fixture_holds_population_economy_justice_safety_and_two_memory_st
 	assert_true("episodic" in types and "semantic" in types)
 	assert_eq(_count_source(save, "garrin_holt", "authored"), 2)
 	assert_eq(garrin.recent_dialogue.size(), 6)
-	assert_ne(garrin.relationship, NpcRelationshipState.initial())
-	assert_ne(save.memory.snapshot("holt_partner").relationship, NpcRelationshipState.initial())
+	assert_ne(save.minds.get_mind("garrin_holt").relationships.get_relationship("player"),
+		NpcRelationshipState.initial())
+	assert_ne(save.memory.minds.get_mind("holt_partner").relationships.get_relationship("player"), NpcRelationshipState.initial())
 	assert_eq(save.memory.snapshot("holt_partner").recent_dialogue.size(), 4)
 
 func test_rerolled_fixture_generates_personalities_and_ties_from_the_nonzero_npc_seed() -> void:
@@ -246,8 +248,8 @@ func test_rerolled_fixture_generates_personalities_and_ties_from_the_nonzero_npc
 	assert_eq(saved.personality, generated.personality)
 	for tendency: String in NpcTemperament.TRAITS:
 		assert_true(is_equal_approx(saved.traits[tendency], generated.traits[tendency]))
-	assert_ne(rerolled.life.get_person("garrin_holt").ties.sella_rowan,
-		town.life.get_person("garrin_holt").ties.sella_rowan)
+	assert_ne(rerolled.minds.get_mind("garrin_holt").relationships.get_relationship("sella_rowan"),
+		town.minds.get_mind("garrin_holt").relationships.get_relationship("sella_rowan"))
 
 func test_unusual_but_valid_voices_survive_loading_unchanged() -> void:
 	for name: String in ["v1_town", "v1_town_rerolled"]:
@@ -326,8 +328,8 @@ func test_observation_fixture_holds_every_status_and_applies_relationship_change
 	var seen: Array = _memories(save, "holt_partner").filter(
 		func(memory: Dictionary) -> bool: return memory.gist == statuses[4].text)
 	assert_eq(seen.size(), 1)
-	var before: Dictionary = town.memory.snapshot("holt_partner").relationship
-	var after: Dictionary = save.memory.snapshot("holt_partner").relationship
+	var before: Dictionary = town.memory.minds.get_mind("holt_partner").relationships.get_relationship("player")
+	var after: Dictionary = save.memory.minds.get_mind("holt_partner").relationships.get_relationship("player")
 	assert_true(is_equal_approx(after.trust - before.trust, 0.05), "Only the sight observation moved trust.")
 	assert_true(is_equal_approx(after.respect - before.respect, 0.04))
 	assert_eq(after.fear, before.fear)
@@ -351,16 +353,16 @@ func test_rumor_fixture_keeps_receipts_hearsay_memories_and_account_chains() -> 
 		func(account: Dictionary) -> bool: return account.hops == 3))
 	assert_eq(save.life.rumors.get_known("bram_edevane", minute)[0].hops, 0)
 	assert_eq(save.life.rumors.get_known("tovan_reed", minute).size(), 1)
-	var trust: float = save.memory.snapshot("garrin_holt").relationship.trust
-	assert_true(is_equal_approx(trust - town.memory.snapshot("garrin_holt").relationship.trust, -0.02),
+	var trust: float = save.memory.minds.get_mind("garrin_holt").relationships.get_relationship("player").trust
+	assert_true(is_equal_approx(trust - town.memory.minds.get_mind("garrin_holt").relationships.get_relationship("player").trust, -0.02),
 		"Confident player-involved hearsay nudges trust.")
-	assert_eq(save.memory.snapshot("holt_partner").relationship.trust,
-		town.memory.snapshot("holt_partner").relationship.trust, "Weak hearsay does not.")
+	assert_eq(save.memory.minds.get_mind("holt_partner").relationships.get_relationship("player").trust,
+		town.memory.minds.get_mind("holt_partner").relationships.get_relationship("player").trust, "Weak hearsay does not.")
 	var memories_before: int = _memories(save, "garrin_holt").size()
 	save.memory.record_hearsay(_profile("garrin_holt"), garrin[0],
 		{"remember": true, "importance": 0.9, "dispositions": {"player": {"trust": -0.03}}})
 	assert_eq(_memories(save, "garrin_holt").size(), memories_before, "Retelling is not new evidence.")
-	assert_eq(save.memory.snapshot("garrin_holt").relationship.trust, trust)
+	assert_eq(save.memory.minds.get_mind("garrin_holt").relationships.get_relationship("player").trust, trust)
 
 func test_prospective_fixture_has_one_completed_and_one_open_intention() -> void:
 	var save: NpcWorldSave = _load("v1_prospective")

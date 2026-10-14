@@ -28,6 +28,18 @@
       "response": "utterance.response.json"
     }
   },
+  "dialogue": {
+    "say": {
+      "route": "/v2/dialogue/say",
+      "request": "dialogue_say.request.json",
+      "response": "dialogue_say.response.json"
+    },
+    "chat": {
+      "route": "/v2/dialogue/chat",
+      "request": "dialogue_chat.request.json",
+      "response": "dialogue_chat.response.json"
+    }
+  },
   "invalid": [
     {
       "file": "invalid_wrong_type.json",

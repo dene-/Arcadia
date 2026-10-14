@@ -268,7 +268,7 @@ func test_a_forgotten_rumor_cannot_be_admitted_again_while_anyone_can_still_rete
 	var memory := NpcMemoryStore.new()
 	memory.record_hearsay(_listener(), heard, _rumor_policy())
 	assert_eq(memory.snapshot("listener").memories.size(), 1)
-	assert_eq(memory.snapshot("listener").relationship.trust, -0.03)
+	assert_eq(memory.minds.get_mind("listener").relationships.get_relationship("player").trust, -0.03)
 	# Other speakers fill the listener's 32 slots until its own account is pushed out; "a" still
 	# holds the original and can retell it.
 	for index: int in TownRumors.MAX_KNOWN:
@@ -294,7 +294,7 @@ func test_a_forgotten_rumor_cannot_be_admitted_again_while_anyone_can_still_rete
 	assert_false(again.is_empty(), "The speaker can retell it to a listener who lost its own account")
 	loaded.record_hearsay(_listener(), again, _rumor_policy())
 	assert_true(loaded.snapshot("listener").memories.is_empty(), "No second memory")
-	assert_eq(loaded.snapshot("listener").relationship.trust, -0.03, "No second trust change")
+	assert_eq(loaded.minds.get_mind("listener").relationships.get_relationship("player").trust, -0.03, "No second trust change")
 
 func test_an_origin_nobody_can_retell_is_forgotten_and_cannot_return() -> void:
 	var rumors := TownRumors.new()

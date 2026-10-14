@@ -98,6 +98,12 @@ static func _from_world_v1(source: Dictionary, source_version: int) -> Dictionar
 			_subjects_of(subjects, id)[other] = relationship
 		var converted: Dictionary = person
 		converted.erase("ties")
+		# The saved goal record keeps only the commitment its goal serves.
+		var decision: Variant = converted.get("decision", {})
+		converted.erase("decision")
+		if decision is Dictionary and decision.get("commitment_id", "") is String \
+				and not String(decision.get("commitment_id", "")).is_empty():
+			converted.commitment_id = decision.commitment_id
 		if not converted.has("safety"):
 			converted.safety = {}
 		people[id] = converted

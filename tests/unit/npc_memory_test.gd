@@ -1,6 +1,7 @@
 extends "res://tests/test_case.gd"
 
 const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
+const FakeService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
 const SESSION: String = "player:1"
 
 func _profile(id: StringName = &"test_npc") -> NpcProfile:
@@ -9,11 +10,8 @@ func _profile(id: StringName = &"test_npc") -> NpcProfile:
 	profile.profile_name = "Test NPC"
 	return profile
 
-func _policy(remember: bool = true) -> Dictionary:
-	return {"remember": remember, "retrieve": true, "update_belief": false,
-		"importance": 0.8, "emotional_intensity": 0.7, "response_mode": "DEFENSIVE",
-		"relationship_delta": {"familiarity": 0.01, "trust": -0.08,
-			"respect": 0.0, "affection": 0.0, "fear": 0.08, "suspicion": 0.0}}
+func _policy(remember: bool = true) -> NpcDecisionPolicy.PlayerSpeech:
+	return FakeService.player_speech(remember)
 
 func _result(type: String = "episodic") -> Dictionary:
 	return {"response": "Leave my forge.",
@@ -30,15 +28,16 @@ func test_small_talk_remains_short_term_and_history_is_bounded() -> void:
 	assert_eq(state.memories.size(), 0)
 	assert_eq(state.recent_dialogue.size(), 12)
 	assert_eq(store.turn, 20)
-	assert_true(state.relationship.trust >= -1.0)
-	assert_true(state.relationship.fear <= 1.0)
+	var relationship: Dictionary = store.minds.get_mind("test_npc").relationships.get_relationship("player")
+	assert_true(relationship.trust >= -1.0)
+	assert_true(relationship.fear <= 1.0)
 
 func test_claim_admission_does_not_create_a_belief_without_jev_gate() -> void:
 	var store := NpcMemoryStore.new()
 	store.ensure_npc(_profile())
 	store.commit_exchange("test_npc", "Threat", _result("semantic"), _policy(), [], [], SESSION)
 	assert_eq(store.snapshot("test_npc").memories.size(), 0)
-	var policy: Dictionary = _policy()
+	var policy: NpcDecisionPolicy.PlayerSpeech = _policy()
 	policy.update_belief = true
 	store.commit_exchange("test_npc", "Threat", _result("semantic"), policy, [], [], SESSION)
 	var memory: Dictionary = store.snapshot("test_npc").memories[0]
@@ -65,7 +64,7 @@ func test_npcs_are_isolated_and_renaming_does_not_change_identity() -> void:
 	store.ensure_npc(profile)
 	assert_eq(store.snapshot("test_npc").memories.size(), 1)
 	assert_eq(store.snapshot("other").memories.size(), 0)
-	assert_eq(store.snapshot("other").relationship.trust, 0.0)
+	assert_eq(store.minds.get_mind("other").relationships.get_relationship("player").trust, 0.0)
 
 func test_recall_filters_details_without_damaging_the_archive() -> void:
 	var memory: Dictionary = NpcMemory.create("old", "episodic", "A childhood lesson.", "authored", -1000)
@@ -137,7 +136,7 @@ func test_invalid_exchange_does_not_mutate_state() -> void:
 	var result: Dictionary = _result()
 	result.erase("response")
 	assert_false(store.commit_exchange("test_npc", "Hello", result, _policy(), [], [], SESSION))
-	var policy: Dictionary = _policy()
+	var policy: NpcDecisionPolicy.PlayerSpeech = _policy()
 	policy.importance = NAN
 	assert_false(store.commit_exchange("test_npc", "Hello", _result(), policy, [], [], SESSION))
 	assert_false(store.commit_exchange("test_npc", "Hello", _result(), _policy(), [], [], ""))
@@ -161,8 +160,8 @@ func test_save_round_trip_is_independent_and_invalid_load_is_atomic() -> void:
 	assert_true(restored.minds.from_data(JSON.parse_string(JSON.stringify(store.minds.to_data()))))
 	assert_true(restored.from_save_data(data))
 	assert_eq(restored.snapshot("test_npc").memories[0].gist, "The player threatened my forge.")
-	assert_eq(restored.snapshot("test_npc").relationship, store.snapshot("test_npc").relationship)
-	assert_eq(restored.snapshot("test_npc").relationship.trust, -0.08)
+	assert_eq(restored.minds.get_mind("test_npc").relationships.get_relationship("player"), store.minds.get_mind("test_npc").relationships.get_relationship("player"))
+	assert_eq(restored.minds.get_mind("test_npc").relationships.get_relationship("player").trust, -0.08)
 	data.npcs.test_npc.memories[0].confidence = 10
 	var before: Dictionary = restored.to_save_data()
 	assert_false(restored.from_save_data(data))

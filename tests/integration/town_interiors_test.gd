@@ -40,7 +40,7 @@ func _run() -> void:
 		if id == "vale_guard":
 			continue # The late watch is working at 23:00; its daytime rest is checked below.
 		var home: Dictionary = {"kind": "rest", "place": "home:" + id}
-		life.save_game.life.select_activity(id, home, 120, {})
+		life.save_game.life.select_activity(id, home, 120)
 		life._request_routine(npc, id, home)
 	for frame: int in range(1800):
 		await physics_frame
@@ -192,7 +192,7 @@ func _run() -> void:
 	for npc: BaseNpc in residents:
 		var id: String = String(npc.get_npc_profile().npc_id)
 		var outing: Dictionary = {"kind": "walk", "place": "square"}
-		life.save_game.life.select_activity(id, outing, 120, {})
+		life.save_game.life.select_activity(id, outing, 120)
 		life._request_routine(npc, id, outing)
 	for frame: int in range(1800):
 		await physics_frame

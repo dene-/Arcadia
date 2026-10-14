@@ -5,7 +5,7 @@ extends Node
 ## appraises one batch (one observation or one coalesced incident) and then yields to the other
 ## NPCs, which are served round-robin. Failed appraisals stay in the resident's NpcEvidenceInbox
 ## on its real-time retry ladder, so provider failures defer evidence instead of dropping it.
-## Optional speech asks v2 `utterance` first and only then generates text on `/react`.
+## Optional speech asks v2 `utterance` first and only then words the line on `/v2/dialogue/say`.
 signal progressed
 signal observation_assessed
 ## `policy` is the safety/rumor view of the appraisal: {safety_response, remember, importance}.
@@ -127,9 +127,9 @@ func _turn(id: String) -> void:
 func _appraise(id: String, job: Dictionary, observation: NpcObservation) -> void:
 	var mind: NpcMindState = store.minds.get_mind(id)
 	var source: BaseNpc = _source(job)
-	var current: Dictionary = job.current.duplicate(true)
+	var current: Dictionary = NpcCognitiveContext.for_consumer(NpcCognitiveContext.REACTION, job.current)
 	if source != null:
-		current = source.get_cognitive_context()
+		current = source.get_cognitive_context(NpcCognitiveContext.REACTION, ["player"])
 	var state: Dictionary = store.snapshot(id)
 	current.recent_events = []
 	current.past_observations = NpcCognitiveContext.observations(
@@ -235,7 +235,7 @@ func _speak(id: String, job: Dictionary, observation: NpcObservation,
 	var evidence: Dictionary = _evidence(observation)
 	var ticket := _speech_ticket(id, evidence.id)
 	var source: BaseNpc = _source(job)
-	var current: Dictionary = source.get_cognitive_context()
+	var current: Dictionary = source.get_cognitive_context(NpcCognitiveContext.REACTION, ["player"])
 	var intents: Array[String] = permitted.duplicate()
 	intents.append(SILENCE)
 	var judged: NpcDecisionResult = await decisions.evaluate(ticket, {"evidence": [evidence],
@@ -270,24 +270,20 @@ func _speak(id: String, job: Dictionary, observation: NpcObservation,
 
 func _generate(id: String, job: Dictionary, source: BaseNpc, observation: NpcObservation,
 		intent: String) -> String:
-	var state: Dictionary = store.snapshot(id)
-	var current: Dictionary = source.get_cognitive_context()
-	var event: Dictionary = observation.to_event()
-	event.speech_allowed = true
-	var payload: Dictionary = {"protocol_version": 1,
-		"npc": {"id": id, "profile": job.profile.to_backend_profile()},
-		"player": {"message": ""}, "event": event, "intent": intent,
-		"context": {"current": current, "relationship": state.get("relationship", {}),
-			"recent_dialogue": NpcMemoryStore.history_for_prompt(
-				state.get("recent_dialogue", []), store.world_minute),
-			"memories": NpcMemoryRetriever.new().retrieve(state.get("memories", []), event.text,
-				current, job.profile.get_cognition(), store.world_minute,
-				NpcMemoryRetriever.links_for(current))}}
+	var current: Dictionary = source.get_cognitive_context(NpcCognitiveContext.REACTION, ["player"])
+	var ticket: NpcDecisionTicket = _speech_ticket(id, _evidence(observation).id)
+	var payload: Dictionary = {"protocol_version": ticket.protocol_version,
+		"prompt_version": ticket.prompt_version, "request_id": ticket.request_id, "npc_id": id,
+		"npc": {"id": id, "profile": job.profile.to_backend_profile()}, "intent": intent,
+		"context": current}
+	var event_text: String = observation.text.strip_edges().substr(0, NpcReportSpeech.MAX_EVENT_TEXT)
+	if not event_text.is_empty():
+		payload["event"] = {"text": event_text, "sense": observation.legacy_sense(),
+			"player_involved": observation.facts.get("player_involved", false) == true}
 	var revision: int = store.revision(id)
 	var health: int = source.health
 	var space: StringName = source.world_space
-	var result: NpcDecisionResult = await decisions.run_text(_speech_ticket(id, _evidence(observation).id),
-		"/react", payload)
+	var result: NpcDecisionResult = await decisions.run_text(ticket, NpcReportSpeech.PATH, payload)
 	source = _source(job)
 	if source == null:
 		return "source_gone"
@@ -297,10 +293,10 @@ func _generate(id: String, job: Dictionary, source: BaseNpc, observation: NpcObs
 		return "context_changed"
 	if not _is_recent(observation):
 		return "expired_during_generation"
-	var text: Variant = result.body.get("response") if result.is_success() else null
-	if not text is String or text.strip_edges().is_empty() or text.length() > 160:
+	var text: String = NpcReportSpeech.spoken_line(result)
+	if text.is_empty():
 		return "generation_failed"
-	if _repeats_recent_speech(source.get_cognitive_context(), text):
+	if _repeats_recent_speech(source.get_cognitive_context(NpcCognitiveContext.REACTION), text):
 		return "repeated_line"
 	if source.show_spoken_reaction(text):
 		# WorldEvent.speech records actual listeners in ambient history, not player dialogue.

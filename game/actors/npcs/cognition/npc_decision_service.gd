@@ -4,12 +4,17 @@ extends Node
 ## The one game-side scheduler for provider work. Owner: the NpcCognition autoload keeps one as a
 ## child next to its DialogBackendClient and sets that client as `transport`.
 ## `evaluate` sends a v2 cognition request and validates the typed answer against the request;
+## `chat` sends one player-dialogue request and validates its typed player-speech judgments;
 ## `run_text` sends a text-route request through the text pool. Every ticket settles exactly once
 ## (transport answer, deadline, cancel, cancel_owner, coalescing or service exit); its permit is
 ## released and its caller woken at that moment, and a late transport answer is ignored.
 ## The service reports outcomes only: owners check the ticket and apply effects themselves.
 
 enum Pool { JUDGMENT, TEXT }
+
+## Every settled ticket, for decision traces: {npc_id, request_id, request_kind, read_versions,
+## latency_ms (queued to settled), outcome (lower-case NpcDecisionResult.Outcome name)}.
+signal request_settled(entry: Dictionary)
 
 ## Concurrent requests per pool, mirroring the server's provider limits.
 const LIMITS: Array[int] = [4, 2]
@@ -24,11 +29,18 @@ const ROUTES: Dictionary[StringName, String] = {
 	NpcDecisionTicket.LISTEN: "/v2/cognition/listen",
 	NpcDecisionTicket.UTTERANCE: "/v2/cognition/utterance",
 }
+const CHAT_ROUTE: String = "/v2/dialogue/chat"
 const DIMENSIONS: Array[String] = ["trust", "affection", "respect", "fear", "suspicion"]
 const DIRECTIONS: Array[String] = ["NEGATIVE", "UNCHANGED", "POSITIVE"]
 const DURATIONS: Array[String] = ["BRIEF", "ORDINARY", "EXTENDED"]
 const SMALL_TALK: String = "SMALL_TALK"
 const EMOTIONS: Array[String] = ["fear", "anger", "grief", "relief"]
+## Answers of the player's message (server CHAT_QUESTIONS): gates, retention scores, the
+## message's intent, the reply's style and one direction per disposition toward the player.
+const INTENTS: Array[String] = ["GREETING", "FAREWELL", "QUESTION", "REQUEST", "THREAT",
+	"KINDNESS", "INSULT", "PROMISE", "CLAIM", "APOLOGY", "SURRENDER", "OTHER"]
+const RESPONSE_MODES: Array[String] = ["NEUTRAL", "WARM", "GUARDED", "DEFENSIVE", "REFUSE",
+	"UNCERTAIN"]
 
 # Envelope limits of tools/server/src/cognition-contract.js.
 const _MAX_STATE_BYTES: int = 16384
@@ -94,7 +106,8 @@ func _exit_tree() -> void:
 ## A malformed request is INVALID without contacting the provider. A newer select_goal for the same
 ## NPC settles its queued older select_goal as STALE.
 func evaluate(ticket: NpcDecisionTicket, payload: Dictionary) -> NpcDecisionResult:
-	var request: Dictionary = _envelope(ticket, payload)
+	var request: Dictionary = _envelope(ticket, payload) if ticket != null \
+		and ROUTES.has(ticket.kind) else {}
 	if request.is_empty() or _jobs.has(ticket.request_id):
 		return NpcDecisionResult.new(NpcDecisionResult.Outcome.INVALID, ticket)
 	if transport == null:
@@ -110,6 +123,28 @@ func evaluate(ticket: NpcDecisionTicket, payload: Dictionary) -> NpcDecisionResu
 	job.request = request
 	job.questions = _questions(request)
 	job.transport_ms = DialogBackendClient.JUDGMENT_DEADLINE_MS
+	return await _schedule(job)
+
+## Sends one player-dialogue request for a DIALOGUE `ticket` through the text pool: `payload`
+## ({npc, context, player, recent_dialogue, memories}) under the ticket's envelope header. On
+## SUCCESS `judgments` holds the validated player-speech answers and `body` the whole response
+## (response, memory_writes, recalled_memory_ids), which the caller still validates.
+func chat(ticket: NpcDecisionTicket, payload: Dictionary) -> NpcDecisionResult:
+	if not _is_valid_ticket(ticket) or ticket.kind != NpcDecisionTicket.DIALOGUE \
+			or not _is_valid_ticket_fields(ticket) or _jobs.has(ticket.request_id):
+		return NpcDecisionResult.new(NpcDecisionResult.Outcome.INVALID, ticket)
+	if transport == null:
+		return NpcDecisionResult.new(NpcDecisionResult.Outcome.UNAVAILABLE, ticket)
+	var job := _Job.new()
+	job.ticket = ticket
+	job.pool = Pool.TEXT
+	job.path = CHAT_ROUTE
+	job.request = payload.duplicate(true)
+	job.request.merge({"protocol_version": ticket.protocol_version,
+		"prompt_version": ticket.prompt_version, "request_id": ticket.request_id,
+		"npc_id": ticket.npc_id}, true)
+	job.questions = chat_questions()
+	job.transport_ms = DialogBackendClient.DIALOGUE_DEADLINE_MS
 	return await _schedule(job)
 
 ## Sends `payload` unchanged to a text route through the text pool. On SUCCESS the parsed response
@@ -225,12 +260,15 @@ func _run(job: _Job, transport_ms: int) -> void:
 		DialogBackendClient.OUTCOME_SUCCESS:
 			if not body is Dictionary:
 				_settle(job, NpcDecisionResult.Outcome.INVALID)
-			elif job.pool == Pool.TEXT:
+			elif job.questions.is_empty():
 				_settle(job, NpcDecisionResult.Outcome.SUCCESS, {}, (body as Dictionary).duplicate(true))
 			else:
 				var judgments: Dictionary = _judgments(job, body)
+				# Dialogue keeps its whole response next to the judgments; cognition has no prose.
+				var kept: Dictionary = (body as Dictionary).duplicate(true) \
+					if job.ticket.kind == NpcDecisionTicket.DIALOGUE else {}
 				_settle(job, NpcDecisionResult.Outcome.SUCCESS if not judgments.is_empty()
-					else NpcDecisionResult.Outcome.INVALID, judgments)
+					else NpcDecisionResult.Outcome.INVALID, judgments, kept)
 		DialogBackendClient.OUTCOME_TIMEOUT:
 			_settle(job, NpcDecisionResult.Outcome.TIMEOUT)
 		DialogBackendClient.OUTCOME_UNAVAILABLE:
@@ -253,6 +291,10 @@ func _settle(job: _Job, outcome: NpcDecisionResult.Outcome, judgments: Dictionar
 		_queued.erase(job)
 	if job.awaiting_transport and is_instance_valid(transport):
 		transport.cancel(job.ticket.request_id)
+	request_settled.emit({"npc_id": job.ticket.npc_id, "request_id": job.ticket.request_id,
+		"request_kind": String(job.ticket.kind), "read_versions": job.ticket.read_versions.duplicate(),
+		"latency_ms": maxi(_now() - job.queued_msec, 0),
+		"outcome": String(NpcDecisionResult.Outcome.keys()[outcome]).to_lower()})
 	job.settled.emit()
 	_pump()
 
@@ -422,15 +464,29 @@ static func _add_dispositions(questions: Dictionary, subjects: Array) -> void:
 static func _choice(options: Array) -> Dictionary:
 	return {"type": "choice", "options": options}
 
+## The typed questions every /v2/dialogue/chat response answers about the player's message.
+static func chat_questions() -> Dictionary:
+	var noul: Dictionary = {"type": "noul"}
+	var score: Dictionary = {"type": "score"}
+	var questions: Dictionary = {"should_remember": noul, "memory_importance": score,
+		"emotional_intensity": score, "interaction_intent": _choice(INTENTS),
+		"should_end_conversation": noul, "should_retrieve_memories": noul,
+		"should_update_belief": noul, "response_mode": _choice(RESPONSE_MODES)}
+	for dimension: String in DIMENSIONS:
+		questions[dimension + "_change"] = _choice(DIRECTIONS)
+	return questions
+
 # Validated judgments, or {} when anything is missing, extra, mistyped or out of range (every
-# request has at least one question, so {} is never a valid answer).
+# request has at least one question, so {} is never a valid answer). Dialogue responses carry no
+# prompt version or kind.
 static func _judgments(job: _Job, body: Dictionary) -> Dictionary:
 	var answers: Variant = body.get("judgments")
+	var cognition: bool = job.ticket.kind != NpcDecisionTicket.DIALOGUE
 	if not _is_number(body.get("protocol_version")) \
 			or float(body.protocol_version) != float(job.ticket.protocol_version) \
-			or body.get("prompt_version") != job.ticket.prompt_version \
 			or body.get("request_id") != job.ticket.request_id \
-			or body.get("kind") != String(job.ticket.kind) \
+			or (cognition and (body.get("prompt_version") != job.ticket.prompt_version
+				or body.get("kind") != String(job.ticket.kind))) \
 			or not answers is Dictionary or (answers as Dictionary).size() != job.questions.size():
 		return {}
 	var judgments: Dictionary = {}

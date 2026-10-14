@@ -6,8 +6,9 @@ const Appraisals = preload("res://tests/fixtures/npc_appraisal_fixture.gd")
 const HURT: float = -0.1
 
 class SpeakingNpc extends BaseNpc:
-	func get_cognitive_context() -> Dictionary:
-		return {"activity": "idle"}
+	func get_cognitive_context(_consumer: StringName = NpcCognitiveContext.DIALOGUE,
+			_participants: Array[String] = []) -> Dictionary:
+		return {"activity": "idle", "relationships": {}}
 	var spoken: Array[String] = []
 	func show_spoken_reaction(text: String, _owner: String = "") -> bool:
 		spoken.append(text)
@@ -80,11 +81,11 @@ func test_observations_are_short_term_then_optionally_durable_and_applied_once()
 	assert_eq(store.snapshot("test_observer").memories.size(), 0)
 	assert_true(_commit(store, first, _policy(false)))
 	assert_eq(store.snapshot("test_observer").memories.size(), 0)
-	assert_eq(store.snapshot("test_observer").relationship.trust, HURT)
+	assert_eq(store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, HURT)
 	assert_eq(store.snapshot("test_observer").observations[0].status, "classified")
 	assert_false(_record(store, first), "A processed observation id is never accepted again")
 	assert_false(_commit(store, first, _policy()))
-	assert_eq(store.snapshot("test_observer").relationship.trust, HURT)
+	assert_eq(store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, HURT)
 	var second: NpcObservation = _observation()
 	assert_true(_record(store, second))
 	assert_true(_commit(store, second, _policy()))
@@ -97,7 +98,7 @@ func test_hearing_does_not_change_player_relationship_and_evicted_display_entrie
 	var heard: NpcObservation = _observation("hearing")
 	assert_true(_record(store, heard))
 	assert_true(_commit(store, heard, _policy()))
-	assert_eq(store.snapshot("test_observer").relationship, NpcRelationshipState.initial())
+	assert_eq(store.minds.get_mind("test_observer").relationships.get_relationship("player"), NpcRelationshipState.initial())
 	var evicted: NpcObservation = _observation()
 	assert_true(_record(store, evicted))
 	for index: int in range(10):
@@ -105,7 +106,7 @@ func test_hearing_does_not_change_player_relationship_and_evicted_display_entrie
 	assert_eq(store.snapshot("test_observer").observations.size(), 8)
 	assert_true(_commit(store, evicted, _policy()),
 		"Evidence lives in the inbox, so working-memory eviction cannot lose it")
-	assert_eq(store.snapshot("test_observer").relationship.trust, HURT)
+	assert_eq(store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, HURT)
 
 func test_observation_saves_round_trip_and_incomplete_saves_are_rejected() -> void:
 	var store := NpcMemoryStore.new()
@@ -118,8 +119,7 @@ func test_observation_saves_round_trip_and_incomplete_saves_are_rejected() -> vo
 	assert_true(restored.minds.from_data(JSON.parse_string(JSON.stringify(store.minds.to_data()))))
 	assert_true(restored.from_save_data(persisted))
 	var restored_state: Dictionary = restored.snapshot("test_observer")
-	assert_eq(restored_state.relationship.trust, HURT)
-	restored_state.erase("relationship")
+	assert_eq(restored.minds.get_mind("test_observer").relationships.get_relationship("player").trust, HURT)
 	assert_eq(restored_state, persisted.npcs.test_observer)
 	saved.npcs.test_observer.observations[0].status = "invalid"
 	assert_false(restored.from_save_data(saved))
@@ -157,9 +157,9 @@ func test_background_processing_commits_without_conversation_and_keeps_new_arriv
 	assert_eq(calls[1].state.memories.size(), 1,
 		"Observation decisions must be able to recognize a prior related experience")
 	# Seeing and feeling one incident spends a single incident budget: -0.1, then the 0.05 left.
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.15)
+	assert_eq(processor.store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, -0.15)
 	assert_eq(rig.backend.call_count("utterance"), 0, "No NPC is attached, so nothing may speak")
-	assert_eq(rig.backend.call_count("react"), 0)
+	assert_eq(rig.backend.call_count("dialogue/say"), 0)
 	await rig.dispose()
 
 func test_provider_failure_preserves_short_term_observation_without_relationship_change() -> void:
@@ -174,21 +174,22 @@ func test_provider_failure_preserves_short_term_observation_without_relationship
 		failed.observation_id)
 	assert_eq(item.status, "DEFERRED", "Failed evidence is kept for a later retry")
 	assert_eq(item.last_error, "provider_unavailable")
-	assert_eq(state.relationship, NpcRelationshipState.initial())
+	assert_eq(rig.processor.store.minds.get_mind("test_observer").relationships.get_relationship("player"),
+		NpcRelationshipState.initial())
 	assert_true(state.memories.is_empty())
 	assert_eq(rig.processor.store.turn, 0)
 	await rig.dispose()
 
 func test_cooldown_limits_reactions_without_impersonating_player_conversation() -> void:
 	var rig := Rig.new()
-	rig.backend.set_default("react", {"response": "Keep away!"})
+	rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
 	var npc := _speaker()
 	rig.processor.observe(_profile(), {}, _observation(), npc)
 	await rig.processor.flush("test_observer")
 	rig.processor.observe(_profile(), {}, _observation("touch"), npc)
 	await rig.processor.flush("test_observer")
 	assert_eq(rig.backend.call_count("appraise"), 2)
-	assert_eq(rig.backend.call_count("react"), 1)
+	assert_eq(rig.backend.call_count("dialogue/say"), 1)
 	assert_eq(npc.spoken, ["Keep away!"])
 	assert_true(rig.processor.store.snapshot("test_observer").recent_dialogue.is_empty())
 	await rig.dispose()
@@ -198,21 +199,21 @@ func test_late_reaction_cannot_speak_through_a_freed_npc() -> void:
 	var rig := Rig.new()
 	var processor: NpcEventProcessor = rig.processor
 	rig.backend.set_default("appraise", Rig.distrust("player"))
-	rig.backend.set_default("react", {"response": "Keep away!"})
-	rig.backend.hold("react")
+	rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
+	rig.backend.hold("dialogue/say")
 	var npc := _speaker()
 	processor.observe(_profile(), {}, _observation(), npc)
-	await _until(func() -> bool: return rig.backend.call_count("react") == 1)
-	assert_eq(rig.backend.call_count("react"), 1)
+	await _until(func() -> bool: return rig.backend.call_count("dialogue/say") == 1)
+	assert_eq(rig.backend.call_count("dialogue/say"), 1)
 	await processor.wait_for_assessment("test_observer")
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.1)
+	assert_eq(processor.store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, -0.1)
 	processor.observe(_profile(), {}, _observation("touch"), npc)
 	await processor.wait_for_assessment("test_observer")
 	await _until(func() -> bool: return rig.backend.call_count("appraise") == 2)
 	await processor.wait_for_assessment("test_observer")
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.15)
+	assert_eq(processor.store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, -0.15)
 	npc.free()
-	rig.backend.release("react")
+	rig.backend.release("dialogue/say")
 	await processor.flush("test_observer")
 	assert_true(processor.store.snapshot("test_observer").recent_dialogue.is_empty())
 	assert_eq(processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
@@ -222,8 +223,8 @@ func test_late_reaction_cannot_speak_through_a_freed_npc() -> void:
 func test_background_speech_generation_is_bounded_by_the_text_pool_without_blocking_assessment() -> void:
 	var rig := Rig.new()
 	var processor: NpcEventProcessor = rig.processor
-	rig.backend.set_default("react", {"response": "Keep away!"})
-	rig.backend.hold("react")
+	rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
+	rig.backend.hold("dialogue/say")
 	var sources: Array[SpeakingNpc] = []
 	for index: int in range(3):
 		var npc := _speaker()
@@ -236,14 +237,14 @@ func test_background_speech_generation_is_bounded_by_the_text_pool_without_block
 		- NpcDecisionService.INTERACTIVE_RESERVE
 	assert_true(allowed <= NpcEventProcessor.MAX_SPEECH_WORKERS)
 	await _until(func() -> bool: return processor.store.turn == 3 \
-		and rig.backend.call_count("react") == allowed)
+		and rig.backend.call_count("dialogue/say") == allowed)
 	assert_eq(rig.backend.call_count("appraise"), 3)
 	assert_eq(processor.store.turn, 3, "Held speech never holds up assessments")
 	await (Engine.get_main_loop() as SceneTree).process_frame
-	assert_eq(rig.backend.call_count("react"), allowed, "Only the unreserved permits are used")
-	rig.backend.release("react")
-	await _until(func() -> bool: return rig.backend.call_count("react") == 3)
-	assert_eq(rig.backend.call_count("react"), 3, "The others start once a permit frees up")
+	assert_eq(rig.backend.call_count("dialogue/say"), allowed, "Only the unreserved permits are used")
+	rig.backend.release("dialogue/say")
+	await _until(func() -> bool: return rig.backend.call_count("dialogue/say") == 3)
+	assert_eq(rig.backend.call_count("dialogue/say"), 3, "The others start once a permit frees up")
 	for index: int in range(3):
 		await processor.flush("speaker_%s" % index)
 		assert_eq(sources[index].spoken, ["Keep away!"])
@@ -255,12 +256,12 @@ func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_mov
 	for change: String in ["perception", "injury", "space", "routine"]:
 		var rig := Rig.new()
 		var processor: NpcEventProcessor = rig.processor
-		rig.backend.set_default("react", {"response": "Keep away!"})
-		rig.backend.hold("react")
+		rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
+		rig.backend.hold("dialogue/say")
 		var npc := _speaker()
 		processor.observe(_profile(), {}, _observation(), npc)
-		await _until(func() -> bool: return rig.backend.call_count("react") == 1)
-		assert_eq(rig.backend.call_count("react"), 1)
+		await _until(func() -> bool: return rig.backend.call_count("dialogue/say") == 1)
+		assert_eq(rig.backend.call_count("dialogue/say"), 1)
 		match change:
 			"perception":
 				processor.observe(_profile(), {}, _observation("touch"), npc)
@@ -272,7 +273,7 @@ func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_mov
 				npc.world_space = &"home:test"
 			"routine":
 				npc.life_revision += 1
-		rig.backend.release("react")
+		rig.backend.release("dialogue/say")
 		await processor.flush("test_observer")
 		if change == "routine":
 			assert_eq(npc.spoken, ["Keep away!"])
@@ -285,7 +286,7 @@ func test_reactions_survive_routine_updates_but_not_new_perception_injury_or_mov
 		await rig.dispose()
 		npc.free()
 
-func test_speech_needs_a_confident_permitted_intent_and_never_calls_react_otherwise() -> void:
+func test_speech_needs_a_confident_permitted_intent_and_never_requests_a_line_otherwise() -> void:
 	var cases: Dictionary = {
 		"silence_judged": {"speak": 0.0},
 		"silence_intent": {"intent": "silence"},
@@ -293,13 +294,13 @@ func test_speech_needs_a_confident_permitted_intent_and_never_calls_react_otherw
 	}
 	for label: String in cases:
 		var rig := Rig.new()
-		rig.backend.set_default("react", {"response": "Keep away!"})
+		rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
 		rig.backend.set_default("utterance", cases[label])
 		var npc := _speaker()
 		rig.processor.observe(_profile(), {}, _observation(), npc)
 		await rig.processor.flush("test_observer")
 		assert_eq(rig.backend.call_count("utterance"), 1, label)
-		assert_eq(rig.backend.call_count("react"), 0, label + ": no text is generated for silence")
+		assert_eq(rig.backend.call_count("dialogue/say"), 0, label + ": no text is generated for silence")
 		assert_true(npc.spoken.is_empty(), label)
 		assert_eq(rig.processor.store.snapshot("test_observer").observations[0].diagnostics.speech_result,
 			"not_selected", label)
@@ -324,17 +325,17 @@ func test_utterance_offers_only_intents_the_evidence_permits_plus_silence() -> v
 		["remark", "warn", "call_for_help"] as Array[String])
 	var rig := Rig.new()
 	var npc := _speaker()
-	rig.backend.set_default("react", {"response": "Keep away!"})
+	rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
 	rig.processor.observe(_profile(), {}, _observation("touch"), npc)
 	await rig.processor.flush("test_observer")
 	assert_eq(rig.backend.calls("utterance")[0].intents, ["remark", "protest", "silence"])
-	assert_eq(rig.backend.calls("react")[0].intent, "remark")
+	assert_eq(rig.backend.calls("dialogue/say")[0].intent, "remark")
 	await rig.dispose()
 	npc.free()
 
 func test_speech_expires_in_simulation_minutes_not_real_time() -> void:
 	var rig := Rig.new()
-	rig.backend.set_default("react", {"response": "Keep away!"})
+	rig.backend.set_default("dialogue/say", {"response": "Keep away!"})
 	var stale := _speaker()
 	rig.processor.store.set_world_minute(500.0 + NpcEventProcessor.REACTION_MAX_AGE_MINUTES + 1.0)
 	rig.processor.observe(_profile(), {}, _observation(), stale)
@@ -345,15 +346,15 @@ func test_speech_expires_in_simulation_minutes_not_real_time() -> void:
 		"not_selected")
 	# Fresh evidence speaks; time advancing while the line is generated expires it.
 	rig.processor.store.set_world_minute(500.0 + NpcEventProcessor.REACTION_MAX_AGE_MINUTES)
-	rig.backend.hold("react")
+	rig.backend.hold("dialogue/say")
 	var fresh := _speaker()
 	var profile: NpcProfile = _profile()
 	profile.npc_id = &"fresh_observer"
 	rig.processor.observe(profile, {}, _observation("sight", "fresh_observer"), fresh)
-	await _until(func() -> bool: return rig.backend.call_count("react") == 1)
-	assert_eq(rig.backend.call_count("react"), 1, "Thirty minutes old is still fresh")
+	await _until(func() -> bool: return rig.backend.call_count("dialogue/say") == 1)
+	assert_eq(rig.backend.call_count("dialogue/say"), 1, "Thirty minutes old is still fresh")
 	rig.processor.store.set_world_minute(500.0 + NpcEventProcessor.REACTION_MAX_AGE_MINUTES + 1.0)
-	rig.backend.release("react")
+	rig.backend.release("dialogue/say")
 	await rig.processor.flush("fresh_observer")
 	assert_true(fresh.spoken.is_empty())
 	assert_eq(rig.processor.store.snapshot("fresh_observer").observations[0].diagnostics.speech_result,
@@ -471,7 +472,8 @@ func test_cancelling_an_npc_commits_nothing_and_keeps_the_evidence_for_a_later_r
 	var inbox: NpcEvidenceInbox = processor.store.minds.get_mind("test_observer").evidence
 	var state: Dictionary = processor.store.snapshot("test_observer")
 	assert_true(state.memories.is_empty())
-	assert_eq(state.relationship, NpcRelationshipState.initial())
+	assert_eq(processor.store.minds.get_mind("test_observer").relationships.get_relationship("player"),
+		NpcRelationshipState.initial())
 	assert_eq(processor.store.turn, 0)
 	assert_false(inbox.has_receipt(evidence.observation_id))
 	assert_eq(inbox.item(evidence.observation_id).status, "PENDING", "Released without an attempt")
@@ -481,7 +483,7 @@ func test_cancelling_an_npc_commits_nothing_and_keeps_the_evidence_for_a_later_r
 	processor.resume(_profile(), {})
 	await processor.flush("test_observer")
 	assert_true(inbox.has_receipt(evidence.observation_id))
-	assert_eq(processor.store.snapshot("test_observer").relationship.trust, -0.1)
+	assert_eq(processor.store.minds.get_mind("test_observer").relationships.get_relationship("player").trust, -0.1)
 	await rig.dispose()
 
 func test_working_memory_expires_in_game_time_without_erasing_diagnostics_or_archive() -> void:

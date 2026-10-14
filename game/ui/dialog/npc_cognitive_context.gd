@@ -10,6 +10,56 @@ const MAX_EMOTION_CAUSES: int = 3
 ## Task kinds that are the resident's duty rather than ordinary routine.
 const DUTY_TASKS: Array[String] = ["guard", "recovery"]
 
+## Consumers of `for_consumer`: player dialogue, spontaneous reactions to perceived events,
+## NPC-to-NPC speech and routine goal selection.
+const DIALOGUE: StringName = &"dialogue"
+const REACTION: StringName = &"reaction"
+const SOCIAL: StringName = &"social"
+const DECISION: StringName = &"decision"
+## Facts every consumer sees: identity and voice, the clock, what the resident is doing and
+## where, its own condition, feelings, grief and commitments, kin, neighbors (public facts
+## only) and its relationships to the consumer's participants.
+const SHARED_KEYS: Array[String] = ["world_time", "world_minute", "world_space", "location",
+	"activity", "interrupted_activity", "destination", "traveling", "sleeping", "recently_awakened",
+	"wake_reason", "alert_phase", "physical_state", "sensory_cues", "current_task", "personality",
+	"safety_response", "condition", "emotion_causes", "personal_concerns", "open_commitments",
+	"family_members", "known_townspeople", "relationships"]
+## Consumer-specific additions. A reaction sees a subset of what dialogue sees, so projecting a
+## dialogue context for a reaction gives the reaction context.
+const CONSUMER_KEYS: Dictionary[StringName, Array] = {
+	DIALOGUE: ["player_identity", "household", "household_economy", "town_rumors", "known_deaths",
+		"enforcement", "recent_social", "recent_ambient"],
+	REACTION: ["player_identity", "known_deaths", "enforcement", "recent_ambient"],
+	SOCIAL: ["household", "town_rumors", "known_deaths", "recent_social", "recent_ambient"],
+	DECISION: ["household", "household_economy", "known_deaths", "enforcement"],
+}
+## What a consumer learns of the current task: its kind, phase and the activity it serves.
+const TASK_KEYS: Array[String] = ["kind", "phase", "activity", "label"]
+
+## The whitelisted view of `facts` (BaseNpc's full context) for `consumer`. Private diagnostics,
+## the full daily plan and anything not listed never reach a consumer; neighbors keep only
+## public facts, and relationships come solely from `facts.relationships` (participant id ->
+## relationship-graph value). An unknown consumer gets {}.
+static func for_consumer(consumer: StringName, facts: Dictionary) -> Dictionary:
+	if not CONSUMER_KEYS.has(consumer):
+		return {}
+	var result: Dictionary = {}
+	for key: String in SHARED_KEYS + CONSUMER_KEYS[consumer]:
+		if facts.has(key):
+			result[key] = facts[key].duplicate(true) \
+				if facts[key] is Dictionary or facts[key] is Array else facts[key]
+	if result.get("current_task") is Dictionary:
+		var task: Dictionary = {}
+		for key: String in TASK_KEYS:
+			if result.current_task.has(key):
+				task[key] = result.current_task[key]
+		result.current_task = task
+	if result.get("known_townspeople") is Array:
+		for person: Variant in result.known_townspeople:
+			if person is Dictionary:
+				(person as Dictionary).erase("relationship")
+	return result
+
 ## The resident's own unresolved state for `get_cognitive_context`: grief (`personal_concerns`)
 ## and open commitments (`open_commitments`, with the evidence they rest on). Given the world
 ## `minute`, also its semantic `condition` bands (needs, emotions and, with the `actor`, pain) and
@@ -50,8 +100,6 @@ static func mind_context(mind: NpcMindState, minute: float = NAN, actor: Object 
 ## `player_involved` is not required. Semantic `condition` bands pass through unchanged.
 static func build(state: Dictionary, current: Dictionary) -> Dictionary:
 	var result: Dictionary = current.duplicate(true)
-	result.erase("routine_decision")
-	result.erase("social_status")
 	result.erase("personal_concerns")
 	result.erase("open_commitments")
 	result.erase("emotion_causes")

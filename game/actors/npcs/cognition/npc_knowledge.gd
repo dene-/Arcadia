@@ -151,6 +151,17 @@ func known_places() -> Array[Dictionary]:
 			result.append(fact.duplicate(true))
 	return result
 
+## The newest personal (non-public) beliefs still held, at most `limit`, newest first. Copies.
+func newest_personal(limit: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for index: int in range(_facts.size() - 1, -1, -1):
+		if result.size() >= limit:
+			break
+		var fact: Dictionary = _facts[index]
+		if fact["source_id"] != PUBLIC_SOURCE and fact["status"] != _SUPERSEDED:
+			result.append(fact.duplicate(true))
+	return result
+
 ## `people` has TownPopulation.people's shape; `places` maps id -> {label, space?, position: Vector2}.
 ## Only stable public facts are recorded: never live positions, deaths, emotions or balances.
 func bootstrap_public(npc_id: String, people: Dictionary, places: Dictionary,

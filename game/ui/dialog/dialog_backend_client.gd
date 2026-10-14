@@ -1,8 +1,6 @@
 class_name DialogBackendClient
 extends Node
 
-const CHAT_ENDPOINT: String = "http://127.0.0.1:3536/chat"
-
 # Transport deadlines: server route budget plus a 2000 ms margin (tools/server UPSTREAM_BUDGETS_MS).
 const JUDGMENT_DEADLINE_MS: int = 10000
 const DIALOGUE_DEADLINE_MS: int = 40000
@@ -51,8 +49,6 @@ class Pending extends RefCounted:
 	var done: bool = false
 	var result: Dictionary = {}
 
-@export var chat_endpoint: String = CHAT_ENDPOINT
-@export var decision_endpoint: String = "http://127.0.0.1:3536/decide"
 @export var v2_base_url: String = "http://127.0.0.1:3536"
 
 ## Returns a new Transport per request. Unset: HttpTransport. Tests inject fakes here.
@@ -167,31 +163,6 @@ func _settle(handle: String, pending: Pending, result: Dictionary, abort_transpo
 
 static func _result(outcome: StringName, status: int = 0, body: Dictionary = {}) -> Dictionary:
 	return {"outcome": outcome, "status": status, "body": body}
-
-func request_decision(payload: Dictionary) -> Dictionary:
-	return await _request(decision_endpoint, payload)
-
-func request_dialog(payload: Dictionary) -> Dictionary:
-	return await _request(chat_endpoint, payload)
-
-func _request(endpoint: String, payload: Dictionary) -> Dictionary:
-	# Independent requests prevent close/reopen from colliding with a pending HTTPRequest.
-	var request := HTTPRequest.new()
-	request.timeout = 45.0
-	request.body_size_limit = 98304
-	add_child(request)
-	var error: Error = request.request(endpoint, ["Content-Type: application/json"],
-		HTTPClient.METHOD_POST, JSON.stringify(payload))
-	if error != OK:
-		request.queue_free()
-		push_warning("Dialog backend request failed to start: %s" % error)
-		return {}
-	var result: Array = await request.request_completed
-	request.queue_free()
-	if result[0] != HTTPRequest.RESULT_SUCCESS or result[1] < 200 or result[1] >= 300:
-		push_warning("Dialog backend unavailable (HTTP %s)." % result[1])
-		return {}
-	return _parse_response_body(result[3])
 
 func _parse_response_body(response_body: PackedByteArray) -> Dictionary:
 	var parser := JSON.new()

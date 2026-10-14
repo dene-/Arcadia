@@ -2,7 +2,7 @@ extends "res://tests/test_case.gd"
 
 const FakeService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
 const Rig = preload("res://tests/fixtures/npc_processor_rig.gd")
-const ConversationTests = preload("res://tests/unit/npc_conversation_test.gd")
+const CHAT: String = "dialogue/chat"
 
 func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	var tree: SceneTree = Engine.get_main_loop()
@@ -11,7 +11,7 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	var backend := FakeService.new()
 	tree.root.add_child(backend)
 	backend.set_default("appraise", Rig.distrust("player"))
-	backend.set_default("react", {"response": "Keep away!"})
+	backend.set_default("dialogue/say", {"response": "Keep away!"})
 	cognition.decisions.transport = backend
 	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
 	npc.npc_data = npc.npc_data.duplicate()
@@ -43,17 +43,20 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	assert_true(npc.get_node("ReactionBubble").visible)
 	assert_eq(npc.get_node("ReactionBubble/Panel/Text").text, "Keep away!")
 	assert_eq(cognition.store.snapshot("flow_test").observations[0].diagnostics.speech_result, "displayed")
-	var dialogue := ConversationTests.FakeBackend.new()
 	var conversation := NpcConversation.new()
 	conversation.store = cognition.store
 	conversation.persist = false
-	await conversation.request(npc.get_npc_profile(), npc.get_cognitive_context(), "Hi.", dialogue)
-	assert_eq(dialogue.payload.context.current.current_concerns.size(), 1)
-	assert_true(dialogue.payload.context.current.current_concerns[0].text.contains("Den"))
-	assert_eq(dialogue.payload.player.identity, {"id": "player", "name": "Den", "sex": "Male"})
-	assert_false(dialogue.payload.context.current.past_observations[0].has("decision"))
-	assert_true(dialogue.payload.context.relationship.trust < 0.0)
-	assert_true(dialogue.payload.context.memories.size() > 0)
+	await conversation.request(npc.get_npc_profile(), npc.get_cognitive_context(), "Hi.",
+		cognition.decisions)
+	assert_eq(backend.call_count(CHAT), 1)
+	var payload: Dictionary = backend.calls(CHAT)[0]
+	assert_eq(payload.context.current_concerns.size(), 1)
+	assert_true(payload.context.current_concerns[0].text.contains("Den"))
+	assert_eq(payload.player.identity, {"id": "player", "name": "Den", "sex": "Male"})
+	assert_false(payload.context.past_observations[0].has("decision"))
+	assert_true(cognition.save_game.minds.get_mind("flow_test").relationships \
+		.get_relationship("player").trust < 0.0)
+	assert_true(payload.memories.size() > 0)
 	# A lethal hit saves death immediately, independently of providers and animation.
 	npc.take_damage(99, player.hit_box)
 	await cognition.events.flush("flow_test")
@@ -74,7 +77,6 @@ func test_actual_damage_reaches_bubble_then_shapes_next_greeting() -> void:
 	cognition.decisions.transport = original
 	backend.release_all()
 	backend.free()
-	dialogue.free()
 
 func test_new_event_adapter_needs_no_dialogue_or_queue_changes() -> void:
 	var router := NpcPerceptionRouter.new()

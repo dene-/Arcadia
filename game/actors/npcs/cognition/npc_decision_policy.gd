@@ -11,6 +11,10 @@ extends RefCounted
 const UNCHANGED: String = "UNCHANGED"
 const _SIGNS: Dictionary[String, float] = {"NEGATIVE": -1.0, UNCHANGED: 0.0, "POSITIVE": 1.0}
 const _MAX_SCORE: float = 4.0
+## Smallest change a confident direction about the player's message makes.
+const PLAYER_SPEECH_MIN_CHANGE: float = 0.02
+## Familiarity every answered player message adds.
+const PLAYER_SPEECH_FAMILIARITY: float = 0.01
 
 class Appraisal extends RefCounted:
 	var immediate_danger: bool = false
@@ -69,6 +73,26 @@ class Utterance extends RefCounted:
 	var speak: bool = false
 	## Empty unless `speak`.
 	var intent: String = ""
+
+## What the resident makes of one player message (a DIALOGUE result).
+class PlayerSpeech extends RefCounted:
+	var remember: bool = false
+	## Recalled memories may ground the reply and count as recalled.
+	var retrieve: bool = false
+	var update_belief: bool = false
+	var end_conversation: bool = false
+	## 0..1 retention weights.
+	var importance: float = 0.0
+	var emotional_intensity: float = 0.0
+	## NpcDecisionService.INTENTS; OTHER when the answer is not confident.
+	var intent: String = "OTHER"
+	## The player gives up resisting (a confident SURRENDER intent).
+	var surrender: bool = false
+	## NpcDecisionService.RESPONSE_MODES; NEUTRAL when the answer is not confident.
+	var response_mode: String = "NEUTRAL"
+	## Relationship dimension -> signed delta toward the player; only non-zero deltas are present.
+	## An answered message always adds PLAYER_SPEECH_FAMILIARITY familiarity.
+	var dispositions: Dictionary[String, float] = {}
 
 static func appraisal(result: NpcDecisionResult, tuning: NpcBehaviorTuning) -> Appraisal:
 	var appraised := Appraisal.new()
@@ -204,6 +228,30 @@ static func utterance(result: NpcDecisionResult, permitted_intents: Array[String
 		decided.speak = true
 		decided.intent = intent
 	return decided
+
+## A confident direction moves its dimension by 0.02 to 0.1, growing with the message's importance.
+static func player_speech(result: NpcDecisionResult, tuning: NpcBehaviorTuning) -> PlayerSpeech:
+	var speech := PlayerSpeech.new()
+	if not _answered(result, NpcDecisionTicket.DIALOGUE):
+		return speech
+	speech.remember = result.noul("should_remember") >= tuning.remember_threshold
+	speech.retrieve = result.noul("should_retrieve_memories") >= tuning.retrieve_threshold
+	speech.update_belief = result.noul("should_update_belief") >= tuning.belief_threshold
+	speech.end_conversation = result.noul("should_end_conversation") \
+		>= tuning.end_conversation_threshold
+	speech.importance = clampf(result.score("memory_importance") / _MAX_SCORE, 0.0, 1.0)
+	speech.emotional_intensity = clampf(result.score("emotional_intensity") / _MAX_SCORE, 0.0, 1.0)
+	speech.intent = _choice(result, "interaction_intent", "OTHER", tuning)
+	speech.surrender = speech.intent == "SURRENDER"
+	speech.response_mode = _choice(result, "response_mode", "NEUTRAL", tuning)
+	var magnitude: float = PLAYER_SPEECH_MIN_CHANGE \
+		+ speech.importance * (NpcIncidentBudget.MAX_CHANGE - PLAYER_SPEECH_MIN_CHANGE)
+	for dimension: String in NpcDecisionService.DIMENSIONS:
+		var sign: float = _SIGNS[_choice(result, dimension + "_change", UNCHANGED, tuning)]
+		if sign != 0.0:
+			speech.dispositions[dimension] = sign * magnitude
+	speech.dispositions["familiarity"] = PLAYER_SPEECH_FAMILIARITY
+	return speech
 
 static func _answered(result: NpcDecisionResult, kind: StringName) -> bool:
 	return result != null and result.is_success() and result.ticket.kind == kind

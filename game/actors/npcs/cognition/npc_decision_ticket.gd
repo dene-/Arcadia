@@ -12,7 +12,9 @@ const SELECT_GOAL: StringName = &"select_goal"
 const SOCIAL: StringName = &"social"
 const LISTEN: StringName = &"listen"
 const UTTERANCE: StringName = &"utterance"
-const KINDS: Array[StringName] = [APPRAISE, SELECT_GOAL, SOCIAL, LISTEN, UTTERANCE]
+## Player dialogue: the typed player-speech judgments and the reply in one request.
+const DIALOGUE: StringName = &"dialogue"
+const KINDS: Array[StringName] = [APPRAISE, SELECT_GOAL, SOCIAL, LISTEN, UTTERANCE, DIALOGUE]
 
 ## Scheduling class: lower runs first; waiting background work ages toward INTERACTIVE.
 enum Urgency { INTERACTIVE, SAFETY, BACKGROUND }

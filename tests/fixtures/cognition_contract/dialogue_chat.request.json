@@ -1,0 +1,76 @@
+{
+  "protocol_version": 2,
+  "prompt_version": "cognition-1",
+  "request_id": "req:chat:1",
+  "npc_id": "garrin_holt",
+  "npc": {
+    "id": "garrin_holt",
+    "profile": {
+      "name": "Garrin Holt",
+      "job": "Blacksmith",
+      "age": 46,
+      "voice": {
+        "register": "PLAIN",
+        "cadence": "BRISK",
+        "verbosity": "SPARE",
+        "directness": "BLUNT"
+      }
+    }
+  },
+  "player": {
+    "message": "I will burn down your forge.",
+    "identity": {
+      "name": "Den",
+      "sex": "Male"
+    }
+  },
+  "context": {
+    "activity": "working at the forge",
+    "location": "forge",
+    "world_time": "09:12",
+    "world_minute": 552,
+    "sleeping": false,
+    "known_townspeople": [
+      {
+        "id": "mirelle",
+        "name": "Mirelle",
+        "relationship": "neighbor"
+      }
+    ],
+    "relationship": {
+      "familiarity": 0.3,
+      "trust": -0.2,
+      "respect": 0,
+      "affection": -0.1,
+      "fear": 0.3,
+      "suspicion": 0.4
+    },
+    "recent_events": [
+      "A stranger struck Garrin's shoulder with a club outside the forge."
+    ]
+  },
+  "recent_dialogue": [
+    {
+      "speaker": "player",
+      "text": "Hello."
+    },
+    {
+      "speaker": "npc",
+      "text": "Morning."
+    }
+  ],
+  "memories": [
+    {
+      "id": "mem:garrin:4",
+      "type": "episodic",
+      "gist": "Den struck me outside the forge.",
+      "confidence": 0.8
+    },
+    {
+      "id": "mem:garrin:9",
+      "type": "social",
+      "gist": "Mirelle brought bread to the forge.",
+      "confidence": 0.6
+    }
+  ]
+}

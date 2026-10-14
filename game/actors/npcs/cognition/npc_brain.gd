@@ -12,6 +12,8 @@ const RECENT_TRANSITIONS: int = 8
 const MEMORY_EVIDENCE_PREFIX: String = "memory:"
 
 var controller := NpcTaskController.new()
+## What this resident recently chose and why; fed by its controller, its commitments and the town.
+var trace := NpcDecisionTrace.new()
 
 var _npc_id: String = ""
 var _mind: NpcMindState
@@ -183,6 +185,9 @@ func _die() -> void:
 	controller.interrupt(NpcTask.Interrupt.DEATH, _context())
 
 func _on_transitioned(entry: Dictionary) -> void:
+	trace.record(float(entry["minute"]), NpcDecisionTrace.TRANSITION, {"task_id": entry["task_id"],
+		"task_kind": entry["kind"], "from": entry["from"], "to": entry["to"],
+		"reason": NpcDecisionTrace.code(entry["reason"] as String)})
 	var status: String = entry["to"] as String
 	if status in [NpcTask.status_name(NpcTask.Status.COMPLETED),
 			NpcTask.status_name(NpcTask.Status.CANCELLED),
@@ -222,6 +227,8 @@ func _resolve_commitments(task_id: String, status: String, reason: StringName) -
 			outcome = "cancelled"
 		if outcome.is_empty() or not _mind.commitments.resolve(commitment_id, outcome, _minute):
 			continue
+		trace.record(_minute, NpcDecisionTrace.EFFECT, {"reason": "commitment_" + outcome,
+			"commitment_id": commitment_id, "task_id": task_id})
 		if outcome == "completed" and memory != null:
 			for evidence_id: String in record["evidence_ids"]:
 				if evidence_id.begins_with(MEMORY_EVIDENCE_PREFIX):

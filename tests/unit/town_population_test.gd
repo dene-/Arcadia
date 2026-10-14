@@ -34,10 +34,12 @@ func test_population_is_seeded_and_families_are_reciprocal() -> void:
 func test_migrated_v1_save_without_population_expands_without_erasing_history_or_old_ties() -> void:
 	var save := NpcWorldSave.new()
 	save.life.ensure_person("mirelle_voss", 123, ["mirelle_voss", "cassian_vale"], ["square"])
-	var old_tie: Dictionary = save.life.get_person("mirelle_voss").ties.cassian_vale
+	var seeded: Dictionary = save.minds.get_mind("mirelle_voss").relationships.get_relationship("cassian_vale")
+	var old_tie: Dictionary = {"familiarity": seeded.familiarity, "trust": seeded.trust,
+		"affection": seeded.affection}
 	# A v1 world from before population, economy and justice existed: ties lived on the person.
 	var life: Dictionary = save.life.to_data()
-	life.people.mirelle_voss.ties = save.life.get_person("mirelle_voss").ties
+	life.people.mirelle_voss.ties = {"cassian_vale": old_tie}
 	var old: Dictionary = {"version": 1,
 		"world": {"dead_npcs": ["garrin_holt"], "region_seed": 123,
 			"life": {"version": 1, "minute": life.minute, "next_event": life.next_event,
@@ -53,9 +55,11 @@ func test_migrated_v1_save_without_population_expands_without_erasing_history_or
 	ids.assign(save.population.people.keys())
 	save.life.ensure_person("mirelle_voss", 123, ids, ["square"], save.population)
 	assert_true(save.is_dead(&"garrin_holt"))
-	assert_eq(save.life.get_person("mirelle_voss").ties.cassian_vale, old_tie)
-	assert_eq(save.life.get_person("mirelle_voss").ties.size(), 32)
-	assert_eq(save.life.get_person("mirelle_voss").ties.voss_nephew.familiarity, 1.0)
+	var graph: NpcRelationshipGraph = save.minds.get_mind("mirelle_voss").relationships
+	var tie: Dictionary = graph.get_relationship("cassian_vale")
+	assert_eq({"familiarity": tie.familiarity, "trust": tie.trust, "affection": tie.affection}, old_tie)
+	assert_eq(graph.subjects().size(), 32)
+	assert_eq(graph.get_relationship("voss_nephew").familiarity, 1.0)
 	var restored := NpcWorldSave.new()
 	assert_true(restored.from_data(save.to_data()))
 	assert_eq(restored.population.to_data(), save.population.to_data())

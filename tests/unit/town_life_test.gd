@@ -20,10 +20,10 @@ func test_sleep_duration_cannot_extend_past_breakfast_or_next_day() -> void:
 	state.ensure_person("a", 42, ["a"], ["square"])
 	var breakfast: float = state.get_person("a").plan[1].minute
 	state.minute = breakfast - 1
-	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90, {})
+	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90)
 	assert_eq(state.get_person("a").until, breakfast)
 	state.minute = 1439
-	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90, {})
+	state.select_activity("a", {"kind": "rest", "place": "home:a"}, 90)
 	assert_eq(state.get_person("a").until, 1440.0)
 
 func test_daily_plans_change_by_person_and_day_and_local_knowledge_is_asymmetric() -> void:
@@ -31,46 +31,58 @@ func test_daily_plans_change_by_person_and_day_and_local_knowledge_is_asymmetric
 	state.ensure_person("a", 123, ["a", "b", "c"], ["square", "garden"])
 	state.ensure_person("b", 123, ["a", "b", "c"], ["square", "garden"])
 	var person: Dictionary = state.get_person("a")
-	assert_eq(person.ties.size(), 2)
-	assert_ne(person.ties.b, state.get_person("b").ties.a)
+	var ties: Dictionary = _ties(state, "a")
+	assert_eq(ties.size(), 2)
+	assert_ne(ties.b, _ties(state, "b").a)
 	assert_ne(person.plan, state.get_person("b").plan)
 	assert_eq(person.plan, NpcRoutinePlan.generate(123, "a", 0, ["square", "garden"]))
 	state.advance(1440)
 	state.ensure_person("a", 123, ["a", "b", "c"], ["square", "garden"])
 	assert_ne(person.plan, state.get_person("a").plan)
-	assert_eq(person.ties, state.get_person("a").ties)
+	assert_eq(ties, _ties(state, "a"))
+
+## Resident `id`'s ties to other residents, read from its relationship graph.
+func _ties(state: TownLifeState, id: String) -> Dictionary:
+	var graph: NpcRelationshipGraph = state.minds.get_mind(id).relationships
+	var result: Dictionary = {}
+	for subject: String in graph.subjects():
+		if subject != "player":
+			var relationship: Dictionary = graph.get_relationship(subject)
+			result[subject] = {"familiarity": relationship.familiarity, "trust": relationship.trust,
+				"affection": relationship.affection}
+	return result
 
 func test_seeded_ties_reproduce_the_same_numbers_and_family_overrides_residents() -> void:
 	var state := TownLifeState.new()
 	state.ensure_person("a", 123, ["a", "b", "c"], ["square"])
 	var random := NpcRoutinePlan.random_for(123, "a:social")
-	var ties: Dictionary = state.get_person("a").ties
+	var ties: Dictionary = _ties(state, "a")
 	assert_eq(ties.keys(), ["b", "c"])
 	assert_eq(ties.b.familiarity, random.randf_range(0.45, 0.95))
 	assert_eq(ties.b.trust, random.randf_range(-0.25, 0.65))
 	assert_eq(ties.b.affection, random.randf_range(-0.4, 0.7))
 	assert_eq(ties.c.familiarity, random.randf_range(0.45, 0.95))
 	state.ensure_person("a", 123, ["a", "b", "c", "d"], ["square"])
-	var late: Dictionary = state.get_person("a").ties
+	var late: Dictionary = _ties(state, "a")
 	assert_eq(late.b, ties.b)
 	var late_random := NpcRoutinePlan.random_for(123, "a:tie:d")
 	assert_eq(late.d.familiarity, late_random.randf_range(0.45, 0.95))
 	var graph: NpcRelationshipGraph = state.minds.get_mind("a").relationships
 	assert_true(graph.seed_relationship("b", {"familiarity": 1.0, "trust": 0.5, "affection": 0.5}, true))
-	assert_eq(state.get_person("a").ties.b, {"familiarity": 1.0, "trust": 0.5, "affection": 0.5})
-	assert_false(state.get_person("a").ties.has("player"))
+	assert_eq(_ties(state, "a").b, {"familiarity": 1.0, "trust": 0.5, "affection": 0.5})
+	assert_false(_ties(state, "a").has("player"))
 
 func test_social_exchange_changes_known_ties_once_per_receipt_and_survives_save() -> void:
 	var state := TownLifeState.new()
 	state.ensure_person("a", 123, ["a", "b"], ["square"])
-	var before: Dictionary = state.get_person("a").ties.b
+	var before: Dictionary = _ties(state, "a").b
 	state.remember_exchange("a", "b", "Hello", "social:1", "a", "b")
-	var after: Dictionary = state.get_person("a").ties.b
+	var after: Dictionary = _ties(state, "a").b
 	assert_true(is_equal_approx(after.familiarity, minf(1.0, before.familiarity + 0.02)))
 	assert_eq(after.affection, before.affection)
 	assert_eq(after.trust, before.trust)
 	state.remember_exchange("a", "stranger", "Hello", "social:2", "a", "stranger")
-	assert_false(state.get_person("a").ties.has("stranger"))
+	assert_false(_ties(state, "a").has("stranger"))
 	state.remember_exchange("a", "b", "Again", "social:3", "b", "a")
 	var data: Dictionary = JSON.parse_string(JSON.stringify(state.to_data()))
 	assert_eq(data.version, 2)
@@ -83,7 +95,7 @@ func test_social_exchange_changes_known_ties_once_per_receipt_and_survives_save(
 	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(state.minds.to_data()))))
 	assert_true(loaded.from_data(data))
 	for key: String in ["familiarity", "trust", "affection"]:
-		assert_true(is_equal_approx(loaded.get_person("a").ties.b[key], state.get_person("a").ties.b[key]))
+		assert_true(is_equal_approx(_ties(loaded, "a").b[key], _ties(state, "a").b[key]))
 	loaded.remember_exchange("a", "b", "Third", "social:4", "a", "b")
 	var receipts: Array = loaded.minds.get_mind("a").relationships.to_data().receipts
 	assert_eq(receipts, ["social:a:b:1", "social:a:b:3", "social:a:b:4"])
@@ -193,7 +205,7 @@ func test_hearsay_enters_memory_with_source_and_player_identity_is_explicit() ->
 	var state: Dictionary = memory.snapshot("listener")
 	assert_eq(state.memories.size(), 1)
 	assert_eq(state.memories[0].source, "hearsay")
-	assert_eq(state.relationship.trust, -0.03)
+	assert_eq(memory.minds.get_mind("listener").relationships.get_relationship("player").trust, -0.03)
 	assert_true(state.memories[0].gist.contains("Mirelle told me"))
 	assert_eq(preload("res://game/resources/actors/player_data.tres").social_identity(),
 		{"id": "player", "name": "Den", "sex": "Male"})
@@ -210,12 +222,12 @@ func test_forgotten_hearsay_cannot_repeat_its_trust_penalty_after_save() -> void
 	var memory := NpcMemoryStore.new()
 	memory.record_hearsay(profile, account, policy)
 	assert_true(memory.snapshot("listener").memories.is_empty())
-	assert_eq(memory.snapshot("listener").relationship.trust, -0.03)
+	assert_eq(memory.minds.get_mind("listener").relationships.get_relationship("player").trust, -0.03)
 	var loaded := NpcMemoryStore.new()
 	assert_true(loaded.minds.from_data(JSON.parse_string(JSON.stringify(memory.minds.to_data()))))
 	assert_true(loaded.from_save_data(JSON.parse_string(JSON.stringify(memory.to_save_data()))))
 	loaded.record_hearsay(profile, account, policy)
-	assert_eq(loaded.snapshot("listener").relationship.trust, -0.03)
+	assert_eq(loaded.minds.get_mind("listener").relationships.get_relationship("player").trust, -0.03)
 
 func test_weak_accounts_cannot_change_trust_even_with_an_inconsistent_policy() -> void:
 	var profile := NpcProfile.new()
@@ -229,7 +241,7 @@ func test_weak_accounts_cannot_change_trust_even_with_an_inconsistent_policy() -
 	var account: Dictionary = rumors.hear("listener", "a", "Mirelle", topic, _policy(), 501)
 	var memory := NpcMemoryStore.new()
 	memory.record_hearsay(profile, account, _policy())
-	assert_eq(memory.snapshot("listener").relationship.trust, 0.0)
+	assert_eq(memory.minds.get_mind("listener").relationships.get_relationship("player").trust, 0.0)
 	assert_eq(memory.snapshot("listener").memories[0].confidence, 0.6)
 
 func test_hearsay_dispositions_pass_through_the_incident_budget() -> void:
@@ -243,7 +255,7 @@ func test_hearsay_dispositions_pass_through_the_incident_budget() -> void:
 	policy.dispositions = {"player": {"trust": -0.5, "fear": 0.5}}
 	var memory := NpcMemoryStore.new()
 	memory.record_hearsay(profile, account, policy)
-	var relationship: Dictionary = memory.snapshot("listener").relationship
+	var relationship: Dictionary = memory.minds.get_mind("listener").relationships.get_relationship("player")
 	assert_true(absf(relationship.trust + NpcIncidentBudget.MAX_CHANGE) < 0.0001, "trust %s" % relationship.trust)
 	assert_true(absf(relationship.fear - NpcIncidentBudget.MAX_CHANGE) < 0.0001, "fear %s" % relationship.fear)
 	var spent: Dictionary = memory.minds.get_mind("listener").incident_budget.spent("player", "event:1",
@@ -267,7 +279,7 @@ func test_weak_accounts_change_only_how_the_listener_sees_the_messenger() -> voi
 	var graph: NpcRelationshipGraph = memory.minds.get_mind("listener").relationships
 	assert_true(absf(graph.get_relationship("a").trust + 0.05) < 0.0001)
 	assert_false(graph.has_subject("player"))
-	assert_eq(memory.snapshot("listener").relationship.trust, 0.0)
+	assert_eq(memory.minds.get_mind("listener").relationships.get_relationship("player").trust, 0.0)
 
 func test_expired_accounts_are_not_known_and_stale_assessments_cannot_transfer_new_text() -> void:
 	var rumors := TownRumors.new()
@@ -310,8 +322,8 @@ func _open_check(town: TownLife, created: float = 0.0) -> String:
 
 ## The seeker is on the way to `place` for the commitment, as the goal choice records it.
 func _searching(town: TownLife, commitment: String, place: String, kind: String = TownLife.CHECK_RELATIVE) -> void:
-	town.save_game.life.select_activity(SEEKER, {"kind": kind, "place": place}, 30.0,
-		{"commitment_id": commitment})
+	town.save_game.life.select_activity(SEEKER, {"kind": kind, "place": place,
+		"commitment_id": commitment}, 30.0)
 
 ## A brain for the seeker with no task yet, driven by a fake actor and executor.
 func _brain(town: TownLife, executor: Routine.FakeExecutor) -> NpcBrain:
@@ -363,9 +375,9 @@ func test_search_visits_seen_then_home_then_work_defers_and_resumes_from_the_sta
 		_searching(town, commitment, offered[0].place)
 		town._search_failed(SEEKER)
 		var person: Dictionary = town.save_game.life.get_person(SEEKER)
-		assert_false(person.decision.has("commitment_id"), "a stale routine never searches again")
+		assert_false(person.has("commitment_id"), "a stale routine never searches again")
 		assert_eq(person.until, town.save_game.life.minute, "the finished stop is interrupted")
-		assert_eq(person.decision.search, "%s:%d" % [commitment, step + 1])
+		assert_eq(town.save_game.life.search_for(SEEKER, commitment).step, (step + 1) % sequence.size())
 	var deferred: Dictionary = town.save_game.life.search_for(SEEKER, commitment)
 	assert_eq(deferred.step, 0)
 	assert_eq(deferred.deferred_until, 600.0 + town.tuning.search_defer_minutes)

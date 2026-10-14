@@ -28,13 +28,13 @@ func test_recent_audible_lines_are_bounded_and_rooms_do_not_share_them() -> void
 	var history := NpcAmbientHistory.new()
 	for index: int in range(9):
 		history.record(_first, "Line %d" % index, [_first, _second])
-	assert_eq(history.recent("voice_b").size(), 6)
-	assert_eq(history.recent("voice_b").back().text, "Line 8")
+	assert_eq(history.recent("voice_b", 0.0).size(), 6)
+	assert_eq(history.recent("voice_b", 0.0).back().text, "Line 8")
 	_second.world_space = &"home:voice_b"
 	history.record(_first, "This was said outside.", [_second])
-	assert_eq(history.recent("voice_b").back().text, "Line 8")
-	history._heard.voice_b[0].heard_at -= 46000
-	assert_eq(history.recent("voice_b").size(), 5)
+	assert_eq(history.recent("voice_b", 0.0).back().text, "Line 8")
+	assert_eq(history.recent("voice_b", NpcAmbientHistory.AUDIBLE_MINUTES - 1.0).size(), 6)
+	assert_true(history.recent("voice_b", NpcAmbientHistory.AUDIBLE_MINUTES).is_empty())
 
 func test_hearing_combat_cannot_identify_participants_or_cross_room_boundaries() -> void:
 	_first.npc_data.vision_radius = 0

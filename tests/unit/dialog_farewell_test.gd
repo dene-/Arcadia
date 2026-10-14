@@ -1,6 +1,8 @@
 extends "res://tests/test_case.gd"
 
 const Manager = preload("res://game/ui/dialog/dialog_manager.gd")
+const FakeService = preload("res://tests/fixtures/npc_fake_decision_service.gd")
+const CHAT: String = "dialogue/chat"
 
 class ChatSource extends Node:
 	func is_able_to_chat() -> bool:
@@ -12,6 +14,9 @@ var _scene: Node
 var _manager: Node
 var _source: ChatSource
 var _finished_sources: Array[Node] = []
+var _backend: FakeService
+var _original_transport: DialogBackendClient
+var _transport_swapped: bool = false
 
 func before_each() -> void:
 	_tree = Engine.get_main_loop() as SceneTree
@@ -46,6 +51,13 @@ func before_each() -> void:
 	_manager.set_process(false)
 
 func after_each() -> void:
+	if _backend != null:
+		_backend.release_all()
+		_backend.free()
+		_backend = null
+	if _transport_swapped:
+		_tree.root.get_node("NpcCognition").decisions.transport = _original_transport
+		_transport_swapped = false
 	_manager.close_dialog()
 	_tree.current_scene = _previous_scene
 	_scene.free()
@@ -128,11 +140,31 @@ func test_closing_and_reopening_cancels_pending_farewell() -> void:
 	assert_true(_manager._chat_container.visible)
 	assert_eq(_finished_sources.size(), 1)
 
-func test_dialogue_retries_with_fresh_evidence_without_committing_stale_reply() -> void:
+## Routes the real decision service to a scripted fake for the rest of the test.
+func _install_fake() -> FakeService:
+	var cognition: Node = _tree.root.get_node("NpcCognition")
+	_backend = FakeService.new()
+	_tree.root.add_child(_backend)
+	cognition.decisions.transport = _backend
+	return _backend
+
+func _wait_until(done: Callable) -> void:
+	for _frame: int in range(300):
+		if done.call():
+			return
+		await _tree.process_frame
+
+## Opens a conversation with the provider offline, so the opening greeting falls back locally.
+func _open_resident(npc_id: StringName) -> BaseNpc:
+	var cognition: Node = _tree.root.get_node("NpcCognition")
+	if not _transport_swapped:
+		_original_transport = cognition.decisions.transport
+		_transport_swapped = true
+	cognition.decisions.transport = null
 	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
 	npc.npc_data = npc.npc_data.duplicate()
 	npc.npc_data.profile = NpcProfile.new()
-	npc.npc_data.profile.npc_id = &"dialogue_retry_test"
+	npc.npc_data.profile.npc_id = npc_id
 	_scene.add_child(npc)
 	_manager.close_dialog()
 	_manager._start_dialog(npc)
@@ -140,55 +172,50 @@ func test_dialogue_retries_with_fresh_evidence_without_committing_stale_reply() 
 	var conversation: NpcConversation = _manager._conversation
 	conversation.store = NpcMemoryStore.new()
 	conversation.persist = false
-	var previous_backend: DialogBackendClient = _manager._backend_client
-	var backend = preload("res://tests/unit/npc_conversation_test.gd").FakeBackend.new()
-	_manager._backend_client = backend
-	backend.hold_dialogue = true
+	return npc
+
+func test_dialogue_retries_with_fresh_evidence_without_committing_stale_reply() -> void:
+	var npc: BaseNpc = _open_resident(&"dialogue_retry_test")
+	var conversation: NpcConversation = _manager._conversation
+	var backend: FakeService = _install_fake()
+	backend.set_default(CHAT, FakeService.threat_chat())
+	backend.hold(CHAT)
 	var received: Array[Dictionary] = []
 	var run: Callable = func() -> void:
 		received.append(await _manager._resolve_dialog_text_async(npc, "Hello."))
 	run.call()
-	assert_eq(backend.dialogue_calls, 1)
+	assert_eq(backend.call_count(CHAT), 1)
 	conversation.store.record_event(npc.get_npc_profile(), "Smoke fills the shop.")
-	backend.hold_dialogue = false
-	backend.dialogue_ready.emit()
-	assert_eq(backend.dialogue_calls, 2)
-	assert_eq(backend.payload.context.current.recent_events, ["Smoke fills the shop."])
+	backend.release(CHAT)
+	await _wait_until(func() -> bool: return not received.is_empty())
+	assert_eq(backend.call_count(CHAT), 2)
+	assert_eq(backend.calls(CHAT)[1].context.recent_events, ["Smoke fills the shop."])
 	assert_eq(conversation.store.turn, 1, "Only the fresh exchange may commit")
 	assert_eq(conversation.store.snapshot("dialogue_retry_test").recent_dialogue.size(), 2)
 	assert_eq(received[0].response, "Leave my forge.")
-	_manager._backend_client = previous_backend
-	backend.free()
 
 func test_continuing_interruptions_close_dialogue_without_fallback_or_commit() -> void:
-	var npc: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
-	npc.npc_data = npc.npc_data.duplicate()
-	npc.npc_data.profile = NpcProfile.new()
-	npc.npc_data.profile.npc_id = &"dialogue_interrupt_test"
-	_scene.add_child(npc)
-	_manager.close_dialog()
-	_manager._start_dialog(npc)
-	_manager.set_process(false)
+	var npc: BaseNpc = _open_resident(&"dialogue_interrupt_test")
 	var conversation: NpcConversation = _manager._conversation
-	conversation.store = NpcMemoryStore.new()
-	conversation.persist = false
-	var previous_backend: DialogBackendClient = _manager._backend_client
-	var backend = preload("res://tests/unit/npc_conversation_test.gd").FakeBackend.new()
-	_manager._backend_client = backend
-	backend.hold_dialogue = true
+	var backend: FakeService = _install_fake()
+	backend.set_default(CHAT, FakeService.threat_chat())
+	backend.hold(CHAT)
 	var received: Array[Dictionary] = []
 	var run: Callable = func() -> void:
 		received.append(await _manager._resolve_dialog_text_async(npc, "Hello."))
 	run.call()
+	# The retry is dispatched as the first request settles, so hold it before that happens.
+	_tree.root.get_node("NpcCognition").decisions.request_settled.connect(
+		func(_entry: Dictionary) -> void: backend.hold(CHAT), CONNECT_ONE_SHOT)
 	npc.life_revision += 1
-	backend.dialogue_ready.emit()
-	assert_eq(backend.dialogue_calls, 2)
+	backend.release(CHAT)
+	await _wait_until(func() -> bool: return backend.call_count(CHAT) == 2)
+	assert_eq(backend.call_count(CHAT), 2)
 	npc.life_revision += 1
-	backend.dialogue_ready.emit()
-	assert_eq(backend.dialogue_calls, 2, "Do not keep retrying during ongoing danger")
+	backend.release(CHAT)
+	await _wait_until(func() -> bool: return not received.is_empty())
+	assert_eq(backend.call_count(CHAT), 2, "Do not keep retrying during ongoing danger")
 	assert_false(_manager.is_dialog_open())
 	assert_true(received[0].is_empty())
 	assert_eq(conversation.store.turn, 0)
 	assert_true(conversation.store.snapshot("dialogue_interrupt_test").recent_dialogue.is_empty())
-	_manager._backend_client = previous_backend
-	backend.free()

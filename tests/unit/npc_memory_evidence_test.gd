@@ -62,7 +62,7 @@ func _memories(store: NpcMemoryStore, observer: String = OBSERVER) -> Array:
 	return store.snapshot(observer).memories
 
 func _trust(store: NpcMemoryStore) -> float:
-	return float(store.snapshot(OBSERVER).relationship.trust)
+	return float(store.minds.get_mind(OBSERVER).relationships.get_relationship("player").trust)
 
 func test_a_missing_store_state_is_its_own_reason_and_keeps_the_evidence_claimed() -> void:
 	var store := NpcMemoryStore.new()

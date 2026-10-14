@@ -29,8 +29,6 @@ func setup(scene_tree: SceneTree) -> void:
 	_cognition = tree.root.get_node("NpcCognition")
 	_original_backend = _cognition.backend
 	# Guard: anything that still reaches the original client cannot leave the machine.
-	_original_backend.chat_endpoint = GUARD_ENDPOINT + "/chat"
-	_original_backend.decision_endpoint = GUARD_ENDPOINT + "/decide"
 	_original_backend.v2_base_url = GUARD_ENDPOINT
 	_counter += 1
 	save_path = OS.get_temp_dir().path_join("arcadia-sim-%d-%d.json" % [OS.get_process_id(), _counter])
@@ -45,8 +43,6 @@ func setup(scene_tree: SceneTree) -> void:
 		_fail("Could not initialize the temporary save: %s" % error)
 	save.region_seed = region_seed
 	backend = FakeService.new()
-	backend.chat_endpoint = GUARD_ENDPOINT + "/chat"
-	backend.decision_endpoint = GUARD_ENDPOINT + "/decide"
 	backend.v2_base_url = GUARD_ENDPOINT
 	tree.root.add_child(backend)
 	_cognition.backend = backend
@@ -158,7 +154,7 @@ func save_effects(save: NpcWorldSave) -> Dictionary:
 		var state: Dictionary = save.memory.snapshot(id)
 		if state.is_empty():
 			continue
-		relationships[id] = state.relationship
+		relationships[id] = save.memory.minds.get_mind(id).relationships.get_relationship("player")
 		memory_counts[id] = {"memories": state.memories.size(), "observations": state.observations.size()}
 	return {"dead": dead, "death_records": death_ids.size(), "death_stages": stages,
 		"coins": coins, "relationships": relationships, "memory_counts": memory_counts}

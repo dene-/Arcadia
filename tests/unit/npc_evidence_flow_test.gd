@@ -70,12 +70,12 @@ func test_second_enqueue_of_a_processed_id_changes_nothing() -> void:
 			{"id": "player", "name": "the player", "role": "aggressor"}]})
 	processor.observe(_profile(), {}, seen)
 	await processor.flush(OBSERVER)
-	var trust: float = processor.store.snapshot(OBSERVER).relationship.trust
+	var trust: float = processor.store.minds.get_mind(OBSERVER).relationships.get_relationship("player").trust
 	assert_eq(trust, -0.1)
 	processor.observe(_profile(), {}, seen)
 	await processor.flush(OBSERVER)
 	assert_eq(rig.backend.call_count("appraise"), 1, "The replay must not reach the provider")
-	assert_eq(processor.store.snapshot(OBSERVER).relationship.trust, trust)
+	assert_eq(processor.store.minds.get_mind(OBSERVER).relationships.get_relationship("player").trust, trust)
 	assert_eq(processor.store.snapshot(OBSERVER).memories.size(), 1)
 	assert_eq(processor.store.snapshot(OBSERVER).observations.size(), 1)
 	await rig.dispose()

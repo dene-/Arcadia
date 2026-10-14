@@ -18,7 +18,7 @@ func _run() -> void:
 	backend.set_default("select_goal", {"suitability:SOCIAL": 4.0, "duration:SOCIAL": "EXTENDED"})
 	backend.set_default("listen", {"disposition:player:trust:direction": "NEGATIVE",
 		"disposition:player:trust:magnitude": 1.0})
-	backend.set_default("life/say", {"response": "Mirelle told me there was fighting nearby."})
+	backend.set_default("dialogue/say", {"response": "Mirelle told me there was fighting nearby."})
 	root.add_child(backend)
 	cognition.backend = backend
 	cognition.decisions.transport = backend
@@ -60,7 +60,7 @@ func _run() -> void:
 	for participant: BaseNpc in [witness, residents[1]]:
 		var id: String = String(participant.get_npc_profile().npc_id)
 		var meeting: Dictionary = {"kind": "social", "place": "square"}
-		cognition.save_game.life.select_activity(id, meeting, 90, {})
+		cognition.save_game.life.select_activity(id, meeting, 90)
 		life._request_routine(participant, id, meeting)
 	var capture: String = OS.get_environment("ARCADIA_TOWN_CAPTURE")
 	var arrivals: Dictionary = {}
@@ -90,7 +90,7 @@ func _run() -> void:
 		failures.append("Only %d residents reached a destination" % arrivals.size())
 	var decisions: int = backend.call_count("select_goal")
 	var transfers: int = backend.call_count("listen")
-	var lines: int = backend.call_count("life/say")
+	var lines: int = backend.call_count("dialogue/say")
 	if informed < 2 or transfers == 0:
 		failures.append("No rumor reached another resident")
 	if lines == 0:

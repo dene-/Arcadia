@@ -105,71 +105,20 @@ for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
     criteria: direction,
   };
 }
-function unit(value) {
-  if (!Number.isFinite(value) || value < 0 || value > 1)
-    throw new Error("Invalid probability");
-}
-export function validateAnswers(answers, questions = QUESTIONS) {
-  if (!answers || typeof answers !== "object" || Array.isArray(answers))
-    throw new Error("Missing decisions");
-  for (const [id, question] of Object.entries(questions)) {
-    const answer = answers[id];
-    if (!answer || answer.type !== question.type)
-      throw new Error(`Invalid decision: ${id}`);
-    if (question.type === "noul") {
-      unit(answer.noul);
-      continue;
-    }
-    unit(answer.confidence);
-    const keys =
-      question.type === "choice"
-        ? Object.keys(question.criteria)
-        : question.criteria.map((_, i) => String(i));
-    if (
-      !answer.probabilities ||
-      Object.keys(answer.probabilities).length !== keys.length
-    )
-      throw new Error("Invalid probabilities");
-    let total = 0;
-    for (const key of keys) {
-      unit(answer.probabilities[key]);
-      total += answer.probabilities[key];
-    }
-    if (Math.abs(total - 1) > 0.02) throw new Error("Invalid probability sum");
-    if (question.type === "choice" && !keys.includes(answer.choice))
-      throw new Error("Unknown choice");
-    if (
-      question.type === "score" &&
-      (!Number.isFinite(answer.score) ||
-        answer.score < 0 ||
-        answer.score > keys.length - 1)
-    )
-      throw new Error("Invalid score");
-  }
-  return answers;
-}
-export function decisionPolicy(raw) {
-  const answers = validateAnswers(raw);
+// Policy from validated typed answers for /v2/dialogue/chat. It carries no relationship change: the
+// game applies its own dispositions policy.
+export function speechPolicy(answers) {
   const choice = (id, fallback) =>
     answers[id].confidence >= THRESHOLDS.choice ? answers[id].choice : fallback;
-  const importance = answers.memory_importance.score / 4; // Jev levels are zero-based.
-  const relationshipDelta = { familiarity: 0.01 };
-  for (const name of ["trust", "respect", "affection", "fear", "suspicion"]) {
-    const sign = { POSITIVE: 1, NEGATIVE: -1, UNCHANGED: 0 }[
-      choice(`${name}_change`, "UNCHANGED")
-    ];
-    relationshipDelta[name] = sign * (0.02 + importance * 0.08);
-  }
   return {
     remember: answers.should_remember.noul >= THRESHOLDS.remember,
     retrieve: answers.should_retrieve_memories.noul >= THRESHOLDS.retrieve,
     update_belief: answers.should_update_belief.noul >= THRESHOLDS.belief,
     end_conversation:
       answers.should_end_conversation.noul >= THRESHOLDS.end_conversation,
-    importance,
+    importance: answers.memory_importance.score / 4, // Jev levels are zero-based.
     emotional_intensity: answers.emotional_intensity.score / 4,
     interaction_intent: choice("interaction_intent", "OTHER"),
     response_mode: answers.response_mode.choice,
-    relationship_delta: relationshipDelta,
   };
 }

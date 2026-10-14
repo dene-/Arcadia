@@ -42,13 +42,9 @@ func ensure_npc(profile: NpcProfile) -> void:
 		"observations": [], "next_observation_id": 1, "heard_origins": {}}
 	_changed(id)
 
-## Relationship is a read adapter over the mind store; it is never stored in memory state.
+## A copy of the resident's memory state. Relationships live only in `minds`.
 func snapshot(npc_id: String) -> Dictionary:
-	if not _states.has(npc_id):
-		return {}
-	var state: Dictionary = _states[npc_id].duplicate(true)
-	state["relationship"] = minds.get_mind(npc_id).relationships.get_relationship("player")
-	return state
+	return _states.get(npc_id, {}).duplicate(true)
 
 ## Runtime invalidation token. Diagnostics and other NPCs cannot invalidate a response.
 func revision(npc_id: String) -> int:
@@ -339,17 +335,29 @@ func complete_intention(npc_id: String, memory_id: String) -> bool:
 			return true
 	return false
 
-## Commits one delivered player exchange of conversation session `session_id`.
+## Commits one delivered player exchange of conversation session `session_id`: `result` is the
+## dialogue response, `speech` what the resident made of the message. Feelings toward the player
+## change through the incident budget of the session, one receipt per exchange.
 func commit_exchange(npc_id: String, message: String, result: Dictionary,
-		policy: Dictionary, recalled: Array, consumed_events: Array, session_id: String) -> bool:
+		speech: NpcDecisionPolicy.PlayerSpeech, recalled: Array, consumed_events: Array,
+		session_id: String) -> bool:
 	if message.length() > 2000 or not _states.has(npc_id) or session_id.is_empty() \
-		or not is_valid_result(result) or not is_valid_policy(policy):
+		or not is_valid_result(result) or not is_valid_player_speech(speech):
 		return false
 	var state: Dictionary = _states[npc_id]
 	_changed(npc_id)
 	advance_time()
-	minds.get_mind(npc_id).relationships.apply_delta("player", policy.relationship_delta,
-		"exchange:%s:%d" % [npc_id, turn])
+	var exchange := NpcObservation.new()
+	exchange.observation_id = "exchange:%s:%d" % [npc_id, turn]
+	exchange.incident_id = "session:" + session_id
+	exchange.observer_id = npc_id
+	exchange.kind = &"player_speech"
+	exchange.modality = NpcObservation.Modality.DIRECT_SPEECH
+	exchange.observed_minute = world_minute
+	exchange.source_id = "player"
+	exchange.text = message.substr(0, NpcObservation.MAX_TEXT_LENGTH)
+	minds.get_mind(npc_id).apply_evidence_delta("player", exchange, speech.dispositions,
+		exchange.observation_id)
 	var history: Array = state.recent_dialogue
 	if not message.is_empty():
 		history.append({"speaker": "player", "text": message, "session_id": session_id,
@@ -366,9 +374,11 @@ func commit_exchange(npc_id: String, message: String, result: Dictionary,
 			memory.last_recalled_turn = turn
 			memory.last_recalled_minute = world_minute
 	var previous_count: int = state.memories.size()
-	if policy.remember:
+	if speech.remember:
 		for proposal: Variant in result.get("memory_writes", []):
-			_admit(state.memories, proposal, policy)
+			_admit(state.memories, proposal, {"importance": speech.importance,
+				"emotional_intensity": speech.emotional_intensity,
+				"update_belief": speech.update_belief})
 	# Only consume the events included in this exchange, preserving any arriving in flight.
 	for event: Variant in consumed_events:
 		state.recent_events.erase(event)
@@ -435,29 +445,36 @@ func from_save_data(data: Variant, at_minute: float = -1.0) -> bool:
 	_next_memory_id = int(data.next_memory_id)
 	return true
 
-static func is_valid_policy(policy: Variant) -> bool:
-	if not policy is Dictionary:
+static func is_valid_player_speech(speech: NpcDecisionPolicy.PlayerSpeech) -> bool:
+	if speech == null or not NpcMemory.is_unit(speech.importance) \
+			or not NpcMemory.is_unit(speech.emotional_intensity) \
+			or not speech.intent in NpcDecisionService.INTENTS \
+			or not speech.response_mode in NpcDecisionService.RESPONSE_MODES:
 		return false
-	if policy.has("speak") and not policy.speak is bool:
+	for dimension: String in speech.dispositions:
+		var delta: float = speech.dispositions[dimension]
+		if not dimension in NpcRelationshipState.KEYS or not is_finite(delta) \
+				or absf(delta) > NpcIncidentBudget.MAX_CHANGE + 0.000001:
+			return false
+	return true
+
+## The v1 observation policy that saves written before M7 keep as an observation's display decision.
+static func is_valid_legacy_decision(decision: Variant) -> bool:
+	if not decision is Dictionary:
 		return false
-	if policy.has("end_conversation") and not policy.end_conversation is bool:
+	if decision.has("speak") and not decision.speak is bool:
 		return false
-	if policy.has("safety_response") and not policy.safety_response in NpcSafetyState.RESPONSES:
+	if decision.has("end_conversation") and not decision.end_conversation is bool:
+		return false
+	if decision.has("safety_response") and not decision.safety_response in NpcSafetyState.RESPONSES:
 		return false
 	for key: String in ["remember", "retrieve", "update_belief"]:
-		if not policy.get(key) is bool:
+		if not decision.get(key) is bool:
 			return false
 	for key: String in ["importance", "emotional_intensity"]:
-		if not NpcMemory.is_unit(policy.get(key)):
+		if not NpcMemory.is_unit(decision.get(key)):
 			return false
-	if not policy.get("relationship_delta") is Dictionary:
-		return false
-	for key: String in NpcRelationshipState.KEYS:
-		var value: Variant = policy.relationship_delta.get(key)
-		if not (value is int or value is float) or not is_finite(float(value)) \
-			or absf(float(value)) > 0.100001:
-			return false
-	return policy.get("response_mode") in ["NEUTRAL", "WARM", "GUARDED", "DEFENSIVE", "REFUSE", "UNCERTAIN"]
+	return decision.get("response_mode") in NpcDecisionService.RESPONSE_MODES
 
 static func is_valid_result(result: Dictionary) -> bool:
 	if not result.get("response") is String or result.response.strip_edges().is_empty() \
@@ -578,7 +595,7 @@ func _valid_observations(value: Variant, next_id: Variant) -> bool:
 		# Saves written before M7 hold the v1 observation policy as the display decision.
 		if not observation.get("decision") is Dictionary or (observation.status == "classified" \
 				and not is_valid_appraisal_record(observation.decision) \
-				and not is_valid_policy(observation.decision)):
+				and not is_valid_legacy_decision(observation.decision)):
 			return false
 	return true
 

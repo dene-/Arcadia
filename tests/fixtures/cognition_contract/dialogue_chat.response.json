@@ -1,0 +1,153 @@
+{
+  "protocol_version": 2,
+  "request_id": "req:chat:1",
+  "judgments": {
+    "should_remember": {
+      "type": "noul",
+      "noul": 0.93
+    },
+    "memory_importance": {
+      "type": "score",
+      "score": 3,
+      "confidence": 0.9,
+      "probabilities": {
+        "0": 0.025,
+        "1": 0.025,
+        "2": 0.025,
+        "3": 0.9,
+        "4": 0.025
+      }
+    },
+    "emotional_intensity": {
+      "type": "score",
+      "score": 3,
+      "confidence": 0.9,
+      "probabilities": {
+        "0": 0.025,
+        "1": 0.025,
+        "2": 0.025,
+        "3": 0.9,
+        "4": 0.025
+      }
+    },
+    "interaction_intent": {
+      "type": "choice",
+      "choice": "THREAT",
+      "confidence": 0.9,
+      "probabilities": {
+        "GREETING": 0.009,
+        "FAREWELL": 0.009,
+        "QUESTION": 0.009,
+        "REQUEST": 0.009,
+        "THREAT": 0.9,
+        "KINDNESS": 0.009,
+        "INSULT": 0.009,
+        "PROMISE": 0.009,
+        "CLAIM": 0.009,
+        "APOLOGY": 0.009,
+        "SURRENDER": 0.009,
+        "OTHER": 0.009
+      }
+    },
+    "should_end_conversation": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "should_retrieve_memories": {
+      "type": "noul",
+      "noul": 0.81
+    },
+    "should_update_belief": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "response_mode": {
+      "type": "choice",
+      "choice": "DEFENSIVE",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEUTRAL": 0.02,
+        "WARM": 0.02,
+        "GUARDED": 0.02,
+        "DEFENSIVE": 0.9,
+        "REFUSE": 0.02,
+        "UNCERTAIN": 0.02
+      }
+    },
+    "trust_change": {
+      "type": "choice",
+      "choice": "NEGATIVE",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEGATIVE": 0.9,
+        "UNCHANGED": 0.05,
+        "POSITIVE": 0.05
+      }
+    },
+    "respect_change": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEGATIVE": 0.05,
+        "UNCHANGED": 0.9,
+        "POSITIVE": 0.05
+      }
+    },
+    "affection_change": {
+      "type": "choice",
+      "choice": "UNCHANGED",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEGATIVE": 0.05,
+        "UNCHANGED": 0.9,
+        "POSITIVE": 0.05
+      }
+    },
+    "fear_change": {
+      "type": "choice",
+      "choice": "POSITIVE",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEGATIVE": 0.05,
+        "UNCHANGED": 0.05,
+        "POSITIVE": 0.9
+      }
+    },
+    "suspicion_change": {
+      "type": "choice",
+      "choice": "POSITIVE",
+      "confidence": 0.9,
+      "probabilities": {
+        "NEGATIVE": 0.05,
+        "UNCHANGED": 0.05,
+        "POSITIVE": 0.9
+      }
+    }
+  },
+  "response": "You do that and you answer to the guard. Leave my forge.",
+  "memory_writes": [
+    {
+      "type": "episodic",
+      "gist": "The player threatened to burn down the forge.",
+      "source": "player_claim",
+      "evidence": "burn down your forge",
+      "topics": [
+        "forge"
+      ],
+      "people": [
+        "player"
+      ],
+      "places": [
+        "forge"
+      ],
+      "sensory_cues": [],
+      "important_details": [],
+      "weak_details": [],
+      "known_gaps": []
+    }
+  ],
+  "recalled_memory_ids": [
+    "mem:garrin:4"
+  ]
+}

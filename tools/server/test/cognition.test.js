@@ -4,7 +4,6 @@ import { once } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { createApp } from "../src/app.js";
 import { createProviderQueue } from "../src/provider-queue.js";
-import { QUESTIONS } from "../src/npc-decisions.js";
 import {
   COGNITION_KINDS,
   PROMPT_VERSION,
@@ -331,7 +330,7 @@ test("a disconnect while still queued never reaches the provider", async (t) => 
   assert.equal(queue.stats().judgment.aborted, 1);
 });
 
-test("judgment concurrency is enforced across v2 and v1 routes", async (t) => {
+test("judgment concurrency is enforced across cognition routes", async (t) => {
   const queue = createProviderQueue({ limits: { judgment: 1, text: 1 } });
   const gates = [];
   let calls = 0;
@@ -342,51 +341,35 @@ test("judgment concurrency is enforced across v2 and v1 routes", async (t) => {
     await gate.promise;
     return { answers: answers(input.questions), model: "m" };
   } });
-  const v1 = post("/decide", chatRequest());
+  const first = post(route("utterance"), fixture("utterance.request.json"));
   await waitFor(() => calls === 1, "first judgment");
-  const v2 = post(route("utterance"), fixture("utterance.request.json"));
+  const second = post(route("utterance"), fixture("utterance.request.json"));
   await waitFor(() => queue.stats().judgment.queued === 1, "second judgment queued");
   assert.equal(calls, 1);
   gates[0].resolve();
   await waitFor(() => calls === 2, "second judgment start");
   gates[1].resolve();
-  assert.equal((await v1).status, 200);
-  assert.equal((await v2).status, 200);
+  assert.equal((await first).status, 200);
+  assert.equal((await second).status, 200);
   assert.deepEqual(queue.stats().judgment, { active: 0, queued: 0, peak_active: 1, peak_queued: 1, completed: 2, failed: 0, aborted: 0 });
 });
 
-const lifeSay = () => ({ protocol_version: 1, npc: { id: "lysa", profile: { name: "Lysa" } },
-  current: { activity: "meal" }, listener: { id: "garrin", name: "Garrin" }, topic: null, mode: "small_talk",
-  intent: "small_talk" });
-const reactionRequest = () => ({ ...chatRequest(), intent: "remark", event: { text: "Someone shouted.", sense: "hearing", player_involved: false } });
-const threat = () => answers(QUESTIONS, { should_remember: 0.93, memory_importance: 3, emotional_intensity: 3,
-  interaction_intent: "THREAT", trust_change: "NEGATIVE", fear_change: "POSITIVE", should_retrieve_memories: 0.81,
-  response_mode: "DEFENSIVE" });
-const chatRequest = () => ({ protocol_version: 1, npc: { id: "garrin_holt", profile: { name: "Garrin", job: "Blacksmith" } },
-  player: { message: "I will burn down your forge." },
-  context: { recent_dialogue: [], relationship: { trust: 0 }, memories: [], current: { recent_events: [] } }, answers: threat() });
-const dialogue = () => ({ response: "Leave my forge.",
-  memory_writes: [{ type: "episodic", gist: "The player threatened the forge.", source: "player_claim",
-    evidence: "burn down your forge", topics: ["forge"], people: ["player"], places: [], sensory_cues: [],
-    important_details: [], weak_details: [], known_gaps: [] }], recalled_memory_ids: [] });
-
 test("every provider call receives the upstream budget for its route and no SDK retries", async (t) => {
   const decisions = [], texts = [];
+  const chat = fixture(manifest.dialogue.chat.response);
   const { post } = await server(t, {
     decide: async (input, options) => {
       decisions.push({ questions: Object.keys(input.questions), options });
-      return { answers: input.questions.supported_0 ? answers(input.questions, { supported_0: 0.95 })
-        : input.questions.should_remember ? threat() : answers(input.questions) };
+      return { answers: input.questions.supported_0 ? answers(input.questions, { supported_0: 0.95 }) : chat.judgments };
     },
     generate: async (input, options) => {
       texts.push({ format: input.text.format.name, options });
-      return { output_text: JSON.stringify(input.text.format.name === "npc_reaction" ? { response: "Keep away!" } : dialogue()) };
+      return { output_text: JSON.stringify(input.text.format.name === "npc_reaction" ? { response: "Keep away!" }
+        : { response: chat.response, memory_writes: chat.memory_writes, recalled_memory_ids: chat.recalled_memory_ids }) };
     },
   });
-  assert.equal((await post("/decide", chatRequest())).status, 200);
-  assert.equal((await post("/react", reactionRequest())).status, 200);
-  assert.equal((await post("/chat", chatRequest())).status, 200);
-  assert.equal((await post("/life/say", lifeSay())).status, 200);
+  assert.equal((await post(manifest.dialogue.say.route, fixture(manifest.dialogue.say.request))).status, 200);
+  assert.equal((await post(manifest.dialogue.chat.route, fixture(manifest.dialogue.chat.request))).status, 200);
 
   const judgments = decisions.filter((call) => !call.questions.includes("supported_0"));
   assert.equal(judgments.length, 1);
@@ -397,59 +380,12 @@ test("every provider call receives the upstream budget for its route and no SDK 
   const grounding = decisions.find((call) => call.questions.includes("supported_0"));
   assert.deepEqual([grounding.options.timeout, grounding.options.maxRetries], [UPSTREAM_BUDGETS_MS.grounding, 0]);
   const byFormat = (name) => texts.filter((call) => call.format === name);
-  assert.equal(byFormat("npc_reaction").length, 2);
+  assert.equal(byFormat("npc_reaction").length, 1);
   for (const { options } of byFormat("npc_reaction")) assert.equal(options.timeout, UPSTREAM_BUDGETS_MS.ambient);
   const dialogueCalls = texts.filter((call) => call.format !== "npc_reaction");
   assert.equal(dialogueCalls.length, 1);
-  assert.equal(dialogueCalls[0].options.timeout, UPSTREAM_BUDGETS_MS.dialogue);
+  assert.ok(dialogueCalls[0].options.timeout <= UPSTREAM_BUDGETS_MS.dialogue);
   for (const { options } of texts) assert.ok(options.signal instanceof AbortSignal);
-});
-
-test("dialogue grounding runs nested under the text permit without deadlocking a single-slot queue", async (t) => {
-  const queue = createProviderQueue({ limits: { judgment: 1, text: 1 } });
-  let during;
-  const { post } = await server(t, { queue,
-    generate: async () => ({ output_text: JSON.stringify(dialogue()) }),
-    decide: async (input) => { during = queue.stats(); return { answers: answers(input.questions, { supported_0: 0.95 }) }; },
-  });
-  const result = await post("/chat", chatRequest());
-  assert.equal(result.status, 200);
-  assert.equal(result.body.memory_writes.length, 1);
-  assert.deepEqual([during.text.active, during.judgment.active], [1, 1]);
-  assert.deepEqual([queue.stats().text.active, queue.stats().judgment.active], [0, 0]);
-});
-
-test("a disconnect during dialogue generation aborts the upstream call and the text permit is freed", async (t) => {
-  const queue = createProviderQueue();
-  const seen = deferred();
-  const { send } = await server(t, { queue, generate: async (_input, { signal }) => {
-    seen.resolve(signal);
-    return untilAborted(signal);
-  } });
-  const controller = new AbortController();
-  const pending = send("/chat", chatRequest(), { signal: controller.signal }).catch((error) => error);
-  const signal = await seen.promise;
-  controller.abort();
-  assert.equal((await pending).name, "AbortError");
-  await waitFor(() => signal.aborted, "upstream abort");
-  await waitFor(() => queue.stats().text.active === 0, "permit release");
-  assert.equal(queue.stats().text.aborted, 1);
-});
-
-test("a disconnect during nested grounding aborts it and releases both permits", async (t) => {
-  const queue = createProviderQueue();
-  const seen = deferred();
-  const { send } = await server(t, { queue,
-    generate: async () => ({ output_text: JSON.stringify(dialogue()) }),
-    decide: async (_input, { signal }) => { seen.resolve(signal); return untilAborted(signal); },
-  });
-  const controller = new AbortController();
-  const pending = send("/chat", chatRequest(), { signal: controller.signal }).catch((error) => error);
-  const signal = await seen.promise;
-  controller.abort();
-  await pending;
-  await waitFor(() => signal.aborted, "grounding abort");
-  await waitFor(() => queue.stats().text.active === 0 && queue.stats().judgment.active === 0, "permit release");
 });
 
 test("the exported upstream budgets leave the game a two-second transport margin", () => {

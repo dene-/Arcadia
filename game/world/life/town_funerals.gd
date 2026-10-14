@@ -7,6 +7,8 @@ extends Node
 const OWNER: String = "funerals"
 ## A deferred reporter or a guard whose recovery failed tries again after this many minutes.
 const RETRY_MINUTES: float = 30.0
+## Offline line of a witness reporting a body, when speech generation fails; %s is the first name.
+const REPORT_FALLBACK: String = "%s is dead. Please, come with me."
 
 var life: TownLife
 var cemetery: TownCemetery
@@ -15,9 +17,11 @@ var _scan_elapsed: float = 0.0
 var _settled: Dictionary = {}
 # npc_id -> world minute before which funerals assigns this resident nothing. Not saved.
 var _retry_at: Dictionary = {}
+var speech := NpcReportSpeech.new()
 
 func _ready() -> void:
 	cemetery = life.get_parent().get_node("Cemetery")
+	speech.decisions = life.decisions
 	get_node("/root/WorldEvents").occurred.connect(_on_event)
 	for id: String in _deaths().ids():
 		if life.save_game.population.people.has(id):
@@ -233,13 +237,17 @@ func _recovery_event(event: StringName, id: String, other: String, npc_id: Strin
 		&"reported":
 			var guard: BaseNpc = _actor(other)
 			if guard != null and npc != null:
+				# The report's meaning commits here; the words are an optional audible layer.
 				guard.alert_response.notice(guard, {"danger_possible": true, "origin_id": "body:" + id})
 				_observe(guard, id, "body_reported", "%s told me they found %s dead. The cause is unconfirmed." % [
 					npc.get_npc_profile().profile_name, _name(id)], "hearing", null, npc)
-				npc.show_spoken_reaction("%s is dead. Please, come with me." % _name(id).get_slice(" ", 0))
+				speech.say(npc, "report", "I found %s's body and I am telling %s about it." % [
+					_name(id), guard.get_npc_profile().profile_name], "sight",
+					REPORT_FALLBACK % _name(id).get_slice(" ", 0), guard)
 		&"preparing":
 			if npc != null:
-				npc.show_spoken_reaction("Give me some room, please.")
+				speech.say(npc, "decline", "I am preparing %s's body to be carried and need room to work." % _name(id),
+					"sight")
 		&"buried":
 			var plot: Vector2 = cemetery.plot_for(id)
 			for observer_id: String in life.resident_ids():
@@ -249,7 +257,7 @@ func _recovery_event(event: StringName, id: String, other: String, npc_id: Strin
 					_observe(observer, id, "body_buried", "I saw %s laid to rest in the town cemetery." % _name(id),
 						"sight", plot)
 			if npc != null:
-				npc.show_spoken_reaction("Rest easy.")
+				speech.say(npc, "grieve", "I have buried %s in the town cemetery." % _name(id), "sight")
 	_refresh_visual(id)
 	life.save_snapshot()
 

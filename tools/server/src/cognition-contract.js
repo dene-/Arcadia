@@ -25,9 +25,9 @@ export class ContractError extends Error {
 }
 
 const ID = /^[A-Za-z0-9_:-]{1,100}$/;
-const invalid = (code) => new ContractError(400, "invalid_request", code);
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const isId = (value) => typeof value === "string" && ID.test(value);
+export const invalid = (code) => new ContractError(400, "invalid_request", code);
+export const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+export const isId = (value) => typeof value === "string" && ID.test(value);
 
 function idList(value, maximum, code, { minimum = 0 } = {}) {
   if (!Array.isArray(value) || value.length < minimum || value.length > maximum

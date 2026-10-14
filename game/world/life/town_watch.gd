@@ -9,6 +9,17 @@ const OWNER: String = "watch"
 const PATROL_STOPS: int = 4
 ## Minutes a heard disturbance stays worth investigating.
 const LEAD_MINUTES: float = 12.0
+## Offline guard lines when speech generation fails.
+const WEAPON_WARNINGS: Array[String] = ["Enough. Put it away. You can surrender.",
+	"Easy now. Stand down and no one else gets hurt.", "Stop there. Put the weapon down."]
+const COMBAT_WARNINGS: Array[String] = ["Stop fighting! Surrender and I'll stop too.",
+	"Enough. Stand down!", "Leave them alone! You can still surrender."]
+const SURRENDER_FALLBACK: String = "All right. Keep that weapon down."
+## What the guard saw, by justice report kind, for the generated warning.
+const WARNING_EVENTS: Dictionary[String, String] = {
+	"brandishing": "The player is holding a weapon near townsfolk.",
+	"assault": "The player attacked a resident.",
+	"killing": "The player killed a resident."}
 
 var life: TownLife
 # npc_id -> {subject: {subject, minute, until, space, x, y}}: unsaved leads the guard heard.
@@ -17,8 +28,10 @@ var _leads: Dictionary = {}
 var _stops: Dictionary = {}
 var _origins: int = 0
 var _hint: Label
+var speech := NpcReportSpeech.new()
 
 func _ready() -> void:
+	speech.decisions = life.decisions
 	get_node("/root/WorldEvents").occurred.connect(_on_event)
 	for guard: BaseNpc in get_tree().get_nodes_in_group(&"town_guards"):
 		var id: String = String(guard.get_npc_profile().npc_id)
@@ -94,7 +107,8 @@ func _on_event(event: WorldEvent) -> void:
 			_notice(guard, id, suspect, "killing" if event.kind == &"actor_died" else "assault")
 		elif suspect.is_in_group(&"enemies") and (event.subject.is_in_group(&"town_residents") or event.subject is BasePlayer):
 			guard.set_enforcement_target(suspect)
-			guard.show_spoken_reaction("Get behind me!")
+			speech.say(guard, "warn", "A hostile creature is attacking near me.", "sight", "Get behind me!",
+				null, event.subject is BasePlayer)
 
 func _notice(guard: BaseNpc, id: String, suspect: BaseActor, kind: String) -> void:
 	var minute: float = life.save_game.life.minute
@@ -112,10 +126,9 @@ func _notice(guard: BaseNpc, id: String, suspect: BaseActor, kind: String) -> vo
 	life.encounters.interrupt(id)
 	guard.life_context.enforcement = life.save_game.justice.known_to(id)
 	if before.get("status") != report.status:
-		var lines: Array[String] = ["Enough. Put it away. You can surrender.", "Easy now. Stand down and no one else gets hurt.", "Stop there. Put the weapon down."]
-		if report.status == "combat":
-			lines = ["Stop fighting! Surrender and I'll stop too.", "Enough. Stand down!", "Leave them alone! You can still surrender."]
-		guard.show_spoken_reaction(lines[abs(hash(id)) % lines.size()])
+		var lines: Array[String] = COMBAT_WARNINGS if report.status == "combat" else WEAPON_WARNINGS
+		speech.say(guard, "warn", WARNING_EVENTS.get(kind, "The player is threatening townsfolk nearby."), "sight",
+			lines[abs(hash(id)) % lines.size()], null, true)
 	life.save_game.life.interrupt(id)
 	life.save_game.save_file()
 	_prompt(id)
@@ -136,8 +149,9 @@ func _accept_surrender(player: BasePlayer) -> void:
 		var id: String = String(guard.get_npc_profile().npc_id)
 		if life.save_game.justice.surrender(id, "player", life.save_game.life.minute):
 			guard.life_revision += 1
-			guard.show_spoken_reaction("All right. Keep that weapon down.")
 			guard.life_context.enforcement = life.save_game.justice.known_to(id)
+			speech.say(guard, "acknowledge", "The player surrendered to me.", "sight",
+				SURRENDER_FALLBACK, null, true)
 			life.save_game.life.interrupt(id)
 			_prompt(id)
 	life.save_game.save_file()
@@ -224,7 +238,7 @@ func _patrol_stop(stop: int, id: String) -> Dictionary:
 	var target: Dictionary = life.destination(id, selected)
 	var point: Vector2 = target.point
 	_stops[id] = index
-	life.save_game.life.select_activity(id, selected, 20, {"service": "town_obligation"})
+	life.save_game.life.select_activity(id, selected, 20)
 	return {"stop": index, "space": String(target.space), "x": point.x, "y": point.y,
 		"label": target.label}
 

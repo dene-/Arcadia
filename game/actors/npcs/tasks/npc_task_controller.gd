@@ -28,6 +28,10 @@ func register_kind(kind: StringName, script: Script) -> void:
 func claim_owner(claim: StringName) -> String:
 	return _claims.get(claim, "") as String
 
+## Every held claim: claim -> owner id.
+func claims() -> Dictionary:
+	return _claims.duplicate()
+
 func acquire_claim(claim: StringName, owner_id: String) -> bool:
 	if owner_id.is_empty():
 		return false

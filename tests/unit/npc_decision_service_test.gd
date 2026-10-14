@@ -74,7 +74,7 @@ func _launch(kind: String, npc_id: String, request_id: String,
 func _launch_text(npc_id: String, request_id: String) -> void:
 	var ticket: NpcDecisionTicket = _ticket("utterance", npc_id, request_id,
 		NpcDecisionTicket.Urgency.INTERACTIVE)
-	_settled.append(await _service.run_text(ticket, "/life/say", {"intent": "warn"}))
+	_settled.append(await _service.run_text(ticket, NpcReportSpeech.PATH, {"intent": "warn"}))
 
 func _answer_appraise(request_id: String) -> Dictionary:
 	var body: Dictionary = Fixtures.response("appraise")
@@ -210,7 +210,7 @@ func test_pools_limit_judgment_to_four_and_text_to_two() -> void:
 	var spoken: Array = _settled.filter(
 		func(result: NpcDecisionResult) -> bool: return result.ticket.request_id == "req:text:0")
 	assert_eq(spoken[0].body.text, "Watch out!")
-	assert_eq(_transport.calls[-1].path, "/life/say")
+	assert_eq(_transport.calls[-1].path, NpcReportSpeech.PATH)
 	assert_eq(_transport.calls[-1].deadline_ms, DialogBackendClient.AMBIENT_DEADLINE_MS)
 	assert_eq(_service.active_count(NpcDecisionService.Pool.TEXT), 2)
 	assert_eq(_service.queued_count(NpcDecisionService.Pool.TEXT), 0)

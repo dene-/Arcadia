@@ -5,7 +5,7 @@ extends Node
 ## Phases: invite (one v2 social judgment, no claims, bounded by INVITE_MS) -> approach (both
 ## brains reserve a conversation claim plus an NpcSocialTask in stable id order) -> converse
 ## (alternating speakers; a shared account gets a v2 listen judgment, audible lines a v2
-## utterance judgment before any /life/say text) -> leave (both tasks end, both conversations
+## utterance judgment before any /v2/dialogue/say text) -> leave (both tasks end, both conversations
 ## finish, the session's open request is cancelled). Dialogue, injury, danger or death end the
 ## session; results of an ended session are dropped.
 const MAX_SESSIONS: int = 3
@@ -353,30 +353,49 @@ func _release(token: int) -> void:
 	if session.has("request"):
 		decisions.cancel(session.request)
 
-func _payload(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
+# The v2 `state` judgments see: the speaker, the listener, the speaker's social context with
+# relevant memories, their relationship and recent social history.
+func _state(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
 	var profile: NpcProfile = speaker.get_npc_profile()
 	var other: NpcProfile = listener.get_npc_profile()
-	var person: Dictionary = state.get_person(String(profile.npc_id))
+	var other_id: String = String(other.npc_id)
 	store.ensure_npc(profile)
 	var memory: Dictionary = store.snapshot(String(profile.npc_id))
-	var raw: Dictionary = speaker.get_cognitive_context()
+	var raw: Dictionary = speaker.get_cognitive_context(NpcCognitiveContext.SOCIAL, [other_id])
 	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
-	current.participants = [String(profile.npc_id), String(other.npc_id)]
-	current.relationship_with_player = memory.relationship
+	current.participants = [String(profile.npc_id), other_id]
 	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
 		other.profile_name + " " + str(current.get("activity", "")), current,
 		profile.get_cognition(), store.world_minute, NpcMemoryRetriever.links_for(raw))
-	return {"protocol_version": 1, "npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
+	return {"npc": {"id": String(profile.npc_id), "profile": profile.to_backend_profile()},
 		"listener": {"id": String(other.npc_id), "name": other.profile_name, "job": other.job,
 			"activity": listener.daily_routine.activity},
-		"current": current, "relationship": person.ties.get(String(other.npc_id), {}),
+		"current": current, "relationship": raw.relationships.get(other_id, {}),
 		"recent_social": social_history(String(profile.npc_id))}
 
-# The v2 `state`: the speech payload without its v1 protocol marker.
-func _state(speaker: BaseNpc, listener: BaseNpc) -> Dictionary:
-	var described: Dictionary = _payload(speaker, listener)
-	described.erase("protocol_version")
-	return described
+# The `/v2/dialogue/say` request for one line in `intent` addressed to `listener`, about the
+# attributed `topic` account when there is one.
+func _say_payload(ticket: NpcDecisionTicket, speaker: BaseNpc, listener: BaseNpc,
+		topic: Dictionary, tone: String, intent: String) -> Dictionary:
+	var speaker_id: String = ticket.npc_id
+	var heard: NpcProfile = listener.get_npc_profile()
+	var context: Dictionary = speaker.get_cognitive_context(NpcCognitiveContext.SOCIAL,
+		[String(heard.npc_id)])
+	context.recent_social = social_history(speaker_id)
+	context.tone = tone
+	var payload: Dictionary = {"protocol_version": ticket.protocol_version,
+		"prompt_version": ticket.prompt_version, "request_id": ticket.request_id,
+		"npc_id": speaker_id,
+		"npc": {"id": speaker_id, "profile": speaker.get_npc_profile().to_backend_profile()},
+		"intent": intent, "listener": {"id": String(heard.npc_id), "name": heard.profile_name},
+		"context": context}
+	if not topic.is_empty():
+		payload.topic = {"originator_name": String(topic.originator_name).substr(0, 100),
+			"source_name": String(topic.source_name).substr(0, 100),
+			"text": String(topic.text).substr(0, NpcReportSpeech.MAX_EVENT_TEXT),
+			"sense": topic.sense, "basis": topic.get("basis", ""), "hops": topic.get("hops", 0),
+			"confidence": topic.confidence}
+	return payload
 
 func _status(a: String, b: String, outcome: String) -> void:
 	_diagnostics[a] = {"with": b, "outcome": outcome, "minute": state.minute}
@@ -398,18 +417,13 @@ func _say(token: int, speaker: BaseNpc, listener: BaseNpc, topic: Dictionary, to
 	var decided: NpcDecisionPolicy.Utterance = NpcDecisionPolicy.utterance(judged, [mode], tuning)
 	if not decided.speak:
 		return {"ok": true, "line": ""}
-	var payload: Dictionary = _payload(speaker, listener)
-	payload.topic = topic if not topic.is_empty() else null
-	payload.mode = mode
-	payload.intent = decided.intent
-	payload.tone = tone
-	var text: NpcDecisionResult = await _decide(token,
-		_ticket(NpcDecisionTicket.UTTERANCE, speaker_id, token), payload, "/life/say")
-	var response: Variant = text.body.get("response")
-	if not _live(token) or not text.is_success() or not response is String \
-			or (response as String).strip_edges().is_empty() or (response as String).length() > 160:
+	var line_ticket: NpcDecisionTicket = _ticket(NpcDecisionTicket.UTTERANCE, speaker_id, token)
+	var text: NpcDecisionResult = await _decide(token, line_ticket,
+		_say_payload(line_ticket, speaker, listener, topic, tone, decided.intent), NpcReportSpeech.PATH)
+	if not _live(token):
 		return {"ok": false, "line": ""}
-	return {"ok": true, "line": response}
+	var line: String = NpcReportSpeech.spoken_line(text)
+	return {"ok": not line.is_empty(), "line": line}
 
 func _near(a: BaseNpc, b: BaseNpc) -> bool:
 	return a.can_follow_routine() and b.can_follow_routine() \

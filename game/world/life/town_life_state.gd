@@ -53,7 +53,7 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 		_people[id] = {"plan_day": -1, "plan": [],
 			"activity": "rest", "place": "home:" + id, "until": minute,
 			"social_after": minute + random.randf_range(1, 12), "encounters": 0,
-			"position": [], "recent_social": [], "decision": {}, "safety": {}}
+			"position": [], "recent_social": [], "safety": {}}
 	var person: Dictionary = _people[id]
 	# An existing save already contains its original relationships. Add only missing neighbors.
 	for other: String in residents:
@@ -79,24 +79,16 @@ func ensure_person(id: String, seed_value: int, residents: Array[String], places
 		if not NpcSafetyState.sheltering(person.safety, minute):
 			person.until = minute
 
-## Temporary read adapter over the mind store: resident subjects only, three dimensions.
+## A copy of `id`'s saved life record. Relationships are not part of it: read them from the
+## resident's `NpcMindState.relationships`.
 func get_person(id: String) -> Dictionary:
-	if not _people.has(id):
-		return {}
-	var person: Dictionary = _people[id].duplicate(true)
-	var ties: Dictionary = {}
-	if minds.has_mind(id):
-		var relationships: NpcRelationshipGraph = minds.get_mind(id).relationships
-		for other: String in relationships.subjects():
-			if other == "player":
-				continue
-			var tie: Dictionary = relationships.get_relationship(other)
-			ties[other] = {"familiarity": tie.familiarity, "trust": tie.trust, "affection": tie.affection}
-	person.ties = ties
-	return person
+	return _people.get(id, {}).duplicate(true)
 
-## `since` records when the activity or place last changed: how long the current goal has run.
-func select_activity(id: String, activity: Dictionary, duration: float, diagnostic: Dictionary) -> void:
+## Saves the goal a resident just chose. Only what restoring a save needs is kept: `activity` and
+## `place` rebuild the routine target, `until` when it is reconsidered, `since` how long the goal
+## has run (goal frames), and `commitment_id` the commitment the goal serves (search resumption).
+## What the resident is doing right now comes from its current task, not from this record.
+func select_activity(id: String, activity: Dictionary, duration: float) -> void:
 	if not _people.has(id):
 		return
 	var person: Dictionary = _people[id]
@@ -109,7 +101,9 @@ func select_activity(id: String, activity: Dictionary, duration: float, diagnost
 		person.until = minf(person.until, person.safety.until)
 	else:
 		person.until = minf(person.until, NpcRoutinePlan.next_change(person.plan, minute))
-	person.decision = diagnostic.duplicate(true)
+	person.erase("commitment_id")
+	if not String(activity.get("commitment_id", "")).is_empty():
+		person.commitment_id = String(activity.commitment_id)
 
 ## Progress of the search a commitment asks for: {step: index of the place being searched,
 ## deferred_until: minute before which the search is not resumed}.
@@ -207,6 +201,12 @@ func from_data(data: Variant) -> bool:
 	_next_event = int(data.next_event)
 	_next_social_receipt = int(data.next_social_receipt)
 	_people = data.people.duplicate(true)
+	# Saves written before M9 kept a diagnostic `decision`; only its commitment id is state.
+	for person: Dictionary in _people.values():
+		var decision: Dictionary = person.get("decision", {})
+		person.erase("decision")
+		if not person.has("commitment_id") and not String(decision.get("commitment_id", "")).is_empty():
+			person.commitment_id = String(decision.commitment_id)
 	_personalities = personalities.duplicate(true)
 	rumors.from_data(validated.to_data())
 	return true
@@ -269,7 +269,11 @@ static func _valid_person(person: Variant) -> bool:
 			or not entry.get("speaker_id") is String or not entry.get("listener_id") is String \
 			or not NpcMemoryStore.is_valid_session_entry(entry):
 			return false
-	return person.get("decision") is Dictionary
+	if person.has("decision") and (not person.decision is Dictionary
+			or not person.decision.get("commitment_id", "") is String):
+		return false
+	return not person.has("commitment_id") or (person.commitment_id is String
+		and person.commitment_id.length() <= 200)
 
 # Optional search progress per commitment id (absent in older saves).
 static func _valid_searches(searches: Variant) -> bool:

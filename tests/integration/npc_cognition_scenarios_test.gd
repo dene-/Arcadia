@@ -261,6 +261,11 @@ func _task(sim: Simulation, id: String) -> NpcTask:
 	var brain: NpcBrain = sim.life.brain_for(id)
 	return brain.controller.current if brain != null else null
 
+## The resident's latest goal choice from its decision trace, or {}.
+func _latest_goal(sim: Simulation, id: String) -> Dictionary:
+	var brain: NpcBrain = sim.life.brain_for(id)
+	return brain.trace.latest(NpcDecisionTrace.GOAL) if brain != null else {}
+
 func _claims(sim: Simulation, id: String) -> Dictionary:
 	return sim.life.brain_for(id).debug_snapshot().claims
 
@@ -548,14 +553,14 @@ func _scenario_player_takes_over_session() -> void:
 		{"remember": true, "importance": 1.0}, life_state.minute)
 	var late_line: String = "The copper bell rang at the old well."
 	sim.backend.queue_response("social", {"topic": "test:m4e", "tone": "friendly"})
-	sim.backend.queue_response("life/say", {"response": late_line})
-	sim.backend.hold("life/say")
+	sim.backend.queue_response("dialogue/say", {"response": late_line})
+	sim.backend.hold("dialogue/say")
 	_eager_initiator(first)
 	sim.life.encounters.consider(first, second)
 	var session_owner: String = String(_claims(sim, second_id).conversation)
 	_check(sim.life.encounters.session_phase(first_id) == TownEncounters.PHASE_CONVERSE
 		and sim.life.encounters.session_phase(second_id) == TownEncounters.PHASE_CONVERSE
-		and sim.backend.call_count("life/say") == 1,
+		and sim.backend.call_count("dialogue/say") == 1,
 		"(e) The session did not reach its spoken line: %s" % [sim.life.encounters.diagnostics(first_id)])
 	_check(session_owner.begins_with("session:social:"), "(e) The conversation claim has no session owner")
 	var dialog: Node = root.get_node("DialogManager")
@@ -571,9 +576,9 @@ func _scenario_player_takes_over_session() -> void:
 		"(e) The partner kept the session's claims: %s" % [_claims(sim, first_id)])
 	var partner: NpcTask = _task(sim, first_id)
 	_check(partner == null or partner.kind != &"social", "(e) The partner is still held by the session")
-	var calls_before: int = sim.backend.call_count("life/say")
-	sim.backend.release("life/say")
-	_check(sim.backend.call_count("life/say") == calls_before, "(e) The ended session asked for another line")
+	var calls_before: int = sim.backend.call_count("dialogue/say")
+	sim.backend.release("dialogue/say")
+	_check(sim.backend.call_count("dialogue/say") == calls_before, "(e) The ended session asked for another line")
 	await sim.advance(0.5)
 	for npc: BaseNpc in [first, second]:
 		_check(not _bubble_shows(npc, late_line), "(e) The ended session's late reply was spoken by %s" % _resident_id(npc))
@@ -641,7 +646,7 @@ func _scenario_commitment_survives_reload() -> void:
 	var result: Dictionary = {"response": "I will tell the guard.",
 		"memory_writes": [{"type": "prospective", "gist": "Promised to report the copper bell.",
 			"source": "player_claim", "topics": ["bell"], "people": ["player"]}], "recalled_memory_ids": []}
-	_check(memory.commit_exchange(id, "Tell the guard.", result, Simulation.FakeService.valid_policy(), [], [], "player:m4g"),
+	_check(memory.commit_exchange(id, "Tell the guard.", result, Simulation.FakeService.player_speech(), [], [], "player:m4g"),
 		"(g) The prospective memory was not committed")
 	var memory_id: String = ""
 	for record: Dictionary in memory.snapshot(id).memories:
@@ -789,20 +794,21 @@ func _scenario_routine_goal_choice() -> void:
 	var chosen: int = 0
 	for id: String in sim.resident_ids():
 		var person: Dictionary = sim.save_game().life.get_person(id)
-		if person.decision.get("service", "") != "jev":
+		var goal: Dictionary = _latest_goal(sim, id)
+		if goal.get("reason", "") != "jev":
 			continue
 		# A guard on its night watch is offered only the plan entry: ORDINARY minutes by default.
-		var rests: bool = person.decision.candidate == "REST"
+		var rests: bool = goal.selected == "REST"
 		if rests:
 			chosen += 1
 			_check(person.activity == "rest" and person.place == "home:" + id,
-				"(routine) %s did not apply the chosen REST: %s / %s" % [id, person.activity, person.decision])
+				"(routine) %s did not apply the chosen REST: %s / %s" % [id, person.activity, goal])
 		else:
-			_check(person.decision.candidate == "PLAN",
-				"(routine) %s applied an unrequested candidate: %s" % [id, person.decision])
+			_check(goal.selected == "PLAN",
+				"(routine) %s applied an unrequested candidate: %s" % [id, goal])
 		var expected: float = tuning.extended_goal_minutes if rests else tuning.ordinary_goal_minutes
-		_check(person.decision.duration == expected,
-			"(routine) %s used a duration of %s" % [id, person.decision.duration])
+		_check(goal.duration == expected,
+			"(routine) %s used a duration of %s" % [id, goal.duration])
 		_check(float(person.until) <= sim.save_game().life.minute + expected,
 			"(routine) %s runs past its bounded duration" % id)
 	_check(chosen > 0, "(routine) No resident applied the confident REST choice")
@@ -817,12 +823,11 @@ func _scenario_routine_goal_choice() -> void:
 	await _redecide_routines(sim)
 	var kept: int = 0
 	for id: String in sim.resident_ids():
-		var person: Dictionary = sim.save_game().life.get_person(id)
-		if not person.decision.get("service", "") in ["plan_kept", "jev"]:
+		var goal: Dictionary = _latest_goal(sim, id)
+		if not goal.get("reason", "") in ["plan_kept", "jev"]:
 			continue # Never asked (wakeup, duty): the service did not decide.
-		_check(person.decision.service == "plan_kept" and person.decision.candidate == "PLAN"
-				and person.decision.duration == 20.0,
-			"(routine) %s did not keep the plan on low confidence: %s" % [id, person.decision])
+		_check(goal.reason == "plan_kept" and goal.selected == "PLAN" and goal.duration == 20.0,
+			"(routine) %s did not keep the plan on low confidence: %s" % [id, goal])
 		kept += 1
 	_check(kept > 0, "(routine) No resident decided under low confidence")
 	await sim.teardown()
@@ -883,11 +888,11 @@ func _m8_personality_breaks_ties() -> void:
 	for group: Array[String] in [sociable, shy]:
 		var expected: String = "SOCIAL" if group == sociable else "REST"
 		for id: String in group:
-			var choice: Dictionary = life_state.get_person(id).decision
+			var choice: Dictionary = _latest_goal(sim, id)
 			if not choice.get("scores", {}).has("SOCIAL") or not choice.get("scores", {}).has("REST"):
 				continue
 			compared[expected] += 1
-			_check(choice.get("candidate") == expected, "(A) %s chose %s, expected %s" % [id, choice, expected])
+			_check(choice.get("selected") == expected, "(A) %s chose %s, expected %s" % [id, choice, expected])
 	_check(compared.SOCIAL > 0 and compared.REST > 0,
 		"(A) Too few residents were offered both goals: %s of shy %s, sociable %s" % [compared, shy, sociable])
 	await sim.teardown()
@@ -998,8 +1003,8 @@ func _m8_hurt_relative() -> void:
 	_check(mind.commitments.get_commitment(commitment.id).get("status") == "open",
 		"(C) The check ended without finding %s: %s" % [victim_id, mind.commitments.get_commitment(commitment.id)])
 	await _m8_rechoose(sim, [witness_id] as Array[String])
-	var decision: Dictionary = sim.save_game().life.get_person(witness_id).decision
-	_check(decision.get("candidate") == "CHECK_RELATIVE",
+	var decision: Dictionary = _latest_goal(sim, witness_id)
+	_check(decision.get("selected") == "CHECK_RELATIVE",
 		"(C) %s did not go looking for %s: %s" % [witness_id, victim_id, decision])
 	sim.save_game().memory.ensure_npc(witness.get_npc_profile())
 	var context: Dictionary = NpcCognitiveContext.build(sim.save_game().memory.snapshot(witness_id),

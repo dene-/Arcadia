@@ -32,7 +32,7 @@ var _chat_cancel_button: Button
 var _conversation: NpcConversation = NpcConversation.new()
 var _events: NpcEventProcessor
 var _dialog_generation: int = 0
-var _backend_client: DialogBackendClient
+var _decisions: NpcDecisionService
 var _speech_player: DialogVoicePlayer
 var _paginator: DialogPaginator = DialogPaginator.new()
 var _typewriter: DialogTypewriter = DialogTypewriter.new()
@@ -63,7 +63,7 @@ func _ready() -> void:
 	var cognition: Node = get_node("/root/NpcCognition")
 	_conversation.store = cognition.store
 	_conversation.save_callback = cognition.save_game.save_file
-	_backend_client = cognition.backend
+	_decisions = cognition.decisions
 	_events = cognition.events
 	_npc_seed = cognition.save_game.get_npc_seed()
 
@@ -367,7 +367,8 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 	if is_instance_valid(source) and source.has_method("get_npc_profile"):
 		var profile: NpcProfile = source.call("get_npc_profile")
 		if profile != null and not profile.npc_id.is_empty():
-			var current: Dictionary = source.call("get_cognitive_context")
+			var participants: Array[String] = ["player"]
+			var current: Dictionary = source.call("get_cognitive_context", NpcCognitiveContext.DIALOGUE, participants)
 			var generation: int = _dialog_generation
 			var source_ref: WeakRef = weakref(source)
 			var still_current: Callable = func() -> bool:
@@ -380,7 +381,7 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 				await _events.wait_for_assessment(String(profile.npc_id))
 				if not still_current.call():
 					return {}
-				current = source.call("get_cognitive_context")
+				current = source.call("get_cognitive_context", NpcCognitiveContext.DIALOGUE, participants)
 				var npc: BaseNpc = source as BaseNpc
 				var revision: int = npc.life_revision if npc != null else 0
 				var space: StringName = npc.world_space if npc != null else &""
@@ -390,7 +391,7 @@ func _resolve_dialog_text_async(source: Node, player_message: String) -> Diction
 					var actor: BaseNpc = source_ref.get_ref() as BaseNpc
 					return actor == null or (actor.life_revision == revision and actor.world_space == space)
 				var result: Dictionary = await _conversation.request(
-					profile, current, player_message, _backend_client, attempt_current)
+					profile, current, player_message, _decisions, attempt_current)
 				if not still_current.call():
 					return {}
 				if result.get("interrupted", false) or (npc != null

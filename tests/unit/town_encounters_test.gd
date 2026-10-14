@@ -84,7 +84,7 @@ func after_each() -> void:
 	_brains.clear()
 
 func _fail_speech() -> void:
-	_backend.set_default("life/say", {"outcome": "UNAVAILABLE"})
+	_backend.set_default("dialogue/say", {"outcome": "UNAVAILABLE"})
 
 func test_session_holds_both_residents_until_it_ends() -> void:
 	_backend.hold("listen")
@@ -181,7 +181,7 @@ func test_failed_audible_speech_does_not_transfer_information() -> void:
 	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
 
 func test_successful_speech_creates_attributed_memory_and_affects_next_player_context() -> void:
-	_backend.set_default("life/say", {"response": "I saw Den fighting nearby."})
+	_backend.set_default("dialogue/say", {"response": "I saw Den fighting nearby."})
 	_backend.queue_response("listen", {"disposition:player:trust:direction": "NEGATIVE",
 		"disposition:player:trust:magnitude": 4.0})
 	await _scene.get_tree().physics_frame
@@ -190,12 +190,12 @@ func test_successful_speech_creates_attributed_memory_and_affects_next_player_co
 	assert_eq(_backend.calls("social")[0].tones, TownEncounters.TONES)
 	assert_eq(_backend.calls("listen")[0].subjects, ["social_a", "player"])
 	assert_eq(_backend.calls("utterance")[0].intents, ["share", TownEncounters.SILENCE])
-	assert_eq(_backend.calls("life/say")[0].intent, "share")
+	assert_eq(_backend.calls("dialogue/say")[0].intent, "share")
 	var snapshot: Dictionary = _encounters.store.snapshot("social_b")
 	assert_eq(snapshot.memories.back().source, "hearsay")
 	# The strongest listening judgment moves trust by one incident's maximum change, not more.
-	assert_true(absf(snapshot.relationship.trust + NpcIncidentBudget.MAX_CHANGE) < 0.0001,
-		"trust %s" % snapshot.relationship.trust)
+	var trust: float = _encounters.store.minds.get_mind("social_b").relationships.get_relationship("player").trust
+	assert_true(absf(trust + NpcIncidentBudget.MAX_CHANGE) < 0.0001, "trust %s" % trust)
 	assert_eq(_second.get_cognitive_context().town_rumors[0].source_id, "social_a")
 	assert_true(_first.get_node("ReactionBubble").visible)
 	_first.enter_dialog()
@@ -227,7 +227,7 @@ func test_social_decisions_retrieve_only_the_speakers_bounded_personal_memories(
 		profile.memories.append("Jon once helped me with errand %d." % index)
 	_second.get_npc_profile().memories = ["Jon has a private secret."]
 	_encounters.store.ensure_npc(_second.get_npc_profile())
-	var payload: Dictionary = _encounters._payload(_first, _second)
+	var payload: Dictionary = _encounters._state(_first, _second)
 	assert_eq(payload.current.memories.size(), NpcMemoryRetriever.MAX_RECALLS)
 	assert_false(JSON.stringify(payload.current.memories).contains("private secret"))
 	assert_false(payload.current.memories[0].has("weak_details"))

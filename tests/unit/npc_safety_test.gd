@@ -25,7 +25,7 @@ func test_old_assessments_noise_and_day_boundaries_cannot_overwrite_a_retreat() 
 	state.ensure_person("a", 42, ["a"], ["market"])
 	state.minute = 1439.0
 	state.notice_perception("a", _event(), "outdoors")
-	state.select_activity("a", {"kind": "shelter", "place": "work:a"}, 45, {})
+	state.select_activity("a", {"kind": "shelter", "place": "work:a"}, 45)
 	assert_eq(state.get_person("a").until, 1484.0)
 	state.advance(3)
 	state.ensure_person("a", 42, ["a"], ["market"])

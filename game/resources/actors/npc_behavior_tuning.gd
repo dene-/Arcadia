@@ -29,6 +29,9 @@ extends Resource
 @export_range(0.0, 1.0, 0.01) var belief_threshold: float = 0.8
 @export_range(0.0, 1.0, 0.01) var engage_threshold: float = 0.5
 @export_range(0.0, 1.0, 0.01) var speak_threshold: float = 0.5
+## Player speech: whether recalled memories reach the reply, and whether the player is leaving.
+@export_range(0.0, 1.0, 0.01) var retrieve_threshold: float = 0.5
+@export_range(0.0, 1.0, 0.01) var end_conversation_threshold: float = 0.8
 ## Confidence (0..1) a choice or score answer needs; below it the policy uses the neutral fallback.
 @export_range(0.0, 1.0, 0.01) var min_confidence: float = 0.65
 ## Suitability score (0..4) a candidate goal needs to be chosen.

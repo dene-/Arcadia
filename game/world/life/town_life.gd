@@ -57,6 +57,7 @@ func _ready() -> void:
 	save_game.population.ensure_population(save_game.region_seed)
 	save_game.economy.ensure_households(save_game.population, save_game.life.minute)
 	decisions = cognition.decisions
+	decisions.request_settled.connect(_on_request_settled)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	if not is_inside_tree():
@@ -221,6 +222,7 @@ func _update_environment() -> void:
 			_light.color = Color(1, 0.96, 0.88)
 
 func _exit_tree() -> void:
+	decisions.request_settled.disconnect(_on_request_settled)
 	for request_id: String in _pending.values():
 		decisions.cancel(request_id)
 	if _initialized:
@@ -318,10 +320,9 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 	var options: Array[Dictionary] = _options(id, preferred)
 	save_game.memory.ensure_npc(npc.get_npc_profile())
 	var memory: Dictionary = save_game.memory.snapshot(id)
-	var raw: Dictionary = npc.get_cognitive_context()
+	var raw: Dictionary = npc.get_cognitive_context(NpcCognitiveContext.DECISION, ["player"])
 	var current: Dictionary = NpcCognitiveContext.build(memory, raw)
 	current.participants = [id]
-	current.relationship_with_player = memory.relationship
 	current.memories = NpcMemoryRetriever.new().retrieve(memory.memories,
 		str(current.get("activity", "")) + " " + preferred.kind + " "
 		+ str(current.get("safety_response", {}).get("concern", "")),
@@ -374,12 +375,11 @@ func _choose_activity(npc: BaseNpc, id: String) -> void:
 			# "priority": the resident's own needs or commitments chose what the judgment did not.
 			service = "jev" if choice.endorsed else "priority"
 			break
-	var diagnostic: Dictionary = {"service": service,
-		"outcome": NpcDecisionResult.Outcome.keys()[result.outcome], "candidate": selected.id,
-		"duration": duration, "scores": choice.scores}
-	if selected.has("commitment_id"):
-		diagnostic.commitment_id = selected.commitment_id
-	save_game.life.select_activity(id, selected, duration, diagnostic)
+	_trace(id, NpcDecisionTrace.GOAL, {"reason": service,
+		"outcome": NpcDecisionTrace.code(NpcDecisionResult.Outcome.keys()[result.outcome]),
+		"request_id": ticket.request_id, "selected": selected.id, "duration": duration,
+		"scores": choice.scores, "commitment_id": String(selected.get("commitment_id", ""))})
+	save_game.life.select_activity(id, selected, duration)
 	_request_routine(npc, id, selected)
 	_update_context(npc, id)
 	_save()
@@ -442,7 +442,8 @@ func _plan_routine(npc: BaseNpc, id: String) -> void:
 	var preferred: Dictionary = NpcRoutinePlan.current(person.plan, save_game.life.minute)
 	if person.activity == "rest" and preferred.kind != "rest":
 		# Waking is a schedule obligation, independent of model latency or repeated REST choices.
-		save_game.life.select_activity(id, preferred, 20, {"service": "scheduled_wakeup"})
+		save_game.life.select_activity(id, preferred, 20)
+		_trace(id, NpcDecisionTrace.GOAL, {"reason": "scheduled_wakeup", "selected": "PLAN"})
 		_request_routine(npc, id, preferred)
 		return
 	_choose_activity(npc, id)
@@ -476,7 +477,9 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 		# Sleepers are covered by the real-second alert reflex; caution is for the awake.
 		if not npc.is_sleeping() and _safety_requested(id, origin, "CAUTION"):
 			save_game.life.select_activity(id, {"kind": "assess_safety", "place": person.place},
-				tuning.caution_minutes, {"service": "listening_after_disturbance"})
+				tuning.caution_minutes)
+			_trace(id, NpcDecisionTrace.GOAL, {"reason": "listening_after_disturbance",
+				"selected": "assess_safety", "incident_id": origin})
 			_brains[id].request_task(NpcSafetyTask.create({"response": "CAUTION", "origin_id": origin,
 				"until_minute": minf(float(concern.until), float(concern.observed_at) + tuning.caution_minutes),
 				"label": "listening after a disturbance", "refuge_space": "", "refuge_point": []}, tuning))
@@ -493,8 +496,9 @@ func _maintain_safety(npc: BaseNpc, id: String) -> bool:
 	var selected: Dictionary = {"kind": "shelter", "place": refuge}
 	var target: Dictionary = destination(id, selected)
 	var point: Vector2 = target.point
-	save_game.life.select_activity(id, selected, float(concern.until) - minute,
-		{"service": "safety_response", "safety_origin": origin})
+	save_game.life.select_activity(id, selected, float(concern.until) - minute)
+	_trace(id, NpcDecisionTrace.GOAL, {"reason": "safety_response", "selected": "shelter",
+		"incident_id": origin})
 	_brains[id].request_task(NpcSafetyTask.create({"response": "SHELTER", "origin_id": origin,
 		"until_minute": float(concern.until), "label": target.label,
 		"refuge_space": String(target.space), "refuge_point": [point.x, point.y]}, tuning))
@@ -534,7 +538,7 @@ func _maintain_commitments(id: String) -> void:
 		if not outcome.is_empty() and mind.commitments.resolve(record.id, outcome, minute):
 			save_game.life.end_search(id, record.id)
 	var person: Dictionary = save_game.life.get_person(id)
-	var commitment_id: String = String(person.decision.get("commitment_id", ""))
+	var commitment_id: String = String(person.get("commitment_id", ""))
 	if commitment_id.is_empty() or not person.activity in [CHECK_RELATIVE, VISIT_GRAVE]:
 		return
 	var record: Dictionary = mind.commitments.get_commitment(commitment_id)
@@ -555,7 +559,7 @@ func _maintain_commitments(id: String) -> void:
 # next place, or defer the search after the last one. A grave that cannot be reached defers too.
 func _search_failed(id: String) -> void:
 	var person: Dictionary = save_game.life.get_person(id)
-	var commitment_id: String = String(person.get("decision", {}).get("commitment_id", ""))
+	var commitment_id: String = String(person.get("commitment_id", ""))
 	if commitment_id.is_empty() or not person.get("activity") in [CHECK_RELATIVE, VISIT_GRAVE]:
 		return
 	var record: Dictionary = save_game.minds.get_mind(id).commitments.get_commitment(commitment_id)
@@ -568,11 +572,9 @@ func _search_failed(id: String) -> void:
 	else:
 		save_game.life.set_search(id, commitment_id, step, 0.0)
 	# Clears the commitment from the record, so a stale routine never searches the same place twice.
-	var diagnostic: Dictionary = person.decision.duplicate(true)
-	diagnostic.erase("commitment_id")
-	diagnostic.search = "%s:%d" % [commitment_id, step]
-	save_game.life.select_activity(id, {"kind": person.activity, "place": person.place}, 5.0,
-		diagnostic)
+	save_game.life.select_activity(id, {"kind": person.activity, "place": person.place}, 5.0)
+	_trace(id, NpcDecisionTrace.EFFECT, {"reason": "search_failed",
+		"commitment_id": commitment_id, "step": step})
 	save_game.life.interrupt(id)
 
 static func _known_dead(knowledge: NpcKnowledge, subject: String) -> bool:
@@ -617,8 +619,8 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 		if resident.age >= 16 and not String(resident.job).begins_with("retired") and resident.job != "guard":
 			_add_option(options, "WORK", "work", "work:" + id, "Return to professional work and daily obligations.")
 		_add_option(options, "WALK", "walk", "garden", "Take a walk near the farm garden.")
-		var ties: Dictionary = save_game.life.get_person(id).ties
-		var residents: Array = ties.keys()
+		var residents: Array[String] = save_game.minds.get_mind(id).relationships.subjects()
+		residents.erase("player")
 		residents.sort()
 		if not residents.is_empty():
 			var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
@@ -766,39 +768,51 @@ func _on_task_transition(entry: Dictionary, id: String) -> void:
 
 func _update_context(npc: BaseNpc, id: String) -> void:
 	var person: Dictionary = save_game.life.get_person(id)
+	var relationships: NpcRelationshipGraph = save_game.minds.get_mind(id).relationships
 	var neighbors: Array[Dictionary] = []
 	for public_person: Dictionary in _public_people:
 		if public_person.id == id:
 			continue
 		var known: Dictionary = public_person.duplicate(true)
-		known.relationship = person.ties.get(public_person.id, {})
+		known.relationship = relationships.get_relationship(public_person.id) \
+			if relationships.has_subject(public_person.id) else {}
 		neighbors.append(known)
 	npc.life_context = {"world_time": save_game.life.clock_text(), "world_minute": save_game.life.minute,
 		"safety_response": NpcSafetyState.context(person.safety, save_game.life.minute),
-		"daily_plan": person.plan, "known_townspeople": neighbors,
+		"known_townspeople": neighbors,
 		"town_rumors": save_game.life.rumors.get_known(id, save_game.life.minute).slice(-4),
-		"routine_decision": person.decision, "personality": npc.get_npc_profile().personality,
+		"personality": npc.get_npc_profile().personality,
 		"family_members": save_game.population.family_context(id),
 		"household": save_game.population.household_for(id),
 		"household_economy": save_game.economy.context(save_game.population.household_for(id))}
-	npc.life_context.social_status = encounters.diagnostics(id)
 	npc.life_context.recent_social = encounters.social_history(id)
 	if funerals != null:
 		npc.life_context.known_deaths = funerals.known_losses(id)
 	if npc.is_in_group(&"town_guards"):
 		npc.life_context.enforcement = save_game.justice.known_to(id)
-	if _brains.has(id):
-		npc.life_context.current_task = _brains[id].current_activity()
 
 func _save() -> Error:
 	for id: String in _actors:
 		if is_instance_valid(_actors[id]) and _actors[id].health > 0:
 			save_game.life.remember_position(id, _actors[id].global_position, String(_actors[id].world_space))
-			_brains[id].save_checkpoint()
+			if not _brains[id].save_checkpoint():
+				_trace(id, NpcDecisionTrace.SAVE_FAILURE, {"reason": "task_checkpoint_rejected"})
 	var error: Error = save_game.save_file()
 	if error != OK:
 		push_warning("Town life could not be saved: %s" % error)
+		for id: String in _brains:
+			_trace(id, NpcDecisionTrace.SAVE_FAILURE, {"reason": "save_error:%d" % error})
 	return error
+
+# Records a trace entry in resident `id`'s brain at the current world minute.
+func _trace(id: String, kind: String, fields: Dictionary) -> void:
+	if _brains.has(id):
+		_brains[id].trace.record(save_game.life.minute, kind, fields)
+
+func _on_request_settled(entry: Dictionary) -> void:
+	var fields: Dictionary = entry.duplicate()
+	fields.erase("npc_id")
+	_trace(String(entry.npc_id), NpcDecisionTrace.REQUEST, fields)
 
 func save_snapshot() -> Error:
 	return _save()

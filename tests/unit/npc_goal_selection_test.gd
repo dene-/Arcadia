@@ -277,7 +277,7 @@ func test_saving_and_loading_midway_gives_the_same_next_choice() -> void:
 	var life := TownLifeState.new()
 	life.ensure_person("a", SEED, ["a", "b"] as Array[String], ["square"] as Array[String])
 	life.minute = NOW
-	life.select_activity("a", {"kind": "walk", "place": "garden"}, 45.0, {"service": "jev"})
+	life.select_activity("a", {"kind": "walk", "place": "garden"}, 45.0)
 	life.set_search("a", commitment, 1, 0.0)
 	var traits: Dictionary = life.personality_for("a", SEED).traits
 	var options: Array[Dictionary] = _twins()

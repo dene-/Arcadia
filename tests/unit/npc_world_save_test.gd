@@ -55,7 +55,7 @@ func test_legacy_import_preserves_memories_without_inventing_past_deaths() -> vo
 	assert_eq(save.load_file(), OK)
 	assert_true(save.dead_npcs.is_empty())
 	assert_eq(save.memory.snapshot("legacy_person").recent_events, ["I saw someone die."])
-	assert_eq(save.memory.snapshot("legacy_person").relationship, NpcRelationshipState.initial())
+	assert_eq(save.memory.minds.get_mind("legacy_person").relationships.get_relationship("player"), NpcRelationshipState.initial())
 	file = FileAccess.open(save.path, FileAccess.WRITE)
 	file.store_string("broken")
 	file.close()
@@ -111,7 +111,7 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	var ids: Array[String] = ["garrin_holt", "holt_partner"]
 	save.life.ensure_person(ids[0], save.get_npc_seed(), ids, ["square"], save.population)
 	var before_personality: Dictionary = save.life.personality_for(ids[0], save.get_npc_seed())
-	var before_ties: Dictionary = save.life.get_person(ids[0]).ties
+	var before_ties: Dictionary = save.minds.get_mind(ids[0]).relationships.get_relationship(ids[1])
 	var before_population: Dictionary = save.population.to_data()
 	assert_eq(save.save_file(), OK)
 	var before_json: String = FileAccess.get_file_as_string(save.path)
@@ -135,16 +135,16 @@ func test_npc_reset_rerolls_lives_preserves_map_and_backs_up_all_previous_state(
 	loaded.life.ensure_person(ids[0], loaded.get_npc_seed(), ids, ["square"], loaded.population)
 	var after_personality: Dictionary = loaded.life.personality_for(ids[0], loaded.get_npc_seed())
 	assert_ne(after_personality, before_personality)
-	assert_ne(loaded.life.get_person(ids[0]).ties, before_ties)
+	assert_ne(loaded.minds.get_mind(ids[0]).relationships.get_relationship(ids[1]), before_ties)
 	assert_eq(loaded.save_file(), OK)
 	var restarted := NpcWorldSave.new()
 	_isolate(restarted, "arcadia-npc-reroll-test.json")
 	assert_eq(restarted.load_file(), OK)
 	assert_eq(restarted.life.personality_for(ids[0], restarted.get_npc_seed()).personality,
 		after_personality.personality)
-	for relative: String in loaded.life.get_person(ids[0]).ties:
-		var original: Dictionary = loaded.life.get_person(ids[0]).ties[relative]
-		var restored: Dictionary = restarted.life.get_person(ids[0]).ties[relative]
+	for relative: String in loaded.minds.get_mind(ids[0]).relationships.subjects():
+		var original: Dictionary = loaded.minds.get_mind(ids[0]).relationships.get_relationship(relative)
+		var restored: Dictionary = restarted.minds.get_mind(ids[0]).relationships.get_relationship(relative)
 		for feeling: String in original:
 			assert_true(is_equal_approx(restored[feeling], original[feeling]))
 	var backups: int = 0

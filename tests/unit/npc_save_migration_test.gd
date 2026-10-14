@@ -94,6 +94,10 @@ func test_world_and_memory_inventories_are_preserved() -> void:
 		for id: String in life.people:
 			var expected: Dictionary = life.people[id].duplicate(true)
 			expected.erase("ties")
+			var decision: Variant = expected.get("decision")
+			expected.erase("decision")
+			if decision is Dictionary and not String(decision.get("commitment_id", "")).is_empty():
+				expected.commitment_id = decision.commitment_id
 			if not expected.has("safety"):
 				expected.safety = {}
 			expected.recent_social = _legacy_social(id, life.people[id])
@@ -158,7 +162,7 @@ func test_relationships_move_into_the_mind_store() -> void:
 		for id: String in source.memory.npcs:
 			var relationship: Dictionary = source.memory.npcs[id].relationship
 			assert_eq(minds[id].relationships.subjects.player, relationship, name + " " + id)
-			assert_eq(save.memory.snapshot(id).relationship, relationship, name + " " + id)
+			assert_eq(save.memory.minds.get_mind(id).relationships.get_relationship("player"), relationship, name + " " + id)
 		for id: String in source.world.life.people:
 			var ties: Dictionary = source.world.life.people[id].ties
 			var subjects: Dictionary = minds.get(id, {"relationships": {"subjects": {}}}).relationships.subjects
@@ -168,7 +172,10 @@ func test_relationships_move_into_the_mind_store() -> void:
 					assert_eq(subjects[other][key], ties[other][key], name + " " + id + " " + other)
 				for key: String in ["respect", "fear", "suspicion"]:
 					assert_eq(subjects[other][key], 0.0, name + " " + id + " " + other)
-			assert_eq(save.life.get_person(id).ties, ties, name + " " + id)
+			for other: String in ties:
+				var saved: Dictionary = save.minds.get_mind(id).relationships.get_relationship(other)
+				for key: String in TIE_KEYS:
+					assert_eq(saved[key], ties[other][key], name + " " + id + " " + other)
 		for id: String in minds:
 			var mind: Dictionary = minds[id]
 			assert_eq(mind.relationships.receipts, [], name + " " + id)
