@@ -70,6 +70,49 @@ func test_overlapping_movers_can_choose_an_escape_direction() -> void:
 	var motion: Vector2 = _navigation.steer("a", Vector2.ZERO, Vector2(28, 0), 1.0 / 60.0)
 	assert_true(motion.x < 0, "Exact overlap froze the mover instead of choosing a stable escape")
 
+func test_reserved_spot_is_reachable_from_where_the_walker_stands() -> void:
+	# A closed pen: its inside is walkable, but nobody outside can get in.
+	for wall: Array in [[Vector2(40, -16), Vector2(40, 4)], [Vector2(40, 16), Vector2(40, 4)],
+			[Vector2(22, 0), Vector2(4, 36)], [Vector2(58, 0), Vector2(4, 36)]]:
+		RegionArt.barrier(_stage, wall[0], wall[1])
+	var walker: BaseNpc = _npc(Vector2(-40, 0))
+	_navigation.register("walker", walker)
+	await _stage.get_tree().physics_frame
+	_navigation.build(_stage.get_world_2d().direct_space_state)
+	assert_true(_navigation.is_clear(Vector2(40, 0)), "The pen should have a walkable inside")
+	var point: Vector2 = _navigation.reserve_destination("walker", Vector2(40, 0))
+	assert_false(Rect2(20, -18, 40, 36).has_point(point), "Reserved %s inside the closed pen" % point)
+	assert_false(_navigation.route(walker.position, point, "walker").is_empty())
+
+func test_walker_squeezes_past_a_body_standing_in_a_one_tile_lane() -> void:
+	# Walls leave one grid row free; the standing body cannot step aside.
+	RegionArt.barrier(_stage, Vector2(0, -9), Vector2(200, 8))
+	RegionArt.barrier(_stage, Vector2(0, 9), Vector2(200, 8))
+	var walker: BaseNpc = load("res://game/actors/npcs/base_npc.tscn").instantiate()
+	walker.npc_data = walker.npc_data.duplicate(true)
+	walker.npc_data.profile = null
+	walker.npc_data.ai_enabled = false
+	walker.position = Vector2(-48, 0)
+	_stage.add_child(walker)
+	var standing: BaseNpc = _npc(Vector2.ZERO)
+	_navigation.register("walker", walker)
+	_navigation.register("standing", standing)
+	await _stage.get_tree().physics_frame
+	await _stage.get_tree().physics_frame
+	_navigation.build(_stage.get_world_2d().direct_space_state, [walker.get_rid(), standing.get_rid()])
+	walker.daily_routine = NpcDailyRoutine.new()
+	walker.daily_routine.navigation = _navigation
+	walker.daily_routine.npc_id = "walker"
+	walker.daily_routine.travel(walker.position, Vector2(48, 0), "walk", "the far end")
+	walker.state_time_remaining = 0
+	for frame: int in range(600):
+		await _stage.get_tree().physics_frame
+		walker.daily_routine.update(walker.position, 1.0 / 60.0, false)
+	assert_true(walker.position.distance_to(Vector2(48, 0)) <= 3.0,
+		"The walker stayed behind the standing body at %s" % walker.position)
+	assert_true(standing.position.distance_to(Vector2.ZERO) <= 1.0, "The standing body was shoved")
+	assert_false(walker.get_collision_exceptions().has(standing), "The squeeze outlived the pass")
+
 func test_landing_uses_close_free_space_and_refuses_a_fully_blocked_threshold() -> void:
 	var arriving: BaseNpc = _npc(Vector2(-48, 0))
 	var blocking: BaseNpc = _npc(Vector2.ZERO)

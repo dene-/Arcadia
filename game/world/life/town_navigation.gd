@@ -6,6 +6,7 @@ const CELL_SIZE: float = 8.0
 const AREA := Rect2i(-34, -28, 93, 57)
 const PERSONAL_SPACE: float = 20.0
 const MAX_SEARCHES_PER_FRAME: int = 4
+const STEPS: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 var ready: bool = false
 var area: Rect2i = AREA
 var clearance: float = 5.25
@@ -22,6 +23,9 @@ var _budget_frame: int = -1
 var _searches_this_frame: int = 0
 var _crowd := ActorCrowd.new()
 var _has_footprint: bool = false
+# Per cell of `area`, the id of its walkable region (-1 for solid cells). Diagonal moves need both
+# side cells clear, so 4-connected regions are exactly the A* reachable sets.
+var _regions := PackedInt32Array()
 
 func register(id: String, actor: Node2D) -> void:
 	_occupants[id] = weakref(actor)
@@ -60,6 +64,7 @@ func build(space: PhysicsDirectSpaceState2D, actor_bodies: Array[RID] = []) -> v
 		for x: int in range(area.position.x, area.end.x):
 			var cell := Vector2i(x, y)
 			_grid.set_point_solid(cell, not clear_at(Vector2(cell) * CELL_SIZE))
+	_label_regions()
 	ready = true
 	build_usec = Time.get_ticks_usec() - started
 
@@ -82,15 +87,22 @@ func can_travel(from: Vector2, to: Vector2) -> bool:
 func nearest(point: Vector2) -> Vector2:
 	return Vector2(_nearest_cell(point, false)) * CELL_SIZE
 
+## A free spot near `preferred`, a personal space away from others' spots and bodies, that the
+## registered walker `id` can reach from where it stands (a fenced garden or a pocket between
+## fixtures is never offered to someone outside it).
 func reserve_destination(id: String, preferred: Vector2) -> Vector2:
 	var center: Vector2i = _nearest_cell(preferred, false)
+	var actor: Node2D = _occupants[id].get_ref() if _occupants.has(id) else null
+	var reachable: int = _region(_nearest_cell(actor.global_position)) if actor != null else -1
 	for radius: int in range(10):
 		for y: int in range(-radius, radius + 1):
 			for x: int in range(-radius, radius + 1):
 				if maxi(absi(x), absi(y)) != radius:
 					continue
-				var point: Vector2 = Vector2(center + Vector2i(x, y)) * CELL_SIZE
-				if is_clear(point) and _has_space(id, point, PERSONAL_SPACE):
+				var cell: Vector2i = center + Vector2i(x, y)
+				var point: Vector2 = Vector2(cell) * CELL_SIZE
+				if is_clear(point) and (reachable < 0 or _region(cell) == reachable) \
+						and _has_space(id, point, PERSONAL_SPACE):
 					_destinations[id] = point
 					return point
 	return _destinations.get(id, nearest(preferred))
@@ -247,3 +259,31 @@ func _nearest_cell(point: Vector2, require_accessible: bool = true) -> Vector2i:
 					and (not require_accessible or can_travel(point, Vector2(cell) * CELL_SIZE)):
 					return cell
 	return center
+
+func _label_regions() -> void:
+	_regions.resize(area.size.x * area.size.y)
+	_regions.fill(-1)
+	var label: int = 0
+	var stack: Array[Vector2i] = []
+	for y: int in range(area.position.y, area.end.y):
+		for x: int in range(area.position.x, area.end.x):
+			var cell := Vector2i(x, y)
+			if _grid.is_point_solid(cell) or _regions[_region_index(cell)] >= 0:
+				continue
+			_regions[_region_index(cell)] = label
+			stack.append(cell)
+			while not stack.is_empty():
+				var current: Vector2i = stack.pop_back()
+				for step: Vector2i in STEPS:
+					var next: Vector2i = current + step
+					if area.has_point(next) and not _grid.is_point_solid(next) \
+							and _regions[_region_index(next)] < 0:
+						_regions[_region_index(next)] = label
+						stack.append(next)
+			label += 1
+
+func _region(cell: Vector2i) -> int:
+	return _regions[_region_index(cell)] if area.has_point(cell) and not _regions.is_empty() else -1
+
+func _region_index(cell: Vector2i) -> int:
+	return (cell.y - area.position.y) * area.size.x + cell.x - area.position.x

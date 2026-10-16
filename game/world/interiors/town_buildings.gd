@@ -19,25 +19,61 @@ func _ready() -> void:
 	population.ensure_population(seed_value)
 	for index: int in range(RegionLayout.HOMES.size()):
 		var home: Dictionary = RegionLayout.HOMES[index]
+		var founder: String = TownPopulation.FOUNDERS.get(home.job, home.job)
+		var residents: Array[String] = _household_order(population, founder)
+		var surname: String = population.people[residents[0]].name.get_slice(" ", 1)
 		var room := NpcInterior.new()
-		room.name = String(home.job).capitalize() + "Interior"
-		room.resident_id = TownPopulation.FOUNDERS.get(home.job, home.job)
-		room.residents = population.members_of(room.resident_id)
-		room.resident_name = population.people[room.residents[0]].name.get_slice(" ", 1)
-		room.job = home.job
-		room.seed_value = seed_value
-		room.position = Vector2(4096 + index * 512, 4096)
-		room.outside = Vector2(home.cell * 8) + Vector2(0, 6)
-		add_child(room)
-		var space := StringName("home:" + room.resident_id)
-		rooms[space] = room
-		var door := BuildingDoor.new()
-		door.name = String(home.job).capitalize() + "Door"
-		door.position = Vector2(home.cell * 8) + Vector2(0, 4)
-		door.label = "Enter " + room.resident_name + " household"
-		add_child(door)
-		door.used.connect(func(player: BasePlayer) -> void: move_player(player, space))
-		room.door.used.connect(func(player: BasePlayer) -> void: move_player(player, &"outdoors"))
+		room.resident_id = founder
+		room.residents = residents
+		room.resident_name = surname
+		# The cook's home is the town inn: a public common room with her private quarters.
+		if home.job == "cooker":
+			room.space_label = "the %s inn" % surname
+			room.exit_label = "Leave the inn"
+		else:
+			room.space_label = surname + "'s home and shop"
+		var label: String = "Enter " + (room.space_label if home.job == "cooker" \
+			else surname + " household")
+		_add_room(room, home.job, StringName("home:" + founder), index, home.cell, label)
+	for index: int in range(RegionLayout.PUBLIC_BUILDINGS.size()):
+		var building: Dictionary = RegionLayout.PUBLIC_BUILDINGS[index]
+		var room := NpcInterior.new()
+		room.resident_id = building.id
+		room.space_label = building.label
+		room.exit_label = "Leave " + String(building.label)
+		_add_room(room, building.id, StringName(building.id), RegionLayout.HOMES.size() + index,
+			building.cell, "Enter " + String(building.label))
+
+# One room per building, far from the region, with an exterior door at the building's door cell.
+func _add_room(room: NpcInterior, job: String, space: StringName, index: int, cell: Vector2i,
+		label: String) -> void:
+	room.name = job.capitalize() + "Interior"
+	room.job = job
+	room.space = space
+	room.seed_value = seed_value
+	room.position = Vector2(4096 + index * 512, 4096)
+	room.outside = Vector2(cell * 8) + Vector2(0, 6)
+	add_child(room)
+	rooms[space] = room
+	var door := BuildingDoor.new()
+	door.name = job.capitalize() + "Door"
+	door.position = Vector2(cell * 8) + Vector2(0, 4)
+	door.label = label
+	add_child(door)
+	door.used.connect(func(player: BasePlayer) -> void: move_player(player, space))
+	room.door.used.connect(func(player: BasePlayer) -> void: move_player(player, &"outdoors"))
+
+## The founder first, then elders before the young, so authored beds and work corners go to the
+## household member they suit.
+static func _household_order(population: TownPopulation, founder: String) -> Array[String]:
+	var members: Array[String] = population.members_of(founder)
+	members.sort_custom(func(first: String, second: String) -> bool:
+		if (first == founder) != (second == founder):
+			return first == founder
+		var first_age: int = population.people[first].age
+		var second_age: int = population.people[second].age
+		return first_age > second_age if first_age != second_age else first < second)
+	return members
 
 func prepare_navigation(shared: TownNavigation, bodies: Array[RID]) -> void:
 	outdoors = shared
@@ -192,7 +228,7 @@ func _transfer(actor: BaseActor, id: String, space: StringName, point: Vector2) 
 		return false
 	navigation_for(actor.world_space).release(id)
 	actor.world_space = space
-	actor.world_space_label = "Rekala" if space == &"outdoors" else rooms[space].resident_name + "'s home and shop"
+	actor.world_space_label = "Rekala" if space == &"outdoors" else rooms[space].space_label
 	actor.global_position = safe_point
 	actor.velocity = Vector2.ZERO
 	actor.reset_physics_interpolation()

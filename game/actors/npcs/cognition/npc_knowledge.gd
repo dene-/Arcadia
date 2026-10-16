@@ -11,7 +11,8 @@ const MAX_TEXT: int = 200
 const MAX_VALUE_CHARS: int = 2000
 const PUBLIC_SOURCE: String = "public"
 const SELF_SOURCE: String = "self"
-const PUBLIC_PLACE_IDS: Array[String] = ["square", "market", "garden", "school", "playground"]
+const PUBLIC_PLACE_IDS: Array[String] = ["square", "market", "garden", "school", "playground",
+	"tavern"]
 ## Predicates whose differing values are independent members of a set, not rival beliefs.
 const SET_PREDICATES: Array[String] = ["help_place"]
 const _FACT_KEYS: Array[String] = ["id", "subject", "predicate", "value", "status", "source_id",

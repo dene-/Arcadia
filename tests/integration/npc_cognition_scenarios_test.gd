@@ -438,7 +438,8 @@ func _scenario_safety_ends_session() -> void:
 		"(b) The ended session's late assessment delivered the rumor")
 	await sim.teardown()
 
-## Awake residents outdoors that are free to start a social session or be spoken to.
+## Awake residents outdoors that are free to start a social session or be spoken to, and that stay
+## outdoors: a resident whose task leads indoors (school, the inn, home) would leave through a door.
 func _free_residents(sim: Simulation, count: int) -> Array[BaseNpc]:
 	var found: Array[BaseNpc] = []
 	for id: String in sim.resident_ids():
@@ -447,7 +448,8 @@ func _free_residents(sim: Simulation, count: int) -> Array[BaseNpc]:
 				or npc.daily_routine.activity == "rest" or not npc.can_speak_reaction() \
 				or sim.life.encounters.is_busy(id) or sim.life.funerals.is_assigned(id) \
 				or float(sim.save_game().life.get_person(id).social_after) > sim.save_game().life.minute \
-				or _task(sim, id) == null:
+				or _task(sim, id) == null \
+				or String(_task(sim, id).params.get("space", "outdoors")) != "outdoors":
 			continue
 		found.append(npc)
 		if found.size() == count:
@@ -966,18 +968,25 @@ func _m8_a_day_of_needs() -> void:
 func _m8_hurt_relative() -> void:
 	var sim: Simulation = await _start(1080.0) # Evening: many residents are outdoors and the check may be offered.
 	sim.backend.set_default("select_goal", {"suitability:CHECK_RELATIVE": 3.0, "suitability:PLAN": 3.0})
-	await sim.advance(2.0)
+	# A fresh town gives every resident a social cooldown of up to 12 minutes; wait it out so the
+	# whole evening crowd outdoors, not only the few who drew a short one, can be witnesses.
+	await sim.advance_minutes(13.0)
 	var free: Array[BaseNpc] = _free_residents(sim, 40)
 	var victim: BaseNpc = null
 	var witness: BaseNpc = null
+	# The least sociable relative witnesses: an eager talker's evening plan can rightly outweigh
+	# an unappraised check, and the scenario is about the check, not about temperament.
+	var calmest: float = INF
 	for candidate: BaseNpc in free:
 		for other: BaseNpc in free:
-			if other != candidate and _knowledge_of(sim, _resident_id(other)).knows(_resident_id(candidate), "family_role"):
+			if other == candidate or not _knowledge_of(sim, _resident_id(other)).knows(_resident_id(candidate), "family_role"):
+				continue
+			var sociability: float = float(sim.save_game().life.personality_for(_resident_id(other),
+				sim.save_game().get_npc_seed()).traits.get("sociability", 0.5))
+			if sociability < calmest:
+				calmest = sociability
 				victim = candidate
 				witness = other
-				break
-		if victim != null:
-			break
 	_check(victim != null, "(C) No free resident has a free family witness")
 	if victim == null:
 		await sim.teardown()
@@ -985,8 +994,14 @@ func _m8_hurt_relative() -> void:
 	var victim_id: String = _resident_id(victim)
 	var witness_id: String = _resident_id(witness)
 	var mind: NpcMindState = sim.save_game().minds.get_mind(witness_id)
-	witness.global_position = victim.global_position + Vector2(-40.0, 0.0)
 	var player: BasePlayer = _place_player_near(sim, victim)
+	# The witness stands 40 px away, on a side with a clear view past stalls, wells and Den.
+	var scene: Vector2 = victim.global_position
+	for offset: Vector2 in [Vector2(-40, 0), Vector2(0, 40), Vector2(0, -40), Vector2(40, 0)]:
+		witness.global_position = scene + offset
+		if sim.life.navigation.clear_at(witness.global_position) and NpcPerception.can_see(witness, victim):
+			break
+	_check(NpcPerception.can_see(witness, victim), "(C) %s has no view of %s" % [witness_id, victim_id])
 	await sim.advance(0.1)
 	victim.take_damage(1, player.hit_box)
 	var away: Vector2 = witness.global_position + Vector2(witness.npc_data.vision_radius * 4.0, 0.0)

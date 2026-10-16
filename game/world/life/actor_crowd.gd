@@ -8,6 +8,13 @@ const HORIZON: float = 0.4
 const SHORT_PROBE: float = 3.0
 ## Seconds a walker must be held up before a standing body steps out of its way.
 const BLOCKED_WAIT: float = 0.6
+## Seconds a walker may stay pressed against the same body before slipping past it. A housemate
+## seated in a one-tile lane has nowhere to step aside to, so the walker squeezes by instead;
+## Den is never squeezed past.
+const SQUEEZE_WAIT: float = 1.5
+## Pixels beyond touching within which a body counts as being in the walker's way; predictive
+## steering already halts a walker about a body's length short of it.
+const PRESS_RANGE: float = 12.0
 var _frame: int = -1
 var _buckets: Dictionary = {}
 var _samples: Dictionary = {}
@@ -15,6 +22,10 @@ var _previous: Dictionary[String, Vector2] = {}
 var _waiting: Dictionary[String, float] = {}
 var _wanted: Dictionary[String, Vector2] = {}
 var _wanted_frame: Dictionary[String, int] = {}
+# walker id -> {"by": id of the body in its way, "time": seconds pressed against it}
+var _pressed: Dictionary[String, Dictionary] = {}
+# "walker|body" -> [walker, body] while the walker slips past; their bodies ignore each other.
+var _squeezes: Dictionary[String, Array] = {}
 var neighbor_checks: int = 0
 var steering_calls: int = 0
 var steering_usec: int = 0
@@ -27,12 +38,18 @@ func forget(id: String) -> void:
 	_waiting.erase(id)
 	_wanted.erase(id)
 	_wanted_frame.erase(id)
+	_pressed.erase(id)
+	for key: String in _squeezes.keys():
+		if id in key.split("|"):
+			_end_squeeze(key)
 	invalidate()
 
 func steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], id: String,
 		position: Vector2, desired: Vector2, delta: float) -> Vector2:
 	var started: int = Time.get_ticks_usec()
 	var result: Vector2 = _steer(navigation, occupants, id, position, desired, delta)
+	if desired.length() >= 0.01:
+		_press(occupants, id, position, desired, result, delta)
 	steering_calls += 1
 	steering_usec += Time.get_ticks_usec() - started
 	return result
@@ -47,6 +64,13 @@ func _steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], 
 	_wanted[id] = desired
 	_wanted_frame[id] = Engine.get_physics_frames()
 	var neighbors: Array[Dictionary] = _neighbors(id, position)
+	if not _squeezes.is_empty():
+		# A walker slipping past a body, and that body, no longer steer around each other.
+		var kept: Array[Dictionary] = []
+		for other: Dictionary in neighbors:
+			if not _squeezes.has(_pair(id, other.id)) and not _squeezes.has(_pair(other.id, id)):
+				kept.append(other)
+		neighbors = kept
 	var radius: float = _samples.get(id, {}).get("radius", navigation.clearance)
 	var previous: Vector2 = _previous.get(id, desired)
 	var lookahead: float = minf(HORIZON, 10.0 / speed)
@@ -166,6 +190,62 @@ func _refresh(occupants: Dictionary[String, WeakRef]) -> void:
 		if not _buckets.has(key):
 			_buckets[key] = []
 		_buckets[key].append(sample)
+	# A squeeze ends once the two bodies are apart again (or either left this space).
+	for pair: String in _squeezes.keys():
+		var ids: PackedStringArray = pair.split("|")
+		var first: Dictionary = _samples.get(ids[0], {})
+		var second: Dictionary = _samples.get(ids[1], {})
+		if first.is_empty() or second.is_empty() or first.position.distance_to(second.position) \
+				> first.radius + second.radius + PRESS_RANGE + 2.0:
+			_end_squeeze(pair)
+
+# Counts how long the walker has been held up against the same body in its way, and lets it slip
+# past once that reaches SQUEEZE_WAIT. Free steps (a replanned step back) wear the count down
+# instead of resetting it; it resets when no body presses on the walker any more.
+func _press(occupants: Dictionary[String, WeakRef], id: String, position: Vector2,
+		desired: Vector2, motion: Vector2, delta: float) -> void:
+	var pressed: Dictionary = _pressed.get(id, {})
+	var radius: float = _samples.get(id, {}).get("radius", 0.0)
+	var blocker: Dictionary = {}
+	for other: Dictionary in _neighbors(id, position):
+		var offset: Vector2 = other.position - position
+		if other.player or offset.length() > radius + other.radius + PRESS_RANGE \
+				or _squeezes.has(_pair(id, other.id)) or _squeezes.has(_pair(other.id, id)):
+			continue
+		if other.id == pressed.get("by"):
+			blocker = other
+			break
+		if blocker.is_empty() and offset.dot(desired) > 0.0:
+			blocker = other
+	if blocker.is_empty():
+		_pressed.erase(id)
+		return
+	if blocker.id != pressed.get("by"):
+		pressed = {"by": blocker.id, "time": 0.0}
+		_pressed[id] = pressed
+	var held_up: bool = motion.dot(desired) < desired.length_squared() * 0.2
+	pressed.time = pressed.time + delta if held_up else maxf(0.0, pressed.time - delta)
+	if pressed.time < SQUEEZE_WAIT:
+		return
+	_pressed.erase(id)
+	var walker: PhysicsBody2D = occupants[id].get_ref() as PhysicsBody2D
+	var body: PhysicsBody2D = occupants[blocker.id].get_ref() as PhysicsBody2D
+	if walker != null and body != null:
+		walker.add_collision_exception_with(body)
+		body.add_collision_exception_with(walker)
+		_squeezes[_pair(id, blocker.id)] = [weakref(walker), weakref(body)]
+
+func _end_squeeze(pair: String) -> void:
+	var bodies: Array = _squeezes[pair]
+	_squeezes.erase(pair)
+	var walker: PhysicsBody2D = bodies[0].get_ref() as PhysicsBody2D
+	var body: PhysicsBody2D = bodies[1].get_ref() as PhysicsBody2D
+	if walker != null and body != null:
+		walker.remove_collision_exception_with(body)
+		body.remove_collision_exception_with(walker)
+
+static func _pair(walker: String, body: String) -> String:
+	return walker + "|" + body
 
 func _neighbors(id: String, position: Vector2) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []

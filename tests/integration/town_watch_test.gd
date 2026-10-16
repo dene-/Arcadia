@@ -35,7 +35,8 @@ func _run() -> void:
 	life.set_process(false)
 	life.encounters.set_process(false)
 	_check(get_nodes_in_group("town_residents").size() == 33, "Missing residents")
-	_check(life.buildings.rooms.size() == 12, "Missing households")
+	_check(life.buildings.rooms.size() == RegionLayout.HOMES.size() + RegionLayout.PUBLIC_BUILDINGS.size(),
+		"Missing households or public rooms")
 	var guard: BaseNpc = life._actors.voss_guard
 	var other: BaseNpc = life._actors.vale_guard
 	var victim: BaseNpc = life._actors.garrin_holt

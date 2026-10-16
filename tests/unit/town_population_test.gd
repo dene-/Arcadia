@@ -104,10 +104,45 @@ func test_households_have_distinct_reachable_bed_anchors() -> void:
 		var layout: Dictionary = TownInteriorLayout.create(home.job, 99, household, members)
 		var beds: Array = layout.props.filter(func(prop: Dictionary) -> bool: return prop.kind == "bed")
 		assert_eq(beds.size(), members.size())
+		assert_eq(layout.beds.size(), members.size(), home.job)
+		assert_eq(layout.meals.size(), members.size(), home.job)
 		for first: Dictionary in beds:
 			for second: Dictionary in beds:
 				if first != second:
 					assert_true(first.foot.distance_to(second.foot) >= 24)
+
+func test_every_interior_plan_is_distinct_and_geometrically_sound() -> void:
+	var town := TownPopulation.new()
+	town.ensure_population(99)
+	var shapes: Dictionary = {}
+	var styles: Dictionary = {}
+	var floors: Dictionary = {}
+	var jobs: Array[String] = []
+	for home: Dictionary in RegionLayout.HOMES:
+		jobs.append(home.job)
+	for building: Dictionary in RegionLayout.PUBLIC_BUILDINGS:
+		jobs.append(building.id)
+	for job: String in jobs:
+		var household: String = TownPopulation.FOUNDERS.get(job, job)
+		var layout: Dictionary = TownInteriorLayout.create(job, 99, household, town.members_of(household))
+		var problems: Array[String] = TownInteriorLayout.validate(layout)
+		assert_true(problems.is_empty(), "%s: %s" % [job, problems])
+		assert_false(layout.partitions.is_empty(), job + " has a separate room or alcove")
+		var furniture: Array = layout.props.map(func(prop: Dictionary) -> String: return prop.kind)
+		furniture.sort()
+		shapes[str(layout.floor) + str(layout.partitions) + str(furniture)] = job
+		styles[layout.wall] = true
+		for zone: Array in layout.floors:
+			floors[zone[1]] = true
+	assert_eq(shapes.size(), jobs.size(), "Every room has its own shape and furniture")
+	assert_eq(styles.size(), 2)
+	assert_true(floors.size() >= 2)
+	var school: Dictionary = TownInteriorLayout.create("school", 99, "school")
+	assert_true(school.seats.pupils.size() >= 8)
+	assert_true(school.spots.has("teacher"))
+	var inn: Dictionary = TownInteriorLayout.create("cooker", 99, "sella_rowan", ["sella_rowan"])
+	assert_true(inn.seats.tavern.size() >= 8)
+	assert_true(inn.spots.has("tavern"))
 
 func test_economy_conserves_coins_and_never_pays_twice_or_pays_children() -> void:
 	var population := TownPopulation.new()

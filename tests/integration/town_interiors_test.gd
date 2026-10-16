@@ -81,16 +81,17 @@ func _run() -> void:
 		failures.append("Vision leaked between separate interiors")
 	if not NpcPerception.observe(residents[1], resident, player, false).is_empty():
 		failures.append("Combat leaked between separate interiors")
+	_check_room_anchors(buildings, failures)
 	var capture: String = OS.get_environment("ARCADIA_INTERIOR_CAPTURE")
 	if not capture.is_empty():
 		for interior: NpcInterior in buildings.rooms.values():
 			buildings.move_player(player, &"outdoors")
-			buildings.move_player(player, StringName("home:" + interior.resident_id))
+			buildings.move_player(player, interior.space)
 			await process_frame
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png(capture.get_basename() + "-" + interior.job + ".png")
 		buildings.move_player(player, &"outdoors")
-		buildings.move_player(player, StringName("home:" + room.resident_id))
+		buildings.move_player(player, room.space)
 		await physics_frame
 		await physics_frame
 	cognition.saves.flush(&"test_checkpoint")
@@ -175,7 +176,7 @@ func _run() -> void:
 		Input.action_release(&"player_interact")
 		Input.action_release(&"player_up")
 		await physics_frame
-		if player.world_space != StringName("home:" + interior.resident_id) \
+		if player.world_space != interior.space \
 			or player.global_position.distance_to(interior.player_entrance) > 6:
 			failures.append("E did not arrive at the interior threshold: " + interior.job)
 		Input.action_press(&"player_down")
@@ -255,3 +256,23 @@ func _check_prop_crops(failures: Array[String]) -> void:
 					and image.get_pixelv(pixel).a > 0.5 and image.get_pixelv(pixel + point).a > 0.5:
 					failures.append("Furniture crop cuts pixels: " + kind)
 					break
+
+# Every bed, table place, work corner, seat and named spot is a clear grid point that a resident
+# arriving at the room's threshold can route to, past partitions and furniture.
+func _check_room_anchors(buildings: TownBuildings, failures: Array[String]) -> void:
+	for interior: NpcInterior in buildings.rooms.values():
+		for problem: String in TownInteriorLayout.validate(interior.layout):
+			failures.append("%s: %s" % [interior.job, problem])
+		var anchors: Array[Vector2] = []
+		for id: String in interior.residents:
+			anchors.append_array([interior.bed_for(id), interior.meal_for(id), interior.work_for(id)])
+		for group: String in interior.layout.seats:
+			anchors.append_array(interior.seats(group))
+		for spot_name: String in interior.layout.spots:
+			anchors.append(interior.spot(spot_name))
+		for anchor: Vector2 in anchors:
+			var path: PackedVector2Array = interior.navigation.route(interior.entrance, anchor)
+			if not interior.navigation.is_clear(anchor) or path.is_empty() \
+					or path[-1].distance_to(anchor) > 1:
+				failures.append("%s: no route from the threshold to %s" % [interior.job,
+					anchor - interior.global_position])

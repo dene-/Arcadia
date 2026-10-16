@@ -294,26 +294,47 @@ func _sighting_due(observer_id: String, target_id: String, target: BaseActor, mi
 		or (last["position"] as Vector2).distance_to(target.global_position) > SIGHTING_MOVE_PIXELS
 
 func _build_places() -> void:
-	_places = {"square": {"label": "Rekala square", "position": Vector2(16, 48)},
-		"market": {"label": "the market stalls", "position": Vector2(-48, 88)},
-		"garden": {"label": "the farm garden", "position": Vector2(320, 104)}}
-	_places["school"] = {"label": "the school lessons by the farm", "position": Vector2(128, 256)}
-	_places["playground"] = {"label": "the children's play green", "position": Vector2(-104, 232)}
+	var town: Dictionary = RegionLayout.TOWN_PLACES
+	_places = {"square": {"label": "Rekala square", "position": town.square},
+		"market": {"label": "the market stalls", "position": town.market},
+		"garden": {"label": "the farm garden", "position": town.garden}}
+	_places["playground"] = {"label": "the children's play green", "position": town.playground}
 	for index: int in range(4):
 		_places["patrol:%d" % index] = {"label": "village watch route", "position":
-			[Vector2(-320, 32), Vector2(8, -232), Vector2(392, 32), Vector2(8, 304)][index]}
+			town[["patrol_west", "patrol_north", "patrol_east", "patrol_south"][index]]}
+	# Lessons happen inside the schoolhouse: every child has a desk of its own.
+	var school: NpcInterior = buildings.rooms[&"school"]
+	var pupils: Array[String] = []
+	for id: String in save_game.population.people:
+		if save_game.population.people[id].age < 16:
+			pupils.append(id)
+	pupils.sort()
+	var desks: Dictionary = {}
+	for index: int in range(pupils.size()):
+		desks[pupils[index]] = index
+	var desk_seats: Array[Vector2] = school.seats("pupils")
+	_places["school"] = {"label": "the schoolhouse lessons", "position": desk_seats[0],
+		"space": String(school.space), "seats": desk_seats, "assigned": desks}
+	# The inn's common room is open to everyone; its owner keeps her private room behind it.
+	var inn: NpcInterior = buildings.rooms[StringName("home:" + TownPopulation.FOUNDERS.cooker)]
+	_places["tavern"] = {"label": "the common room of " + inn.space_label,
+		"position": inn.spot("tavern"), "space": String(inn.space), "seats": inn.seats("tavern"),
+		"capacity": inn.seats("tavern").size()}
 	for id: String in save_game.population.people:
 		var person: Dictionary = save_game.population.people[id]
 		var space: String = "home:" + person.household
 		var room: NpcInterior = buildings.rooms[StringName(space)]
 		_places["home:" + id] = {"label": room.resident_name + " family home", "position": room.bed_for(id), "space": space}
-		_places["work:" + id] = {"label": person.name + "'s workplace", "position": room.work_spot, "space": space}
+		_places["work:" + id] = {"label": person.name + "'s workplace", "position": room.work_for(id), "space": space}
 		var outdoor_jobs: Dictionary = {"farmer": Vector2(352, 72), "farmhand": Vector2(376, 120),
 			"herb gatherer": Vector2(-304, -200), "fisher": Vector2(432, 208),
-			"miller": Vector2(416, -16), "delivery worker": Vector2(-48, 88)}
+			"miller": Vector2(416, -16), "delivery worker": town.market}
 		if outdoor_jobs.has(person.job):
 			_places["work:" + id] = {"label": person.job + " work", "position": outdoor_jobs[person.job]}
-		elif person.job == "teacher" or person.age < 16:
+		elif person.job == "teacher":
+			_places["work:" + id] = {"label": "the schoolhouse", "position": school.spot("teacher"),
+				"space": String(school.space)}
+		elif person.age < 16:
 			_places["work:" + id] = _places.school
 		_public_people.append({"id": id, "name": person.name, "job": person.job,
 			"home": room.resident_name + " household in Rekala"})
@@ -605,7 +626,8 @@ func _found(id: String, relative: String, since: float) -> bool:
 
 func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
-	_add_option(options, "PLAN", preferred.kind, preferred.place, "Follow today's planned activity.")
+	_add_option(options, "PLAN", preferred.kind, _seated_place(id, preferred.kind, preferred.place),
+		"Follow today's planned activity.")
 	var hour: int = int(save_game.life.minute / 60.0) % 24
 	if hour >= 6 and hour < 21:
 		_add_commitment_options(options, id)
@@ -620,13 +642,19 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	if preferred.kind == "rest" or (save_game.life.get_person(id).activity != "rest"
 			and until_change >= tuning.rest_min_minutes):
 		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
-	if hour >= 6 and hour < 21:
-		var venues: Array[String] = ["square", "market", "garden"]
+	# The tavern is the evening venue; it serves meals at midday and in the evening.
+	var evening: bool = hour >= 17 and hour < 22
+	if hour >= 6 and hour < 22:
+		var venues: Array[String] = []
+		venues.assign(["tavern", "tavern", "square"] if evening else ["square", "market", "garden"])
 		var random_venue := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 			"%s:venue:%d" % [id, int(save_game.life.minute / 60)])
 		var venue: String = venues[random_venue.randi_range(0, venues.size() - 1)]
-		_add_option(options, "SOCIAL", "socialize", venue, "Spend some free time here; neighbors may pass by.")
-		_add_option(options, "MEAL", "meal", "market", "Take a meal break near the market stalls.")
+		_add_option(options, "SOCIAL", "socialize", _seated_place(id, "socialize", venue),
+			"Spend some free time here; neighbors may pass by.")
+		var eatery: String = "tavern" if evening or (hour >= 11 and hour < 14) else "market"
+		_add_option(options, "MEAL", "meal", _seated_place(id, "meal", eatery), "Take a meal break here.")
+	if hour >= 6 and hour < 21:
 		if resident.age >= 16 and not String(resident.job).begins_with("retired") and resident.job != "guard":
 			_add_option(options, "WORK", "work", "work:" + id, "Return to professional work and daily obligations.")
 		_add_option(options, "WALK", "walk", "garden", "Take a walk near the farm garden.")
@@ -637,9 +665,37 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 			var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 				"%s:visit:%s" % [id, int(save_game.life.minute / 60)])
 			var other: String = residents[random.randi_range(0, residents.size() - 1)]
-			if _actors.has(other):
+			if _actors.has(other) and not _inn_full(id, "work:" + other):
 				_add_option(options, "VISIT", "visit", "work:" + other, "Visit this neighbor if they are available.")
 	return options
+
+## `place`, or where the activity goes instead when it leads into the inn and every stool there is
+## spoken for: a meal to the market stalls by day and home in the evening, company to the square.
+func _seated_place(id: String, kind: String, place: String) -> String:
+	if not _inn_full(id, place):
+		return place
+	if kind == "meal":
+		return "market" if int(save_game.life.minute / 60.0) % 24 < 17 else "home:" + id
+	return "square"
+
+## True when `place` lies in the inn's common room and its guests fill every stool: those on their
+## way or already seated, and any still inside on their way out. The inn's household never counts.
+func _inn_full(id: String, place: String) -> bool:
+	var tavern: Dictionary = _places.get("tavern", {})
+	if tavern.is_empty() or String(_place(id, place).get("space", "")) != tavern.space:
+		return false
+	var room: NpcInterior = buildings.rooms[StringName(tavern.space)]
+	if id in room.residents:
+		return false
+	var guests: int = 0
+	for other: String in _actors:
+		var npc: BaseNpc = resident(other)
+		if other == id or other in room.residents or npc == null:
+			continue
+		var heading: Dictionary = _place(other, String(save_game.life.get_person(other).place))
+		if String(heading.get("space", "")) == tavern.space or npc.world_space == room.space:
+			guests += 1
+	return guests >= int(tavern.capacity)
 
 # The most pressing open check on a relative and grave visit become candidates; a search that
 # found nobody waits out its deferral.
@@ -714,13 +770,14 @@ func _add_option(options: Array[Dictionary], id: String, kind: String, place: St
 		for resident: String in _actors:
 			if save_game.life.get_person(resident).get("place") == place:
 				crowd += 1
-		if id in ["SOCIAL", "VISIT", "WALK"] and crowd >= 3:
+		if id in ["SOCIAL", "VISIT", "WALK"] and crowd >= int(_places[place].get("capacity", 3)):
 			return
 		options.append({"id": id, "kind": kind, "place": place,
 			"description": "%s At %s. %s" % [kind.capitalize(), _places[place].label, reason]})
 
 ## Where an activity at a named place happens: {space, point, label}. Outdoor gatherings get a
-## per-day spot so neighbors do not stack; meals use the household table.
+## per-day spot so neighbors do not stack; seated places (school desks, tavern stools) give each
+## visitor a seat; meals at home use the household table.
 func destination(id: String, selected: Dictionary) -> Dictionary:
 	var place: Dictionary = _place(id, selected.place)
 	if place.is_empty():
@@ -732,9 +789,34 @@ func destination(id: String, selected: Dictionary) -> Dictionary:
 	# Only shared town places spread their visitors; a grave or a sighting is one exact spot.
 	var spread: bool = space == &"outdoors" and _places.has(selected.place)
 	var point: Vector2 = place.position + (offset if spread else Vector2.ZERO)
-	if selected.kind == "meal" and buildings.rooms.has(space):
+	var seats: Array = place.get("seats", [])
+	if not seats.is_empty():
+		var assigned: Dictionary = place.get("assigned", {})
+		var index: int = assigned[id] if assigned.has(id) else _free_seat(id, selected.place, seats)
+		point = seats[index % seats.size()]
+	elif selected.kind == "meal" and buildings.rooms.has(space):
 		point = buildings.rooms[space].meal_for(id)
 	return {"space": space, "point": point, "label": place.label}
+
+# A guest's stool: the day's own stool, or the next one that no other guest's routine leads to;
+# the room's reservations still move anyone whose stool is occupied to the nearest free spot.
+func _free_seat(id: String, place: String, seats: Array) -> int:
+	var taken: Dictionary = {}
+	for other: String in _brains:
+		var task: NpcTask = _brains[other].controller.current
+		if other == id or task == null or task.kind != &"routine" or task.params.get("place") != place:
+			continue
+		var point: Variant = task.params.get("point")
+		if point is Array and (point as Array).size() == 2:
+			taken[seats.find(Vector2(point[0], point[1]))] = true
+	var first: int = _day_seat(id, place, seats.size())
+	for step: int in range(seats.size()):
+		if not taken.has((first + step) % seats.size()):
+			return (first + step) % seats.size()
+	return first
+
+func _day_seat(id: String, place: String, count: int) -> int:
+	return posmod(hash("%s:%s:%d" % [id, place, save_game.life.day()]), count)
 
 func brain_for(id: String) -> NpcBrain:
 	return _brains.get(id)
