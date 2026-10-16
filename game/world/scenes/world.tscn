@@ -3,7 +3,7 @@
 [ext_resource type="Theme" uid="uid://cl6x7v62ql3jl" path="res://assets/art/ui/theme.tres" id="1_ic0uy"]
 [ext_resource type="Script" uid="uid://c5yc5m58walme" path="res://game/world/region/rekala_region.gd" id="1_x6m2n"]
 [ext_resource type="PackedScene" uid="uid://c22fi8t3oskwr" path="res://game/actors/player/base_player.tscn" id="2_5m4im"]
-[ext_resource type="Texture2D" uid="uid://bie5326q6uwyg" path="res://assets/art/ui/Classic_UI_Only.png" id="4_k3n1d"]
+[ext_resource type="Texture2D" uid="uid://567r0anaxg4x" path="res://assets/art/ui/Selectors/_Selectors.png" id="4_k3n1d"]
 [ext_resource type="Script" uid="uid://bretixo0k4ska" path="res://game/resources/actors/player_data.gd" id="6_player_data_script"]
 [ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="7_70uel"]
 [ext_resource type="Script" uid="uid://cvykkaxthv2io" path="res://game/world/interaction/interaction_prompt.gd" id="9_prompt"]
@@ -31,7 +31,7 @@ script = ExtResource("1_x6m2n")
 offset_left = 5.0
 offset_top = 5.0
 offset_right = 85.0
-offset_bottom = 15.0
+offset_bottom = 17.0
 mouse_filter = 2
 theme = ExtResource("1_ic0uy")
 show_percentage = false
@@ -58,7 +58,7 @@ mouse_filter = 2
 
 [node name="DialogPanel" type="Panel" parent="UI/Container/VBoxContainer" unique_id=1026008566]
 visible = false
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 46)
 layout_mode = 2
 theme = ExtResource("1_ic0uy")
 
@@ -70,9 +70,9 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 19
+theme_override_constants/margin_top = 7
 theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 6
+theme_override_constants/margin_bottom = 7
 
 [node name="DialogText" type="RichTextLabel" parent="UI/Container/VBoxContainer/DialogPanel/DialogContainer" unique_id=1416040456]
 layout_mode = 2
@@ -82,12 +82,13 @@ tab_size = 2
 visible_characters_behavior = 1
 
 [node name="SpeakerName" type="Label" parent="UI/Container/VBoxContainer/DialogPanel" unique_id=84684256]
+visible = false
 layout_mode = 0
 offset_left = 8.0
-offset_top = 3.0
-offset_right = 218.0
-offset_bottom = 17.0
-theme_override_colors/font_color = Color(0.28, 0.12, 0.06, 1)
+offset_top = -6.0
+offset_right = 8.0
+offset_bottom = 6.0
+theme_type_variation = &"SpeakerTag"
 
 [node name="NextPageIndicator" type="NinePatchRect" parent="UI/Container/VBoxContainer/DialogPanel" unique_id=817155606]
 layout_mode = 1
@@ -96,12 +97,12 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -6.0
-offset_top = -3.0
+offset_left = -8.0
+offset_top = -5.0
 grow_horizontal = 0
 grow_vertical = 0
 texture = ExtResource("4_k3n1d")
-region_rect = Rect2(1813, 95, 6, 3)
+region_rect = Rect2(116, 254, 8, 5)
 
 [node name="ChatContainer" type="HBoxContainer" parent="UI/Container/VBoxContainer" unique_id=-1293967294]
 visible = false
@@ -139,16 +140,13 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -112.0
-offset_top = -18.0
-offset_right = 112.0
-offset_bottom = -2.0
+offset_top = -16.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 0
 theme = ExtResource("1_ic0uy")
-theme_type_variation = &"InteractionPrompt"
+theme_type_variation = &"HudTag"
 horizontal_alignment = 1
-autowrap_mode = 3
 
 [node name="InventoryPanel" parent="." unique_id=707344228 instance=ExtResource("19_inventory")]
 player_path = NodePath("../BasePlayer")

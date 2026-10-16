@@ -48,13 +48,18 @@ func bury(id: String, person_name: String) -> void:
 	_graves[id] = grave
 	var label := Label.new()
 	label.theme = preload("res://assets/art/ui/theme.tres")
+	label.theme_type_variation = &"HudTag"
 	label.text = person_name
-	label.position = Vector2(-35, 8)
-	label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	label.add_theme_constant_override("shadow_offset_y", 1)
+	# Night tint must not dim the name; the tag already reads against grass.
+	var unshaded := CanvasItemMaterial.new()
+	unshaded.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
+	label.material = unshaded
 	label.z_index = 20
 	label.hide()
 	grave.add_child(label)
+	# Centre the name tag under the stone on whole pixels.
+	label.reset_size()
+	label.position = Vector2(-floorf(label.size.x * 0.5), 8)
 	_labels[id] = label
 
 func _process(delta: float) -> void:

@@ -34,3 +34,30 @@ The local editor also references a missing external `C:/Users/Den/minimal_theme.
 Possible follow-ups: add a visible inventory close button/key hint and keyboard selection for inventory slots. These are usability additions; the current inventory continues to use its existing I/Tab toggle and mouse controls.
 
 The theme and text fixes follow Godot's [theme inheritance](https://docs.godotengine.org/en/4.6/classes/class_theme.html), [text shaping](https://docs.godotengine.org/en/4.6/classes/class_textparagraph.html), and [control theme properties](https://docs.godotengine.org/en/4.6/classes/class_popupmenu.html).
+
+## 240 × 160 polish pass (Godot 4.7)
+
+Screenshots were captured from the real game window (canvas_items stretch, integer scale 6) with a throwaway capture script: temporary save, region seed 274415, providers offline. Before images are in `/tmp/ui_before`, after images in `/tmp/ui_after`.
+
+| Surface | Defect | Correction |
+| --- | --- | --- |
+| All textured UI | The theme used `Classic_UI_Only.png`, which lacks the pack's black outline layer. Buttons showed detached side lines; panels looked softer than the outlined world sprites. | New `assets/art/ui/Classic_UI.png` composites the pack's outline layer over the colour layer, matching `Set_Use_Guidelines.png`. Every textured region and slice margin grows by the one-pixel outline. |
+| Player health bar | The fill started at x = 0 and covered the frame's rounded end caps. | The fill is inset into the frame's 40 × 6 well with negative expand margins. Matching content margins keep the visible width proportional to health. The bar is 12 px tall to fit the outlined frame. |
+| Clock, surrender hint | The clock had per-node colour overrides and a translucent shadow, which washed out on the plaza. The `[G] Surrender` hint was black text with a black shadow and could not be read. | Both use the new `HudTag` cream label plate (`Labels_And_Tags`). The clock has a fixed width and sits level with the health bar, so its plate does not change size each minute. |
+| Interaction prompt | Bare shadowed text over the world; contrast depended on the ground behind it. | The prompt is now a `HudTag` plate. Its width fits the text and is centred on whole pixels. |
+| Grave names | Black text with a black shadow, a hard-coded offset and night-tinted. | A centred `HudTag` plate on whole pixels, unshaded so the night tint does not dim it. |
+| Speech bubbles | A flat dark Godot-style box with no tail, placed well above the speaker and dimmed by the night `CanvasModulate`. | Uses the `SpeechBubble` parchment box with the pack's tail. The tail points down at the speaker, or up when the bubble flips below the speaker at the top edge. The bubble is unshaded at night and sits closer to the head. |
+| Dialog box | Pages were capped at 110 characters, so the box showed three lines and an empty fourth. The speaker name crowded the ornate corner and left a blank line. The next-page marker was a grey fragment of an unrelated slot. | With a measured label, pages fill the whole text area. The panel is 46 px tall, with a 4-line, 206 × 32 text area. The name is a `SpeakerTag` plate on the top border and is hidden without a speaker. The marker is the pack's red selector pointer, placed in the right-hand gutter. |
+| Chat input and buttons | Button text was black, unlike the brown ink everywhere else. The focus box was a dark 1 px line drawn over the art's own outline, so it was invisible. | One dark-brown ink for `Label` and `Button`. Focus uses the pack's red selector frame, drawn one pixel outside the control. |
+| Text spacing | `Label` used Godot's default 3 px line spacing, while dialog text used 0 px. Bubbles and item details therefore used an 11 px pitch and dialog an 8 px pitch. | Set `Label` line spacing to 0 for a consistent 8 px pitch. |
+| Inventory | Only 3 of 4 slot rows were visible above a large empty detail area, the scrollbar was needed for 25 slots, and slots were flat Godot rectangles. The no-icon swatch was off-centre, and counts sat on the slot border. | The grid shows all 25 slots, centred. Slots, hover and selection use the pack's slot art. The swatch and counts are inset. |
+| Context menu, tooltips | The scroll-page panel showed its rolled edge. | Shares the plain parchment dialog box with the speech bubbles. |
+
+Left unchanged:
+
+- Mouse cursor: hardware cursors are not scaled by the integer stretch, so a pack cursor would appear at 16 physical pixels.
+- Overlapping bubbles from adjacent speakers: fixing this needs a coordinator across residents, which is outside a single bubble's scope.
+- Enemy health bars: they are already pixel-aligned, themed and drawn above props.
+- The `Zz` sleep indicator belongs to the NPC scene.
+
+`DialogPaginator` keeps its 110-character page limit when no label is supplied. The pagination and bubble tests pass unchanged.

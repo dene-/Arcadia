@@ -86,4 +86,8 @@ func _set_prompt_target(target: Node) -> void:
 		prompt_text = "Interact"
 
 	prompt_label.text = "%s%s" % [prompt_prefix, prompt_text]
+	# Fit the tag to the text on whole pixels around the screen centre so the text stays crisp.
+	var width: float = ceilf(prompt_label.get_minimum_size().x)
+	prompt_label.offset_left = -floorf(width * 0.5)
+	prompt_label.offset_right = prompt_label.offset_left + width
 	prompt_label.show()

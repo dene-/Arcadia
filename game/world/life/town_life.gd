@@ -121,19 +121,18 @@ func _ready() -> void:
 	add_child(_light)
 	var overlay := CanvasLayer.new()
 	add_child(overlay)
+	# A fixed-width HUD tag level with the health bar; the width fits "Day 99  23:59".
 	_clock = Label.new()
 	_clock.theme = preload("res://assets/art/ui/theme.tres")
-	_clock.add_theme_color_override("font_color", Color(0.96, 0.91, 0.78))
-	_clock.add_theme_color_override("font_shadow_color", Color(0.12, 0.1, 0.08, 0.8))
-	_clock.add_theme_constant_override("shadow_offset_y", 1)
+	_clock.theme_type_variation = &"HudTag"
 	_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(_clock)
 	_clock.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_clock.offset_left = -105
+	_clock.offset_left = -75
 	_clock.offset_right = -5
 	_clock.offset_top = 5
-	_clock.offset_bottom = 15
-	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_clock.offset_bottom = 17
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	buildings.player_space_changed.connect(_update_environment)
 	_update_environment()
 	_initialized = true

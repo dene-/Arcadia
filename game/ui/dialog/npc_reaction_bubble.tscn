@@ -2,37 +2,46 @@
 
 [ext_resource type="Script" path="res://game/ui/dialog/npc_reaction_bubble.gd" id="script"]
 [ext_resource type="Theme" path="res://assets/art/ui/theme.tres" id="theme"]
+[ext_resource type="Texture2D" uid="uid://xilcb6510er4" path="res://assets/art/ui/Classic_UI.png" id="ui_art"]
 
-[sub_resource type="StyleBoxFlat" id="panel"]
-bg_color = Color(0.12, 0.10, 0.09, 0.95)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.7, 0.6, 0.4, 1)
-content_margin_left = 5.0
-content_margin_top = 4.0
-content_margin_right = 5.0
-content_margin_bottom = 4.0
+[sub_resource type="CanvasItemMaterial" id="unshaded"]
+light_mode = 1
+
+[sub_resource type="AtlasTexture" id="tail_down"]
+atlas = ExtResource("ui_art")
+region = Rect2(160, 318, 16, 10)
+
+[sub_resource type="AtlasTexture" id="tail_up"]
+atlas = ExtResource("ui_art")
+region = Rect2(160, 232, 16, 10)
 
 [node name="ReactionBubble" type="Node2D"]
 visible = false
-position = Vector2(0, -12)
+material = SubResource("unshaded")
+position = Vector2(0, -8)
 z_index = 20
 z_as_relative = false
 script = ExtResource("script")
+tail_down = SubResource("tail_down")
+tail_up = SubResource("tail_up")
 
 [node name="Panel" type="PanelContainer" parent="."]
+use_parent_material = true
 mouse_filter = 2
 theme = ExtResource("theme")
-theme_override_styles/panel = SubResource("panel")
+theme_type_variation = &"SpeechBubble"
 
 [node name="Text" type="Label" parent="Panel"]
+use_parent_material = true
 layout_mode = 2
 mouse_filter = 2
-theme_override_colors/font_color = Color(0.96, 0.91, 0.78, 1)
 horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="Tail" type="TextureRect" parent="."]
+use_parent_material = true
+mouse_filter = 2
+texture = SubResource("tail_down")
 
 [node name="Timer" type="Timer" parent="."]
 one_shot = true

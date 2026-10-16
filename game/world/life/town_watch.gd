@@ -42,12 +42,12 @@ func _ready() -> void:
 	add_child(overlay)
 	_hint = Label.new()
 	_hint.theme = preload("res://assets/art/ui/theme.tres")
+	_hint.theme_type_variation = &"HudTag"
 	_hint.text = "[G] Surrender"
-	_hint.add_theme_color_override("font_shadow_color", Color.BLACK)
-	_hint.add_theme_constant_override("shadow_offset_y", 1)
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(_hint)
-	_hint.position = Vector2(6, 22)
+	# Below the health bar, clear of the HUD row.
+	_hint.position = Vector2(5, 20)
 	_hint.hide()
 
 func _process(_delta: float) -> void:

@@ -1,6 +1,7 @@
 class_name DialogPaginator
 extends RefCounted
 
+## Page length without a label to measure; a measured label fills its whole text area instead.
 const SAFE_PAGE_CHARACTER_LIMIT: int = 110
 
 ## Pass the laid-out dialog label to account for font metrics, wrapping, and explicit newlines.
@@ -11,7 +12,8 @@ func paginate(text: String, label: RichTextLabel = null) -> Array[String]:
 	var pages: Array[String] = []
 	var remaining := text.strip_edges()
 	while not remaining.is_empty():
-		var length := mini(remaining.length(), SAFE_PAGE_CHARACTER_LIMIT)
+		var length := remaining.length() if label != null \
+			else mini(remaining.length(), SAFE_PAGE_CHARACTER_LIMIT)
 		if label != null:
 			var low := 1
 			var high := length

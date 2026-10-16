@@ -15,8 +15,8 @@ const CHAT_SEND_BUTTON_PATH: NodePath = ^"UI/Container/VBoxContainer/ChatContain
 const CHAT_CANCEL_BUTTON_PATH: NodePath = ^"UI/Container/VBoxContainer/ChatContainer/ChatCancelButton"
 const INDICATOR_BOB_DISTANCE: float = 2.0
 const INDICATOR_BOB_SPEED: float = 4.0
-const INDICATOR_RIGHT_MARGIN: float = 5.0
-const INDICATOR_BOTTOM_MARGIN: float = 5.0
+const INDICATOR_RIGHT_MARGIN: float = 6.0
+const INDICATOR_BOTTOM_MARGIN: float = 7.0
 const FAREWELL_HOLD_SECONDS: float = 1.5
 ## Short lines a resident on an urgent duty uses to turn the player away.
 const REFUSAL_LINES: Array[String] = ["Not now!", "Later. I have to go.", "Sorry, I can't stop.",
@@ -172,8 +172,7 @@ func close_dialog() -> void:
 	_page_index = 0
 	if _dialog_text != null:
 		_dialog_text.text = ""
-	if _speaker_name != null:
-		_speaker_name.text = ""
+	_set_speaker_name("")
 	_typewriter.reset(_dialog_text)
 	if _dialog_panel != null:
 		_dialog_panel.hide()
@@ -231,9 +230,8 @@ func _start_dialog(source: Node) -> bool:
 	_conversation.session_id = "player:%d" % _dialog_generation
 	_conversation.session_start = _conversation.store.world_minute
 	_active_source = source
-	if _speaker_name != null:
-		_speaker_name.text = source.get_npc_profile().profile_name if source is BaseNpc \
-			and source.get_npc_profile() != null else ""
+	_set_speaker_name(source.get_npc_profile().profile_name if source is BaseNpc \
+		and source.get_npc_profile() != null else "")
 	_active_text = ""
 	_active_pages.clear()
 	_able_to_chat = _source_is_able_to_chat(source)
@@ -306,6 +304,14 @@ func _refuse(source: Node) -> void:
 	var random: RandomNumberGenerator = NpcRoutinePlan.random_for(_npc_seed,
 		"%s:refusal:%d" % [npc.get_npc_profile().npc_id, _dialog_generation])
 	npc.show_spoken_reaction(REFUSAL_LINES[random.randi_range(0, REFUSAL_LINES.size() - 1)])
+
+# The name tag sizes itself to the name and is hidden for anonymous speakers.
+func _set_speaker_name(speaker_name: String) -> void:
+	if _speaker_name == null:
+		return
+	_speaker_name.text = speaker_name
+	_speaker_name.visible = not speaker_name.is_empty()
+	_speaker_name.reset_size()
 
 func _configure_dialog_text() -> void:
 	_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
