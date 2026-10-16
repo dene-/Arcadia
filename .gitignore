@@ -7,6 +7,7 @@
 .vscode/
 tools/server/node_modules/
 tools/server/.env
+.DS_Store
 
 # Purchased world art: local use only, never redistribute raw packs publicly.
 assets/art/world_packs/
