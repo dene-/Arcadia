@@ -1,19 +1,19 @@
 # Test
 
-Godot 4.6 project for a top-down pixel RPG prototype with actor state machines, NPC dialog, enemies, drops, inventory, and HUD UI.
+Godot 4.7 project for a top-down pixel RPG prototype with actor state machines, NPC dialog, enemies, drops, inventory, and HUD UI.
 
 ## Run And Validate
 
-Open the project with Godot 4.6. The main scene is:
+Open the project with Godot 4.7. The main scene is:
 
 ```text
 res://game/world/scenes/world.tscn
 ```
 
-Set `GODOT` to the Godot 4.6 executable when `godot` is not already on `PATH`.
+Set `GODOT` to the Godot 4.7 executable when `godot` is not already on `PATH`.
 
 ```powershell
-$env:GODOT = "C:\Path\To\Godot_v4.6.2-stable_win64.exe"
+$env:GODOT = "C:\Path\To\Godot_v4.7.1-stable_win64.exe"
 .\tools\run_godot_tests.ps1
 ```
 
