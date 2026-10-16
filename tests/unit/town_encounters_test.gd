@@ -102,6 +102,25 @@ func test_session_holds_both_residents_until_it_ends() -> void:
 	_assert_released("social_a")
 	_assert_released("social_b")
 
+func test_unavailable_judgments_still_let_neighbors_greet_without_words_or_memory() -> void:
+	_backend.set_default("social", {"outcome": "UNAVAILABLE"})
+	var before: float = (_brains["social_a"] as NpcBrain)._mind.needs.social
+	await _scene.get_tree().physics_frame
+	_encounters.consider(_first, _second)
+	assert_eq(_encounters.diagnostics("social_a").outcome, "greeted_without_provider")
+	for id: String in ["social_a", "social_b"]:
+		assert_eq(_encounters.session_phase(id), TownEncounters.PHASE_CONVERSE)
+		assert_eq((_brains[id] as NpcBrain).current_activity().get("kind"), "social")
+	assert_true((_brains["social_a"] as NpcBrain)._mind.needs.social < before)
+	assert_eq(_backend.call_count("dialogue/say"), 0, "no words are generated")
+	assert_true(_encounters.social_history("social_a").is_empty(), "nothing is remembered")
+	assert_true(_encounters.state.rumors.get_known("social_b", _encounters.state.minute).is_empty())
+	assert_eq(_first.get_node("ReactionBubble").visible, false)
+	_encounters.interrupt("social_a")
+	assert_false(_encounters.is_busy("social_b"))
+	_assert_released("social_a")
+	_assert_released("social_b")
+
 func test_invitation_takes_no_claims_and_a_crossing_invitation_is_dropped() -> void:
 	_backend.hold("social")
 	await _scene.get_tree().physics_frame

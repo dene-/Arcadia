@@ -7,20 +7,22 @@
 
 [resource]
 script = ExtResource("1_npc_data")
-move_speed = 31.0
-run_speed_multiplier = 1.75
+move_speed = 24.0
+run_speed_multiplier = 1.5
 run_chance = 0.45
 idle_duration_range = Vector2(0.45, 1.0)
-max_health = 3
-attack_damage = 2
-hurt_knockback_speed = 66.0
+max_health = 6
+attack_damage = 3
+hurt_knockback_speed = 48.0
+hurt_stun_time = 0.2
 blood_particle_spread_degrees = 24.0
 combat_layers = ExtResource("2_layers")
 ai_enabled = true
 detection_range = 92.0
 lose_interest_range = 144.0
 attack_range = 14.0
-attack_cooldown = 0.9
+attack_cooldown = 1.2
+attack_windup = 0.2
 drop_table = ExtResource("4_drops")
 interaction_enabled = false
 interaction_text = ""

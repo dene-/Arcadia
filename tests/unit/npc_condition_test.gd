@@ -30,7 +30,7 @@ func test_needs_start_neutral_and_advance_by_game_minutes() -> void:
 	assert_eq(mind.needs, NpcMindState.neutral_needs(tuning))
 	mind.advance_needs(60.0, false, 0.5, tuning)
 	assert_true(is_equal_approx(mind.needs.hunger, 0.25 + 60.0 / 480.0))
-	assert_true(is_equal_approx(mind.needs.fatigue, 0.2 + 60.0 / 960.0))
+	assert_true(is_equal_approx(mind.needs.fatigue, 0.2 + 60.0 * tuning.fatigue_awake_per_minute))
 	assert_true(is_equal_approx(mind.needs.social, 0.3 + 60.0 / 2880.0))
 	var awake: float = mind.needs.fatigue
 	mind.advance_needs(60.0, true, 0.5, tuning)

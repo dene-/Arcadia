@@ -19,5 +19,8 @@ extends Resource
 @export_range(0, 32, 1) var end_column: int = -1
 ## Whether the source art faces right before runtime flipping is applied.
 @export var source_faces_right: bool = false
+## Sheet row with the same animation seen from behind, used while the actor looks up the
+## screen; -1 means the clip has no back view. Registered as "<animation_name>_up".
+@export_range(-1, 16, 1) var up_source_row: int = -1
 ## Whether this animation should loop.
 @export var loop: bool = true

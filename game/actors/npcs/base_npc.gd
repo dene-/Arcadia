@@ -11,6 +11,9 @@ const RUN_ANIMATION_NAME: StringName = &"run"
 const WALK_ANIMATION_NAME: StringName = &"walk"
 ## A resident who woke this many game minutes ago or less still mentions why it woke.
 const RECENT_WAKE_MINUTES: float = 5.0
+## An idle resident turns toward Den within this distance, and forgets him beyond the second.
+const PLAYER_GLANCE_RANGE: float = 40.0
+const PLAYER_GLANCE_LEAVE: float = 72.0
 const MEMORY_DEBUG_PROPERTIES: Dictionary[String, int] = {
 	"npc_id": TYPE_STRING, "status": TYPE_STRING, "turn": TYPE_INT,
 	"memories": TYPE_ARRAY, "recent_dialogue": TYPE_ARRAY,
@@ -47,6 +50,7 @@ var _sleeping: bool = false
 var _woke_world_minute: float = -100.0
 var _woke_space: StringName
 var _wake_reason: String = ""
+var _player_noticed: bool = false
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _patrol_index: int = 0
@@ -273,6 +277,7 @@ func show_sleep_pose(sleeping: bool) -> void:
 		body_collision_shape.set_deferred("disabled", true)
 		interaction_area.position = _sleep_center + Vector2(0, 4)
 		hurt_box.position = _sleep_center
+		facing_up = false
 		play_animation(&"idle", true, 1.0)
 		animated_sprite.pause()
 		animated_sprite.rotation = -PI / 2
@@ -341,6 +346,7 @@ func enter_dialog() -> void:
 		bubble.hide()
 	set_hitbox_enabled(false)
 	clear_hit_reaction()
+	_face_player_in_reach()
 	state_machine.transition_to(&"interaction", {}, true)
 
 func exit_dialog() -> void:
@@ -382,6 +388,7 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 	if amount > 0:
 		life_revision += 1
 		report_damage_event(source)
+		flash_hit()
 	apply_hit_reaction(source)
 	set_hitbox_enabled(false)
 	if health <= 0:
@@ -445,6 +452,14 @@ func apply_hit_reaction(source: Area2D) -> void:
 
 func clear_hit_reaction() -> void:
 	_hurt_knockback_velocity = Vector2.ZERO
+
+## Seconds an attack swing winds up before its hit box turns on.
+func attack_windup_time() -> float:
+	return npc_data.attack_windup
+
+## Seconds a hit staggers this actor, at most the hurt animation.
+func hurt_stun_time() -> float:
+	return npc_data.hurt_stun_time
 
 func apply_hurt_reaction(delta: float) -> void:
 	apply_velocity(_hurt_knockback_velocity)
@@ -588,6 +603,28 @@ func get_routine_velocity(delta: float, running: bool = false) -> Vector2:
 		set_facing_from_direction(motion)
 	return motion
 
+## An idle, awake resident turns toward Den when he comes within a few steps, once per
+## approach; walking away and coming back is a new approach.
+func glance_at_nearby_player() -> void:
+	if daily_routine == null or npc_data.ai_enabled or _dialog_locked or _sleeping \
+			or not is_inside_tree():
+		return
+	var player := get_tree().get_first_node_in_group(&"players") as BaseActor
+	if player == null or player.world_space != world_space or player.health <= 0:
+		_player_noticed = false
+		return
+	var toward: Vector2 = player.global_position - global_position
+	var distance: float = toward.length()
+	if distance > PLAYER_GLANCE_LEAVE:
+		_player_noticed = false
+	elif distance <= PLAYER_GLANCE_RANGE and not _player_noticed:
+		var brain: NpcBrain = NpcBrain.of(self)
+		if brain != null and brain.controller.current != null \
+				and brain.controller.current.kind == &"social":
+			return # Residents in a session keep facing their partner.
+		_player_noticed = true
+		set_facing_from_direction(toward)
+
 func yield_to_approaching_player(delta: float) -> bool:
 	if movement_navigation == null or npc_data.ai_enabled or _dialog_locked or _sleeping:
 		return false
@@ -660,7 +697,8 @@ func choose_idle_duration() -> float:
 
 func choose_roam_state() -> StringName:
 	if daily_routine != null:
-		return &"run" if daily_routine.activity == "seek_guard" else &"walk"
+		# Residents who are fleeing danger or running for a guard do not stroll.
+		return &"run" if daily_routine.activity in ["seek_guard", "shelter"] else &"walk"
 	if npc_data.roam_radius <= 0.0 and npc_data.patrol_points.is_empty():
 		return &"idle"
 
@@ -715,6 +753,10 @@ func current_walk_speed() -> float:
 func current_run_speed() -> float:
 	return npc_data.move_speed * npc_data.run_speed_multiplier
 
+## Run reuses the walk cycle; scaling it with the speed keeps each step the same length.
+func current_run_animation_scale() -> float:
+	return maxf(npc_data.run_speed_multiplier, 1.0)
+
 func apply_action_velocity(stop_movement: bool) -> void:
 	if stop_movement:
 		apply_velocity(Vector2.ZERO)
@@ -727,6 +769,7 @@ func set_facing_from_direction(direction: Vector2) -> void:
 		facing = Facing.LEFT
 	elif direction.x > 0.0:
 		facing = Facing.RIGHT
+	set_vertical_facing(direction)
 	_update_hit_box_facing()
 
 # -- Animation ----------------------------------------------------------------
@@ -910,23 +953,15 @@ func _connect_dialog_manager() -> void:
 	if not dialog_manager.is_connected("dialog_finished", _on_dialog_finished):
 		dialog_manager.connect("dialog_finished", _on_dialog_finished)
 
-func _get_hit_reaction_direction(source: Area2D) -> Vector2:
-	var impact_origin := global_position - Vector2.RIGHT
-	if source != null:
-		if source.has_meta("owner"):
-			var source_owner := source.get_meta("owner") as Node2D
-			if source_owner != null:
-				impact_origin = source_owner.global_position
-			else:
-				impact_origin = source.global_position
-		else:
-			impact_origin = source.global_position
-
-	var reaction_direction := global_position - impact_origin
-	if reaction_direction.length_squared() <= 0.001:
-		reaction_direction = Vector2.RIGHT if facing == Facing.RIGHT else Vector2.LEFT
-
-	return reaction_direction.normalized()
+# A resident who is spoken to turns toward Den instead of staring the way they were walking.
+func _face_player_in_reach() -> void:
+	if not is_inside_tree():
+		return
+	for player: Node in get_tree().get_nodes_in_group(&"players"):
+		if player is BaseActor and (player as BaseActor).world_space == world_space \
+				and (player as BaseActor).global_position.distance_to(global_position) <= 48.0:
+			set_facing_from_direction((player as BaseActor).global_position - global_position)
+			return
 
 func _emit_blood_particles(direction: Vector2) -> void:
 	if npc_data.blood_particle_count <= 0:

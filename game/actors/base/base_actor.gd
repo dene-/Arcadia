@@ -14,7 +14,18 @@ enum Facing {
 	RIGHT,
 }
 
+## Heading up the screen above this sine turns the actor to show its back.
+const UP_FACING_ENTER: float = 0.5
+## Heading below this sine brings the front view back.
+const UP_FACING_EXIT: float = 0.2
+## Seconds a freshly hit actor stays whitened.
+const HIT_FLASH_SECONDS: float = 0.1
+## Overbright modulate: texture colors are multiplied, so the whole figure reads white.
+const HIT_FLASH_TINT := Color(3.0, 3.0, 3.0)
+
 var facing: Facing = Facing.RIGHT
+## True while the actor looks up the screen, selecting "<animation>_up" variants.
+var facing_up: bool = false
 var max_health: int = 1
 var health: int = 1
 ## Rooms share a running simulation but remain separate sensory and interaction spaces.
@@ -28,6 +39,7 @@ var _current_attack_damage: int = 1
 var _hit_box_shape_base_position: Vector2 = Vector2.ZERO
 var _sprite_frames: SpriteFrames
 var _hit_targets: Dictionary[int, bool] = {}
+var _hit_flash_remaining: float = 0.0
 
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var hit_box: Area2D = $HitBox
@@ -37,6 +49,7 @@ var _hit_targets: Dictionary[int, bool] = {}
 
 func _physics_process(delta: float) -> void:
 	state_machine.physics_update(delta)
+	_update_sprite_tint(delta)
 
 func setup_actor(
 	max_health: int,
@@ -132,7 +145,7 @@ func report_damage_event(source: Area2D) -> void:
 	get_node("/root/WorldEvents").publish(WorldEvent.damage(self, attacker))
 
 func play_animation(animation_name: StringName, restart: bool = false, speed_scale: float = 1.0) -> void:
-	var resolved_animation := resolve_animation_name(animation_name)
+	var resolved_animation := _directional_animation(resolve_animation_name(animation_name))
 	if resolved_animation.is_empty():
 		return
 
@@ -144,9 +157,20 @@ func play_animation(animation_name: StringName, restart: bool = false, speed_sca
 		return
 
 	if animated_sprite.animation != resolved_animation:
-		animated_sprite.play(resolved_animation)
+		_switch_animation(resolved_animation)
 	elif not animated_sprite.is_playing():
 		animated_sprite.play()
+
+## Face away from the camera while heading up the screen. The band between the two
+## thresholds keeps the current view so a wobbling path does not flicker between rows.
+func set_vertical_facing(direction: Vector2) -> void:
+	if direction.length_squared() <= 0.0001:
+		return
+	var rise: float = -direction.normalized().y
+	if rise > UP_FACING_ENTER:
+		facing_up = true
+	elif rise < UP_FACING_EXIT:
+		facing_up = false
 
 func stop_animation() -> void:
 	animated_sprite.stop()
@@ -194,10 +218,71 @@ func _should_flip_sprite(animation_name: StringName) -> bool:
 
 	return facing == Facing.RIGHT
 
+func _directional_animation(animation_name: StringName) -> StringName:
+	if animation_name.is_empty() or not facing_up:
+		return animation_name
+	var up_name := StringName(String(animation_name) + ActorSpriteFrames.UP_SUFFIX)
+	return up_name if _sprite_frames.has_animation(up_name) else animation_name
+
+## Swap to another animation, keeping the stride when only the viewing side changes.
+func _switch_animation(animation_name: StringName) -> void:
+	var previous: StringName = animated_sprite.animation
+	var frame: int = animated_sprite.frame
+	var progress: float = animated_sprite.frame_progress
+	animated_sprite.play(animation_name)
+	if _is_same_clip(previous, animation_name):
+		animated_sprite.set_frame_and_progress(frame, progress)
+
+func _is_same_clip(first: StringName, second: StringName) -> bool:
+	if first.is_empty() or not _sprite_frames.has_animation(first):
+		return false
+	var suffix: String = ActorSpriteFrames.UP_SUFFIX
+	var first_base: String = String(first).trim_suffix(suffix)
+	var second_base: String = String(second).trim_suffix(suffix)
+	return first_base == second_base \
+		and _sprite_frames.get_frame_count(first) == _sprite_frames.get_frame_count(second)
+
 func _get_area_damage(area: Area2D) -> int:
 	if area.has_meta("damage"):
 		return int(area.get_meta("damage"))
 	return 1
+
+## Unit vector pushing this actor away from whoever owns `source`.
+func _get_hit_reaction_direction(source: Area2D) -> Vector2:
+	var impact_origin := global_position - Vector2.RIGHT
+	if source != null:
+		if source.has_meta("owner"):
+			var source_owner := source.get_meta("owner") as Node2D
+			if source_owner != null:
+				impact_origin = source_owner.global_position
+			else:
+				impact_origin = source.global_position
+		else:
+			impact_origin = source.global_position
+
+	var reaction_direction := global_position - impact_origin
+	if reaction_direction.length_squared() <= 0.001:
+		reaction_direction = Vector2.RIGHT if facing == Facing.RIGHT else Vector2.LEFT
+
+	return reaction_direction.normalized()
+
+## Actors with recovery frames after a hit override this; the swing is not consumed while true.
+func is_invulnerable() -> bool:
+	return false
+
+## Briefly whitens the sprite so a landed hit reads even without a hurt animation change.
+func flash_hit() -> void:
+	_hit_flash_remaining = HIT_FLASH_SECONDS
+
+func _sprite_alpha() -> float:
+	return 1.0
+
+func _update_sprite_tint(delta: float) -> void:
+	_hit_flash_remaining = maxf(_hit_flash_remaining - delta, 0.0)
+	var tint: Color = HIT_FLASH_TINT if _hit_flash_remaining > 0.0 else Color.WHITE
+	tint.a = _sprite_alpha()
+	if animated_sprite.modulate != tint:
+		animated_sprite.modulate = tint
 
 func _on_animated_sprite_2d_animation_finished() -> void:
 	state_machine.animation_finished()
@@ -206,7 +291,7 @@ func _on_state_machine_transitioned(current_state: StringName, _previous_state: 
 	state_changed.emit(current_state)
 
 func _on_hurt_box_area_entered(area: Area2D) -> void:
-	if state_machine.is_in_state(&"dead"):
+	if state_machine.is_in_state(&"dead") or is_invulnerable():
 		return
 
 	if area.has_meta("owner") and area.get_meta("owner") == self:

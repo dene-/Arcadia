@@ -4,11 +4,17 @@ extends RefCounted
 ## One spatial snapshot per physics frame; steering predicts all nearby bodies, not just one.
 const BUCKET: float = 48.0
 const HORIZON: float = 0.4
+## Shortest look-ahead (pixels) an otherwise blocked walker may still advance along.
+const SHORT_PROBE: float = 3.0
+## Seconds a walker must be held up before a standing body steps out of its way.
+const BLOCKED_WAIT: float = 0.6
 var _frame: int = -1
 var _buckets: Dictionary = {}
 var _samples: Dictionary = {}
 var _previous: Dictionary[String, Vector2] = {}
 var _waiting: Dictionary[String, float] = {}
+var _wanted: Dictionary[String, Vector2] = {}
+var _wanted_frame: Dictionary[String, int] = {}
 var neighbor_checks: int = 0
 var steering_calls: int = 0
 var steering_usec: int = 0
@@ -19,6 +25,8 @@ func invalidate() -> void:
 func forget(id: String) -> void:
 	_previous.erase(id)
 	_waiting.erase(id)
+	_wanted.erase(id)
+	_wanted_frame.erase(id)
 	invalidate()
 
 func steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], id: String,
@@ -36,6 +44,8 @@ func _steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], 
 	if speed < 0.01:
 		_previous[id] = Vector2.ZERO
 		return Vector2.ZERO
+	_wanted[id] = desired
+	_wanted_frame[id] = Engine.get_physics_frames()
 	var neighbors: Array[Dictionary] = _neighbors(id, position)
 	var radius: float = _samples.get(id, {}).get("radius", navigation.clearance)
 	var previous: Vector2 = _previous.get(id, desired)
@@ -80,7 +90,14 @@ func _steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], 
 		if score > best_score:
 			best_score = score
 			best = candidate
-	_waiting[id] = waited + delta if best.dot(desired) < speed * speed * 0.2 else 0.0
+	# Inching through a pocket still counts as held up, so standing bodies can make way.
+	var held_up: bool = best.dot(desired) < speed * speed * 0.2
+	if best == Vector2.ZERO and _risk(position, desired, radius, neighbors) < 10.0 \
+			and navigation.can_travel(position, position + desired.normalized() * SHORT_PROBE):
+		# A tight pocket between two fixtures can reject every long probe while a short step is
+		# still clear. Inch along instead of standing pinned until someone else moves.
+		best = desired
+	_waiting[id] = waited + delta if held_up else 0.0
 	# Smooth steering for autonomous bodies, but stop promptly if smoothing would cause contact.
 	var smoothed: Vector2 = previous.move_toward(best, maxf(speed * 8.0, 120.0) * delta)
 	if best != Vector2.ZERO and _risk(position, smoothed, radius, neighbors) < 10.0 \
@@ -89,18 +106,27 @@ func _steer(navigation: TownNavigation, occupants: Dictionary[String, WeakRef], 
 	_previous[id] = best
 	return best
 
+## Bodies that stand still make way for Den as he approaches, and for a walker who has waited
+## in front of them (`_waiting` for BLOCKED_WAIT seconds) with nowhere else to go.
 func yield_to_player(navigation: TownNavigation, occupants: Dictionary[String, WeakRef],
 		id: String, position: Vector2, delta: float) -> Vector2:
 	_refresh(occupants)
 	for other: Dictionary in _neighbors(id, position):
-		if not other.player or other.velocity.length() < 2.0:
+		var heading: Vector2 = other.velocity
+		if not other.player:
+			# Only a walker that is steering right now and has been held up asks for room.
+			if float(_waiting.get(other.id, 0.0)) < BLOCKED_WAIT \
+					or Engine.get_physics_frames() - int(_wanted_frame.get(other.id, -100)) > 2:
+				continue
+			heading = _wanted.get(other.id, Vector2.ZERO)
+		if heading.length() < 2.0:
 			continue
 		var to_self: Vector2 = position - other.position
 		var radius: float = _samples.get(id, {}).get("radius", navigation.clearance)
-		var warning_distance: float = maxf(22, radius + other.radius + other.velocity.length() * 0.65)
-		if to_self.length() > warning_distance or other.velocity.normalized().dot(to_self.normalized()) < 0.6:
+		var warning_distance: float = maxf(22, radius + other.radius + heading.length() * 0.65)
+		if to_self.length() > warning_distance or heading.normalized().dot(to_self.normalized()) < 0.6:
 			continue
-		var right: Vector2 = Vector2(-other.velocity.y, other.velocity.x).normalized()
+		var right: Vector2 = Vector2(-heading.y, heading.x).normalized()
 		return steer(navigation, occupants, id, position, right * 18.0, delta)
 	return Vector2.ZERO
 

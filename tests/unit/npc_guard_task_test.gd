@@ -131,6 +131,8 @@ func test_patrol_continues_from_the_stop_after_the_origin_and_cycles() -> void:
 	assert_eq(task.duty(), ["patrol", "patrol stop 3"] as Array[String])
 	rig.executor.arrive()
 	rig.tick(105.0)
+	assert_eq(rig.watch.patrols, [3] as Array[int], "a guard lingers at the stop before walking on")
+	rig.tick(105.0 + rig.tuning.patrol_dwell_max_minutes)
 	assert_eq(rig.watch.patrols, [3, 0] as Array[int])
 	assert_eq(rig.executor.last_point(), Vector2(0.0, 10.0))
 	assert_eq(rig.executor.begun.size(), 2)

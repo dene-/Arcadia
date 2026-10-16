@@ -55,6 +55,17 @@ func deliver_exchange() -> bool:
 	_mind.complete_exchange(_tuning)
 	return true
 
+## A wordless greeting reached this resident while no dialogue provider answered: it eases
+## their need for company by `greeting_social_relief`, once per session and never alongside a
+## delivered exchange.
+func deliver_greeting() -> bool:
+	if _delivered or status != Status.RUNNING or phase != PHASE_CONVERSE \
+			or _mind == null or _tuning == null:
+		return false
+	_delivered = true
+	_mind.complete_greeting(_tuning)
+	return true
+
 func _on_start(context: NpcTaskContext) -> NpcTaskResult:
 	progress = {}
 	phase = PHASE_APPROACH

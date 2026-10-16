@@ -130,6 +130,20 @@ func _approach(token: int) -> bool:
 	session.phase = PHASE_CONVERSE
 	return true
 
+# The providers could not judge this meeting. Neighbors who come face to face still stop and
+# turn toward each other for a few seconds. No words are shown and nothing is remembered,
+# learned or changed between them: only each one's need for company eases a little.
+func _greet_without_provider(token: int, a: String, b: String) -> void:
+	if not _approach(token):
+		_status(a, b, "reservation_refused")
+		return
+	_status(a, b, "greeted_without_provider")
+	for id: String in [a, b]:
+		(_sessions[token].tasks[id] as NpcSocialTask).deliver_greeting()
+	var random := NpcRoutinePlan.random_for(seed_value, "%s:%s:greeting:%d" % [a, b, int(state.minute)])
+	await get_tree().create_timer(random.randf_range(tuning.greeting_min_seconds,
+		tuning.greeting_max_seconds)).timeout
+
 func _brain(id: String) -> NpcBrain:
 	var brain: NpcBrain = brains.call(id) if brains.is_valid() else null
 	if brain != null and not _listening.has(id):
@@ -193,7 +207,11 @@ func _run(first: BaseNpc, second: BaseNpc, a: String, b: String, rev_a: int, rev
 		if not _live(token):
 			break
 		if not judged.is_success():
-			_status(a, b, "decision_unavailable")
+			# Nothing was approached yet: neighbors still acknowledge each other without words.
+			if _sessions[token].phase == PHASE_INVITE:
+				await _greet_without_provider(token, a, b)
+			else:
+				_status(a, b, "decision_unavailable")
 			break
 		var social: NpcDecisionPolicy.Social = NpcDecisionPolicy.social(judged, DEFAULT_TONE, tuning)
 		if not social.engage:

@@ -4,6 +4,9 @@ extends SpriteFrames
 
 ## SpriteFrames resource that rebuilds actor animations from editable clip resources.
 
+## Suffix of the back-view variant registered for clips that set `up_source_row`.
+const UP_SUFFIX: String = "_up"
+
 ## Pixel size of one frame in every configured sprite sheet.
 @export var frame_size: Vector2i = Vector2i(32, 32)
 ## Clip definitions used to rebuild this SpriteFrames resource.
@@ -60,27 +63,40 @@ func _rebuild() -> void:
 			continue
 
 		_clip_lookup[clip.animation_name] = clip
-		_add_clip(clip, texture)
+		_add_clip(clip, texture, clip.animation_name, clip.source_row)
+		if clip.up_source_row >= 0:
+			var up_name := StringName(String(clip.animation_name) + UP_SUFFIX)
+			_clip_lookup[up_name] = clip
+			_add_clip(clip, texture, up_name, clip.up_source_row)
 
 func _load_sprite_texture(sprite_path: String) -> Texture2D:
 	return ResourceLoader.load(sprite_path) as Texture2D
 
-func _add_clip(clip: ActorAnimationClip, texture: Texture2D) -> void:
+func _add_clip(
+	clip: ActorAnimationClip,
+	texture: Texture2D,
+	animation_name: StringName,
+	first_row: int
+) -> void:
 	var frame_count: int = int(texture.get_width() / float(frame_size.x))
 	var row_count: int = int(texture.get_height() / float(frame_size.y))
 	if frame_count <= 0 or row_count <= 0:
-		push_warning("Animation '%s' has no frames for frame size %s." % [clip.animation_name, frame_size])
+		push_warning("Animation '%s' has no frames for frame size %s." % [animation_name, frame_size])
 		return
 
-	var last_row: int = clip.source_row if clip.end_row <= 0 else mini(clip.end_row, row_count - 1)
+	var row_span: int = 0 if clip.end_row <= 0 else clip.end_row - clip.source_row
+	if first_row < 0 or first_row + row_span >= row_count:
+		push_warning("Animation '%s' reads past the %d rows of '%s'." % [animation_name, row_count, clip.sprite_path])
+		return
+	var last_row: int = first_row + row_span
 	var first_column: int = clampi(clip.start_column, 0, frame_count - 1)
 	var last_column: int = frame_count - 1 if clip.end_column < 0 else clampi(clip.end_column, 0, frame_count - 1)
-	add_animation(clip.animation_name)
-	set_animation_speed(clip.animation_name, 1.0 / clip.frame_duration)
-	set_animation_loop(clip.animation_name, clip.loop)
+	add_animation(animation_name)
+	set_animation_speed(animation_name, 1.0 / clip.frame_duration)
+	set_animation_loop(animation_name, clip.loop)
 
-	for row: int in range(clip.source_row, last_row + 1):
-		var row_start_column: int = first_column if row == clip.source_row else 0
+	for row: int in range(first_row, last_row + 1):
+		var row_start_column: int = first_column if row == first_row else 0
 		var row_end_column: int = last_column if row == last_row else frame_count - 1
 
 		for column: int in range(row_start_column, row_end_column + 1):
@@ -92,7 +108,7 @@ func _add_clip(clip: ActorAnimationClip, texture: Texture2D) -> void:
 				frame_size.x,
 				frame_size.y
 			)
-			add_frame(clip.animation_name, atlas_texture)
+			add_frame(animation_name, atlas_texture)
 
 func _to_clip_array(value: Variant) -> Array[ActorAnimationClip]:
 	var typed_clips: Array[ActorAnimationClip] = []

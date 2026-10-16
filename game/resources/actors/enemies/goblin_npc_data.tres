@@ -7,8 +7,8 @@
 
 [resource]
 script = ExtResource("1_npc_data")
-move_speed = 34.0
-run_speed_multiplier = 1.8
+move_speed = 32.0
+run_speed_multiplier = 2.0
 run_chance = 0.35
 idle_duration_range = Vector2(0.5, 1.1)
 max_health = 2
@@ -20,6 +20,8 @@ detection_range = 76.0
 lose_interest_range = 124.0
 attack_range = 12.0
 attack_cooldown = 0.75
+attack_windup = 0.1
+hurt_stun_time = 0.4
 drop_table = ExtResource("4_drops")
 interaction_enabled = false
 interaction_text = ""

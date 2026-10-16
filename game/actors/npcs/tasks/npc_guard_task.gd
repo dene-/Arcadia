@@ -147,13 +147,29 @@ func _patrol(context: NpcTaskContext) -> NpcTaskResult:
 		return _finish(context, &"no_route")
 	_set_phase(context, PHASE_PATROL)
 	var state: StringName = _go(context, _stop_space(), _stop_point())
+	if state == &"arrived" and _lingering(context):
+		_on_route = true
+		return NpcTaskResult.running()
 	if state == &"arrived" or state == &"failed":
+		progress.erase("linger_until")
 		if not _next_stop(context):
 			return _finish(context, &"no_route")
 		state = _go(context, _stop_space(), _stop_point())
 	# A guard that cannot move is on the route in name only.
 	_on_route = state == &"traveling" or state == &"arrived"
 	return NpcTaskResult.running()
+
+# A guard stands at each stop for a few minutes, looking about, before walking on.
+func _lingering(context: NpcTaskContext) -> bool:
+	var tuning: NpcBehaviorTuning = context.call_service(&"tuning") as NpcBehaviorTuning
+	if tuning == null or tuning.patrol_dwell_max_minutes <= 0.0:
+		return false
+	if not progress.has("linger_until"):
+		var random := RandomNumberGenerator.new()
+		random.seed = hash("%s:linger:%d:%d" % [task_id, int(progress.get("stop", 0)), int(context.minute)])
+		progress["linger_until"] = context.minute + random.randf_range(tuning.patrol_dwell_min_minutes,
+			maxf(tuning.patrol_dwell_min_minutes, tuning.patrol_dwell_max_minutes))
+	return context.minute < float(progress["linger_until"])
 
 # The newest live warning or combat report the guard holds.
 static func _active_report(reports: Array, minute: float) -> Dictionary:
@@ -219,6 +235,7 @@ func _go(context: NpcTaskContext, space: StringName, point: Vector2) -> StringNa
 	var target: Array = [String(space), point.x, point.y]
 	if progress.get("target") != target:
 		_release_travel(context)
+		progress.erase("linger_until")
 		progress["target"] = target
 		progress["travel_started"] = context.minute
 		progress["arrived"] = false

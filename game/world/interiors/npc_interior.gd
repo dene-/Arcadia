@@ -114,6 +114,8 @@ func bed_for(id: String, center: bool = false) -> Vector2:
 	var foot: Vector2 = layout.get("beds", {}).get(id, layout.bed)
 	return global_position + foot + (Vector2(-1, -6) if center else Vector2(0, 8))
 
+## Housemates sit a full personal space apart, so reserving one place never pushes the next
+## diner out of the room's far corner (or into its doorway).
 func meal_for(id: String) -> Vector2:
 	var index: int = maxi(0, residents.find(id))
-	return meal_spot + Vector2((index % 3 - 1) * 12, (index / 3) * -24)
+	return meal_spot + Vector2((index % 3 - 1) * TownNavigation.PERSONAL_SPACE, (index / 3) * -24)

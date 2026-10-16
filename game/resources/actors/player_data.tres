@@ -5,5 +5,5 @@
 
 [resource]
 script = ExtResource("1_player_data")
-move_speed = 32.0
+move_speed = 40.0
 sprite_frames = ExtResource("2_frames")

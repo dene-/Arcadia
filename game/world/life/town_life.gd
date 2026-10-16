@@ -615,7 +615,11 @@ func _options(id: String, preferred: Dictionary) -> Array[Dictionary]:
 	var resident: Dictionary = save_game.population.people[id]
 	if resident.job == "guard" and preferred.kind == "rest":
 		return options
-	if preferred.kind == "rest" or save_game.life.get_person(id).activity != "rest":
+	var until_change: float = NpcRoutinePlan.next_change(save_game.life.get_person(id).plan,
+		save_game.life.minute) - save_game.life.minute
+	# A break that the schedule would cut short is not worth walking home for.
+	if preferred.kind == "rest" or (save_game.life.get_person(id).activity != "rest"
+			and until_change >= tuning.rest_min_minutes):
 		_add_option(options, "REST", "rest", "home:" + id, "Take a bounded rest break at home.")
 	if hour >= 6 and hour < 21:
 		var venues: Array[String] = ["square", "market", "garden"]
@@ -725,7 +729,7 @@ func destination(id: String, selected: Dictionary) -> Dictionary:
 	var space := StringName(place.get("space", "outdoors"))
 	var random := NpcRoutinePlan.random_for(save_game.get_npc_seed(),
 		"%s:spot:%s:%s" % [id, save_game.life.day(), selected.place])
-	var offset := Vector2(random.randi_range(-2, 2), random.randi_range(-1, 1)) * 8.0
+	var offset := Vector2(random.randi_range(-4, 4), random.randi_range(-2, 2)) * 8.0
 	# Only shared town places spread their visitors; a grave or a sighting is one exact spot.
 	var spread: bool = space == &"outdoors" and _places.has(selected.place)
 	var point: Vector2 = place.position + (offset if spread else Vector2.ZERO)

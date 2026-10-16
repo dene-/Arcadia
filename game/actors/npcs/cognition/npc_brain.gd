@@ -54,7 +54,8 @@ func setup(npc_id: String, mind: NpcMindState, actor: Object, executor: Object,
 	if not controller.transitioned.is_connected(_on_transitioned):
 		controller.transitioned.connect(_on_transitioned)
 	_services = {
-		&"travel": _travel, &"cancel_travel": _cancel_travel, &"travel_state": _travel_state,
+		&"travel": _travel, &"nudge": _nudge, &"cancel_travel": _cancel_travel,
+		&"travel_state": _travel_state,
 		&"bed": _bed, &"space": _space, &"sleep": _sleep, &"wake": _wake,
 		&"wake_for_danger": _wake_for_danger, &"is_sleeping": _is_sleeping,
 		&"alert_active": _alert_active, &"can_move": _can_move, &"tuning": get_tuning,
@@ -269,6 +270,11 @@ func _health() -> int:
 func _travel(space: StringName, point: Vector2, label: String, owner_task_id: String) -> bool:
 	return _executor.call(&"begin_task_travel", _actor, _npc_id, space, point, label,
 		owner_task_id) == true
+
+# A short step inside the current space, owned by `owner_task_id` like a journey.
+func _nudge(point: Vector2, owner_task_id: String) -> bool:
+	return _executor.has_method(&"begin_task_nudge") \
+		and _executor.call(&"begin_task_nudge", _actor, _npc_id, point, owner_task_id) == true
 
 func _cancel_travel(owner_task_id: String) -> bool:
 	return _executor.call(&"cancel_task_travel", _npc_id, owner_task_id) == true

@@ -38,6 +38,7 @@ class FakeExecutor extends RefCounted:
 	var actor: FakeActor
 	var begun: Array[Dictionary] = []
 	var cancelled: Array[String] = []
+	var nudges: Array[Dictionary] = []
 	var states: Dictionary = {}
 	var accept: bool = true
 	var bed: Variant = null
@@ -54,6 +55,16 @@ class FakeExecutor extends RefCounted:
 		_journey_space = space
 		states[owner_task_id] = &"traveling"
 		return true
+
+	func begin_task_nudge(_npc: Object, _npc_id: String, point: Vector2, owner_task_id: String) -> bool:
+		nudges.append({"point": point, "owner": owner_task_id})
+		_journey_owner = owner_task_id
+		states[owner_task_id] = &"traveling"
+		return true
+
+	func finish_nudge() -> void:
+		states[_journey_owner] = &"arrived"
+		actor.global_position = nudges[nudges.size() - 1]["point"]
 
 	func cancel_task_travel(_npc_id: String, owner_task_id: String) -> bool:
 		if owner_task_id != _journey_owner:
@@ -405,4 +416,28 @@ func test_a_meal_that_never_reached_its_place_does_not_feed() -> void:
 	rig.tick(200.0)
 	assert_eq(rig.last_finished()["reason"], &"until")
 	assert_eq(rig.mind.needs.hunger, 0.8)
+	rig.dispose()
+
+func test_a_performing_resident_takes_idle_steps_near_the_spot_and_stays_engaged() -> void:
+	var rig := Rig.new()
+	var task: NpcRoutineTask = _routine(rig, "work", "bakery", 900.0)
+	assert_true(rig.start(task, 100.0))
+	rig.executor.arrive()
+	rig.tick(101.0)
+	assert_eq(rig.phase(), "perform")
+	rig.tick(102.0)
+	assert_true(rig.executor.nudges.is_empty(), "the first step is scheduled, not taken at once")
+	rig.tick(102.0 + rig.tuning.fidget_max_minutes + 1.0)
+	assert_eq(rig.executor.nudges.size(), 1)
+	assert_eq(rig.executor.nudges[0]["owner"], task.task_id)
+	assert_true((rig.executor.nudges[0]["point"] as Vector2).distance_to(Vector2(40.0, 24.0))
+		<= rig.tuning.fidget_radius)
+	assert_eq(task.confirmed_engagement(), &"work", "still at work while stepping")
+	rig.executor.finish_nudge()
+	rig.tick(200.0)
+	assert_eq(rig.phase(), "perform")
+	assert_false(task.progress.has("fidgeting"))
+	assert_eq(rig.executor.states.get(task.task_id, &"none"), &"none", "the step journey is released")
+	rig.tick(200.0 + rig.tuning.fidget_max_minutes + 1.0)
+	assert_eq(rig.executor.nudges.size(), 2)
 	rig.dispose()

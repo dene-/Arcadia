@@ -148,6 +148,20 @@ func test_a_delivered_exchange_eases_social_need_once_and_only_while_talking() -
 	assert_false(task.deliver_exchange(), "a finished session delivers nothing")
 	rig.dispose()
 
+func test_a_wordless_greeting_eases_social_need_less_and_only_once() -> void:
+	var rig := Routine.Rig.new()
+	rig.mind.needs.social = 0.6
+	var task := _social(rig)
+	assert_true(_join(rig, task, 100.0))
+	assert_false(task.deliver_greeting(), "nothing is exchanged while still approaching")
+	task.converse()
+	assert_true(task.deliver_greeting())
+	assert_true(is_equal_approx(rig.mind.needs.social, 0.6 - rig.tuning.greeting_social_relief))
+	assert_true(rig.tuning.greeting_social_relief < rig.tuning.exchange_social_relief)
+	assert_false(task.deliver_greeting())
+	assert_false(task.deliver_exchange(), "a session delivers one thing")
+	rig.dispose()
+
 func test_conversation_suspends_work_engagement() -> void:
 	var rig := Routine.Rig.new()
 	var routine := NpcRoutineTask.create(Routine.routine_params("work", "bakery", 900.0), rig.tuning)

@@ -29,7 +29,11 @@ var _move_input: Vector2 = Vector2.ZERO
 var move_input: Vector2:
 	get:
 		return _move_input
-var _attack_hold_time: float = 0.0
+var _attack_buffer_remaining: float = 0.0
+var _invulnerable_remaining: float = 0.0
+var _seconds_since_damage: float = INF
+var _regen_progress: float = 0.0
+var _hurt_knockback_velocity: Vector2 = Vector2.ZERO
 var _dialog_locked: bool = false
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -39,7 +43,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func surrender() -> void:
 	set_hitbox_enabled(false)
-	reset_attack_hold()
+	clear_attack_buffer()
 	if state_machine.get_current_state_name() in [&"attack", &"charge_attack", &"run", &"walk"]:
 		state_machine.transition_to(&"idle", {}, true)
 	var event := WorldEvent.new()
@@ -66,7 +70,10 @@ func get_social_identity() -> Dictionary:
 # -- Lifecycle ----------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	_poll_attack_input()
 	super._physics_process(delta)
+	_attack_buffer_remaining = maxf(_attack_buffer_remaining - delta, 0.0)
+	_advance_recovery(delta)
 	_collect_overlapping_drops()
 
 func _ready() -> void:
@@ -135,10 +142,16 @@ func take_damage(amount: int = 1, source: Area2D = null) -> void:
 		return
 
 	set_health(health - maxi(amount, 0))
+	clear_attack_buffer()
+	set_hitbox_enabled(false)
 	if amount > 0:
 		report_damage_event(source)
-	reset_attack_hold()
-	set_hitbox_enabled(false)
+		flash_hit()
+		_seconds_since_damage = 0.0
+		_regen_progress = 0.0
+		_invulnerable_remaining = player_data.hurt_invulnerability_time
+		_hurt_knockback_velocity = _get_hit_reaction_direction(source) \
+			* player_data.hurt_knockback_speed
 	if health <= 0:
 		die()
 		return
@@ -149,7 +162,7 @@ func die() -> void:
 	if state_machine.is_in_state(&"dead"):
 		return
 
-	reset_attack_hold()
+	clear_attack_buffer()
 	set_hitbox_enabled(false)
 	hurt_box.set_deferred("monitoring", false)
 	hurt_box.set_deferred("monitorable", false)
@@ -164,28 +177,29 @@ func set_attack_damage_override(multiplier: float = 1.0) -> void:
 func reset_attack_damage_override() -> void:
 	_set_attack_damage(maxi(player_data.attack_damage, 1))
 
-func reset_attack_hold() -> void:
-	_attack_hold_time = 0.0
+func clear_attack_buffer() -> void:
+	_attack_buffer_remaining = 0.0
 
-## Reads attack input and returns the state to transition to, or &"" if none.
-func consume_attack_transition(delta: float) -> StringName:
+## Spends a remembered attack press and returns the state to enter, or &"" if none.
+func consume_attack_transition() -> StringName:
 	if is_input_blocked():
-		reset_attack_hold()
+		clear_attack_buffer()
 		return &""
+	if _attack_buffer_remaining <= 0.0:
+		return &""
+	clear_attack_buffer()
+	return &"attack"
 
-	if Input.is_action_just_pressed(ATTACK_ACTION):
-		_attack_hold_time = 0.0
+func hurt_stun_time() -> float:
+	return player_data.hurt_stun_time
 
-	if Input.is_action_pressed(ATTACK_ACTION):
-		_attack_hold_time += delta
-		if _attack_hold_time >= player_data.charge_attack_hold_time:
-			reset_attack_hold()
-			return &"charge_build"
-	elif _attack_hold_time > 0.0:
-		reset_attack_hold()
-		return &"attack"
+func apply_hurt_reaction(delta: float) -> void:
+	apply_velocity(_hurt_knockback_velocity)
+	_hurt_knockback_velocity = _hurt_knockback_velocity.move_toward(
+		Vector2.ZERO, player_data.hurt_knockback_friction * delta)
 
-	return &""
+func is_invulnerable() -> bool:
+	return _invulnerable_remaining > 0.0
 
 func is_attack_held() -> bool:
 	if is_input_blocked():
@@ -244,6 +258,7 @@ func set_facing_from_move_input() -> void:
 	elif _move_input.x > 0.0:
 		facing = Facing.RIGHT
 		_update_hit_box_facing()
+	set_vertical_facing(_move_input)
 
 func apply_action_velocity(stop_movement: bool) -> void:
 	if stop_movement:
@@ -258,7 +273,7 @@ func enter_dialog() -> void:
 		return
 
 	_dialog_locked = true
-	reset_attack_hold()
+	clear_attack_buffer()
 	set_hitbox_enabled(false)
 	state_machine.transition_to(&"interaction", {}, true)
 
@@ -273,6 +288,30 @@ func exit_dialog() -> void:
 	state_machine.transition_to(&"idle", {}, true)
 
 # -- Private helpers ----------------------------------------------------------
+
+## Remember every press, even mid-swing or mid-stagger, so the next swing starts on time.
+func _poll_attack_input() -> void:
+	if is_input_blocked():
+		clear_attack_buffer()
+	elif Input.is_action_just_pressed(ATTACK_ACTION):
+		_attack_buffer_remaining = maxf(player_data.attack_buffer_time, get_physics_process_delta_time())
+
+func _advance_recovery(delta: float) -> void:
+	_invulnerable_remaining = maxf(_invulnerable_remaining - delta, 0.0)
+	_seconds_since_damage += delta
+	var interval: float = player_data.health_regen_interval
+	if interval <= 0.0 or health <= 0 or health >= max_health \
+		or _seconds_since_damage < player_data.health_regen_delay:
+		return
+	_regen_progress += delta
+	if _regen_progress >= interval:
+		_regen_progress -= interval
+		set_health(health + 1)
+
+func _sprite_alpha() -> float:
+	if _invulnerable_remaining <= 0.0 or health <= 0:
+		return 1.0
+	return 0.45 if int(_invulnerable_remaining * 14.0) % 2 == 0 else 1.0
 
 func _connect_dialog_manager() -> void:
 	var dialog_manager := get_node_or_null("/root/DialogManager")

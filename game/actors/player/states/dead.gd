@@ -2,7 +2,7 @@ extends "res://game/actors/player/states/player_state.gd"
 
 func enter(_previous_state: Node, _data: Dictionary = {}) -> void:
 	var player := get_player()
-	player.reset_attack_hold()
+	player.clear_attack_buffer()
 	player.set_hitbox_enabled(false)
 	player.play_animation(&"die", true, 1.0)
 	player.apply_velocity(Vector2.ZERO)

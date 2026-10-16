@@ -16,19 +16,19 @@ func physics_update(_delta: float) -> void:
 func animation_finished() -> void:
 	transition_to_default_state()
 
-func handle_ground_actions(delta: float) -> bool:
+func handle_ground_actions() -> bool:
 	var player := get_player()
 	if player.is_input_blocked():
-		player.reset_attack_hold()
+		player.clear_attack_buffer()
 		return false
 
-	var attack_state: StringName = player.consume_attack_transition(delta)
+	var attack_state: StringName = player.consume_attack_transition()
 	if not attack_state.is_empty():
 		transition_to(attack_state)
 		return true
 
 	if player.is_jump_just_pressed():
-		player.reset_attack_hold()
+		player.clear_attack_buffer()
 		transition_to(&"jump")
 		return true
 

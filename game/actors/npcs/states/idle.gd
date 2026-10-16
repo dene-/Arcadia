@@ -17,6 +17,7 @@ func physics_update(delta: float) -> void:
 		return
 	if npc.yield_to_approaching_player(delta):
 		return
+	npc.glance_at_nearby_player()
 
 	npc.play_animation(&"idle", false, 1.0)
 	npc.apply_velocity(Vector2.ZERO)

@@ -8,7 +8,7 @@ func enter(_previous_state: Node, _data: Dictionary = {}) -> void:
 func physics_update(delta: float) -> void:
 	var player := get_player()
 	player.read_move_input()
-	if handle_ground_actions(delta):
+	if handle_ground_actions():
 		return
 	if player.has_move_input():
 		transition_to(&"walk")

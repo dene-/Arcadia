@@ -29,13 +29,14 @@ Shared actor scene contract:
 - hitbox metadata (`owner`, `damage`)
 - animation playback and sprite flipping
 - common hitbox/hurtbox signal handling
+- hit flash and `is_invulnerable()`, the shared hooks for hit feedback; a hit during invulnerability is neither consumed nor applied
 - rounded body setup, navigation registration cleanup and wall-aware single-hit melee contact
 
 `BasePlayer` owns:
 
 - player data setup
 - movement input reads
-- attack hold and charged attack behavior
+- attack press buffering (a press starts the swing at once; holding past the swing starts a charge), hurt stun, post-hit invulnerability with sprite blink, player knockback and slow out-of-combat health recovery
 - player-specific speed helpers
 - dialog lock behavior
 
@@ -109,7 +110,7 @@ Recommended path:
    - `sprite_frames`
    - movement speeds
    - attack damage
-   - charge settings
+   - charged attack damage, attack buffer, hurt stun, invulnerability, knockback and health recovery
    - combat layers
 3. Use an inherited `base_player.tscn` scene when the variant needs different child nodes or visuals.
 4. Add narrow methods to `BasePlayer` for state scripts to call.
@@ -246,7 +247,12 @@ Each `ActorAnimationClip` defines:
 - frame duration
 - source row and column range
 - whether the source art faces right
+- `up_source_row`: the sheet row seen from behind, published as `<name>_up`
 - loop setting
+
+Minifantasy and True Heroes character sheets hold four rows: two down views (the pack's left and right) and two up views. Clips read the left-facing down row and `BaseActor` mirrors it for the other side; set `up_source_row` to the matching up row and `BaseActor.facing_up` (set by `set_vertical_facing()` while moving up the screen) selects the `_up` variant, keeping the walk frame in step. True Heroes sheets list their right-facing row second, so `TownResidentArt` reads row 0 for guards.
+
+A `die` clip needs a lying pose that `NpcRemains.fallen_frame()` can find: a frame clearly wider than tall that precedes any dissolve or effect burst. Residents without attack art lean through their walk frames as `attack`.
 
 Do not add player-specific or NPC-specific SpriteFrames builder scripts unless their building logic actually differs.
 

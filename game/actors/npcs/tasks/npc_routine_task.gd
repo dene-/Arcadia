@@ -11,6 +11,9 @@ const REST: String = "rest"
 const MEAL: StringName = &"meal"
 ## Distance from the scheduled point within which a resident counts as being at the activity.
 const PRESENCE_RADIUS: float = 12.0
+## An idle step is one navigation cell and may not take longer than this many game minutes.
+const FIDGET_STEP: float = 8.0
+const FIDGET_LIMIT_MINUTES: float = 3.0
 
 # Runtime only: the activity the resident has confirmably begun at its place, else empty.
 var _engagement: StringName = &""
@@ -41,6 +44,8 @@ func _on_advance(context: NpcTaskContext, _minutes: float) -> NpcTaskResult:
 	match phase:
 		PHASE_TRAVEL:
 			return _advance_travel(context)
+		PHASE_PERFORM:
+			return _advance_perform(context)
 		PHASE_SLEEP:
 			# Someone woke the sleeper (a noise, a visitor): the rest is over and the
 			# resident replans instead of being put straight back to bed.
@@ -51,6 +56,7 @@ func _on_advance(context: NpcTaskContext, _minutes: float) -> NpcTaskResult:
 
 func _on_suspend(context: NpcTaskContext) -> void:
 	_engagement = &""
+	progress.erase("fidgeting")
 	_release_travel(context)
 
 ## The activity this task has confirmably begun (arrived and in place), else &"" while
@@ -73,6 +79,7 @@ func _on_resume(context: NpcTaskContext) -> NpcTaskResult:
 
 func _on_cancel(context: NpcTaskContext, _reason: StringName) -> void:
 	_engagement = &""
+	progress.erase("fidgeting")
 	_release_travel(context)
 
 func _interrupt_response(interrupt: Interrupt) -> Response:
@@ -159,6 +166,58 @@ func _advance_travel(context: NpcTaskContext) -> NpcTaskResult:
 	if state != &"traveling":
 		return _issue_travel(context)
 	return NpcTaskResult.running()
+
+# While performing, a resident now and then takes a one-cell step near the scheduled spot
+# instead of standing frozen for hours. The step stays inside `fidget_radius` of the spot (within
+# the presence radius), so the activity stays confirmed; any interruption releases it like travel.
+func _advance_perform(context: NpcTaskContext) -> NpcTaskResult:
+	var tuning: NpcBehaviorTuning = context.call_service(&"tuning") as NpcBehaviorTuning
+	if tuning == null or tuning.fidget_max_minutes <= 0.0 or _is_rest() \
+			or not context.has_service(&"nudge"):
+		return NpcTaskResult.running()
+	if progress.get("fidgeting") == true:
+		if context.call_service(&"travel_state", [task_id]) != &"traveling" \
+				or context.minute - float(progress.get("fidget_began", context.minute)) > FIDGET_LIMIT_MINUTES:
+			progress.erase("fidgeting")
+			_release_travel(context)
+			_schedule_fidget(context, tuning)
+		return NpcTaskResult.running()
+	if not progress.has("fidget_at"):
+		_schedule_fidget(context, tuning)
+	elif context.minute >= float(progress["fidget_at"]) \
+			and context.call_service(&"can_move") == true:
+		_start_fidget(context, tuning)
+	return NpcTaskResult.running()
+
+func _schedule_fidget(context: NpcTaskContext, tuning: NpcBehaviorTuning) -> void:
+	var random := RandomNumberGenerator.new()
+	random.seed = hash("%s:fidget-gap:%d" % [task_id, int(progress.get("fidgets", 0))])
+	progress["fidget_at"] = context.minute + random.randf_range(tuning.fidget_min_minutes,
+		maxf(tuning.fidget_min_minutes, tuning.fidget_max_minutes))
+
+# Tries the eight neighboring cells in a seeded order; the first one the town accepts is taken.
+func _start_fidget(context: NpcTaskContext, tuning: NpcBehaviorTuning) -> void:
+	var count: int = int(progress.get("fidgets", 0))
+	progress["fidgets"] = count + 1
+	var random := RandomNumberGenerator.new()
+	random.seed = hash("%s:fidget:%d" % [task_id, count])
+	var point_data: Array = params["point"]
+	var spot := Vector2(float(point_data[0]), float(point_data[1]))
+	var here_value: Variant = context.actor.get(&"global_position") if context.actor != null else null
+	if not here_value is Vector2:
+		_schedule_fidget(context, tuning)
+		return
+	var here: Vector2 = here_value
+	var offset: int = random.randi_range(0, 7)
+	for attempt: int in range(8):
+		var direction: Vector2 = Vector2.RIGHT.rotated(TAU * float((offset + attempt) % 8) / 8.0).round()
+		var target: Vector2 = here + direction * FIDGET_STEP
+		if target.distance_to(spot) <= tuning.fidget_radius \
+				and context.call_service(&"nudge", [target, task_id]) == true:
+			progress["fidgeting"] = true
+			progress["fidget_began"] = context.minute
+			return
+	_schedule_fidget(context, tuning)
 
 func _arrive(context: NpcTaskContext) -> NpcTaskResult:
 	_release_travel(context)

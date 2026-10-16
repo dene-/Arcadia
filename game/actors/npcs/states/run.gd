@@ -1,7 +1,8 @@
 extends "res://game/actors/npcs/states/npc_state.gd"
 
 func enter(_previous_state: Node, _data: Dictionary = {}) -> void:
-	get_npc().play_animation(&"run", true, 1.25)
+	var npc := get_npc()
+	npc.play_animation(&"run", true, npc.current_run_animation_scale())
 
 func physics_update(delta: float) -> void:
 	var npc := get_npc()
@@ -18,7 +19,7 @@ func physics_update(delta: float) -> void:
 		if chase_velocity == Vector2.ZERO:
 			transition_to(&"idle")
 			return
-		npc.play_animation(&"run", false, 1.25)
+		npc.play_animation(&"run", false, npc.current_run_animation_scale())
 		npc.apply_velocity(chase_velocity)
 		# Use the position we actually reached; a moving target may leave range again
 		# before the next tick, producing endless side-by-side chasing otherwise.
@@ -29,5 +30,5 @@ func physics_update(delta: float) -> void:
 	if npc.has_reached_patrol_target():
 		transition_to(&"idle")
 		return
-	npc.play_animation(&"run", false, 1.25)
+	npc.play_animation(&"run", false, npc.current_run_animation_scale())
 	npc.apply_velocity(npc.get_routine_velocity(delta, true))

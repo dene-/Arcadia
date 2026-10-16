@@ -69,6 +69,25 @@ func begin_task_travel(npc: Object, npc_id: String, space: StringName, point: Ve
 	_next_leg(npc, npc_id)
 	return true
 
+## A one-cell step near where the resident stands, as an idle gesture of the owning task. It
+## reserves no space and crosses no door, so it fails when the target cell is not walkable
+## right there; the journey then completes like any other for `task_travel_state`.
+func begin_task_nudge(npc: Object, npc_id: String, point: Vector2, owner_task_id: String) -> bool:
+	if not npc is BaseNpc or owner_task_id.is_empty() or _journeys.has(npc_id):
+		return false
+	var navigation: TownNavigation = navigation_for((npc as BaseNpc).world_space)
+	var target: Vector2 = navigation.nearest(point)
+	if target.distance_to(point) > TownNavigation.CELL_SIZE or target.distance_to(npc.global_position) < 4.0:
+		return false
+	_residents[npc_id] = weakref(npc)
+	_journeys[npc_id] = {"owner": owner_task_id, "npc": weakref(npc), "space": npc.world_space,
+		"point": target, "label": npc.daily_routine.place, "state": &"traveling"}
+	npc.daily_routine.navigation = navigation
+	npc.daily_routine.travel(npc.global_position, target, npc.daily_routine.activity,
+		npc.daily_routine.place)
+	npc.state_time_remaining = 0
+	return true
+
 func cancel_task_travel(npc_id: String, owner_task_id: String) -> bool:
 	var journey: Dictionary = _journeys.get(npc_id, {})
 	if journey.is_empty() or journey.owner != owner_task_id:

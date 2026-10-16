@@ -29,6 +29,8 @@ const DropTableResource = preload("res://game/items/drops/drop_table.gd")
 @export var hurt_knockback_speed: float = 70.0
 ## Deceleration applied to hurt knockback each physics frame.
 @export var hurt_knockback_friction: float = 360.0
+## Seconds a hit staggers this NPC; capped by the hurt animation length.
+@export_range(0.05, 0.6, 0.01) var hurt_stun_time: float = 0.4
 ## Number of blood particles emitted when this NPC is hit.
 @export_range(0, 32, 1) var blood_particle_count: int = 30
 ## Maximum starting speed for blood particles.
@@ -64,6 +66,8 @@ const DropTableResource = preload("res://game/items/drops/drop_table.gd")
 @export_range(0.0, 32.0, 1.0) var soft_collision_distance: float = 12.0
 ## Minimum seconds between attack attempts.
 @export_range(0.1, 5.0, 0.05) var attack_cooldown: float = 0.9
+## Seconds an attack winds up before its hit box turns on, giving the target time to react.
+@export_range(0.0, 0.4, 0.01) var attack_windup: float = 0.15
 ## Requires a clear raycast from the enemy to the target before detection.
 @export var require_line_of_sight: bool = true
 ## Physics mask used by the detection raycast.

@@ -3,98 +3,22 @@
 [ext_resource type="Theme" uid="uid://cl6x7v62ql3jl" path="res://assets/art/ui/theme.tres" id="1_ic0uy"]
 [ext_resource type="Script" uid="uid://c5yc5m58walme" path="res://game/world/region/rekala_region.gd" id="1_x6m2n"]
 [ext_resource type="PackedScene" uid="uid://c22fi8t3oskwr" path="res://game/actors/player/base_player.tscn" id="2_5m4im"]
-[ext_resource type="Script" uid="uid://4wcs5pgu73j1" path="res://game/actors/base/actor_animation_clip.gd" id="4_dwbse"]
 [ext_resource type="Texture2D" uid="uid://bie5326q6uwyg" path="res://assets/art/ui/Classic_UI_Only.png" id="4_k3n1d"]
-[ext_resource type="Script" uid="uid://bqvotcuqn5s4c" path="res://game/actors/base/actor_sprite_frames.gd" id="5_pkg7o"]
 [ext_resource type="Script" uid="uid://bretixo0k4ska" path="res://game/resources/actors/player_data.gd" id="6_player_data_script"]
 [ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="7_70uel"]
 [ext_resource type="Script" uid="uid://cvykkaxthv2io" path="res://game/world/interaction/interaction_prompt.gd" id="9_prompt"]
 [ext_resource type="PackedScene" uid="uid://bjv1831fl1by8" path="res://game/ui/inventory/inventory_panel.tscn" id="19_inventory"]
 [ext_resource type="Resource" uid="uid://c8jt4q02ed31b" path="res://game/items/inventory/player_inventory.tres" id="20_player_inventory"]
 [ext_resource type="Script" uid="uid://cv82xrxas6nla" path="res://game/ui/hud/player_health_bar.gd" id="21_player_health_bar"]
-
-[sub_resource type="Resource" id="Resource_gbfbk"]
-script = ExtResource("4_dwbse")
-animation_name = &"idle"
-sprite_path = "uid://bigpgvogswuk1"
-source_row = 1
-
-[sub_resource type="Resource" id="Resource_ioo17"]
-script = ExtResource("4_dwbse")
-animation_name = &"walk"
-sprite_path = "res://assets/art/characters/player/HumanWalk.png"
-source_row = 1
-
-[sub_resource type="Resource" id="Resource_wse8f"]
-script = ExtResource("4_dwbse")
-animation_name = &"attack"
-sprite_path = "res://assets/art/characters/player/HumanAttack.png"
-frame_duration = 0.1
-source_row = 1
-loop = false
-
-[sub_resource type="Resource" id="Resource_ic0uy"]
-script = ExtResource("4_dwbse")
-animation_name = &"charge_build"
-sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
-frame_duration = 0.1
-end_column = 5
-source_faces_right = true
-loop = false
-
-[sub_resource type="Resource" id="Resource_k3n1d"]
-script = ExtResource("4_dwbse")
-animation_name = &"charge_loop"
-sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
-frame_duration = 0.1
-source_row = 1
-end_column = 5
-source_faces_right = true
-
-[sub_resource type="Resource" id="Resource_2o6r5"]
-script = ExtResource("4_dwbse")
-animation_name = &"charge_attack"
-sprite_path = "res://assets/art/characters/player/HumanChargedAttack.png"
-frame_duration = 0.1
-source_row = 2
-end_column = 5
-source_faces_right = true
-loop = false
-
-[sub_resource type="Resource" id="Resource_70uel"]
-script = ExtResource("4_dwbse")
-animation_name = &"jump"
-sprite_path = "res://assets/art/characters/player/HumanJump.png"
-frame_duration = 0.1
-source_row = 1
-loop = false
-
-[sub_resource type="Resource" id="Resource_hiqwa"]
-script = ExtResource("4_dwbse")
-animation_name = &"hurt"
-sprite_path = "res://assets/art/characters/player/HumanDmg.png"
-frame_duration = 0.1
-source_row = 1
-loop = false
-
-[sub_resource type="Resource" id="Resource_2u3nc"]
-script = ExtResource("4_dwbse")
-animation_name = &"die"
-sprite_path = "res://assets/art/characters/player/HumanSpinDie.png"
-frame_duration = 0.1
-loop = false
-
-[sub_resource type="SpriteFrames" id="SpriteFrames_udxuc"]
-script = ExtResource("5_pkg7o")
-clips = Array[ExtResource("4_dwbse")]([SubResource("Resource_gbfbk"), SubResource("Resource_ioo17"), SubResource("Resource_wse8f"), SubResource("Resource_ic0uy"), SubResource("Resource_k3n1d"), SubResource("Resource_2o6r5"), SubResource("Resource_70uel"), SubResource("Resource_hiqwa"), SubResource("Resource_2u3nc")])
+[ext_resource type="SpriteFrames" uid="uid://bmsvbdbr8k7mm" path="res://game/resources/animation/player_sprite_frames.tres" id="22_player_frames"]
 
 [sub_resource type="Resource" id="Resource_player_data"]
 script = ExtResource("6_player_data_script")
-move_speed = 32.0
+move_speed = 40.0
 max_health = 15
 attack_damage = 2
 combat_layers = ExtResource("7_70uel")
-sprite_frames = SubResource("SpriteFrames_udxuc")
+sprite_frames = ExtResource("22_player_frames")
 
 [node name="World" type="Node2D" unique_id=230418951]
 y_sort_enabled = true

@@ -74,6 +74,10 @@ func complete_meal(source: NpcBehaviorTuning) -> void:
 func complete_exchange(source: NpcBehaviorTuning) -> void:
 	_set_need("social", _need("social") - source.exchange_social_relief)
 
+## A wordless greeting (no provider answered) eases social need by a smaller amount.
+func complete_greeting(source: NpcBehaviorTuning) -> void:
+	_set_need("social", _need("social") - source.greeting_social_relief)
+
 ## Records the emotional impulse of one cause (the incident, else the evidence). Reappraising
 ## the same cause may raise its intensity to the larger judgment but never adds a second impulse
 ## or restarts its decay. Returns true when the record changed.

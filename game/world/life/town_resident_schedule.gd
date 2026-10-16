@@ -29,15 +29,17 @@ static func generate(population: TownPopulation, id: String, seed_value: int,
 	var person: Dictionary = population.people[id]
 	var plan: Array[Dictionary] = NpcRoutinePlan.generate(seed_value, id, day, places)
 	var random := NpcRoutinePlan.random_for(seed_value, "%s:family-day:%d" % [person.household, day])
+	var personal := NpcRoutinePlan.random_for(seed_value, "%s:fixed-times:%d" % [id, day])
 	# Shared meal times provide recurring opportunities to meet relatives at home.
 	plan[1] = {"minute": 400 + random.randi_range(-15, 15), "kind": "meal", "place": "home:" + id}
-	plan[2].minute = 460
+	# Fixed obligations still start a few minutes apart, so no one leaves the door in lockstep.
+	plan[2].minute = 460 + personal.randi_range(-12, 14)
 	plan[6] = {"minute": 1130 + random.randi_range(-15, 15), "kind": "meal", "place": "home:" + id}
 	if person.age < 16:
-		plan[2] = {"minute": 480, "kind": "school", "place": "school"}
-		plan[4] = {"minute": 800, "kind": "play", "place": "playground"}
-		plan[5] = {"minute": 1000, "kind": "play", "place": "playground"}
-		plan[7].minute = 1200
+		plan[2] = {"minute": 480 + personal.randi_range(-6, 6), "kind": "school", "place": "school"}
+		plan[4] = {"minute": 800 + personal.randi_range(-10, 10), "kind": "play", "place": "playground"}
+		plan[5] = {"minute": 1000 + personal.randi_range(-10, 10), "kind": "play", "place": "playground"}
+		plan[7].minute = 1200 + personal.randi_range(-12, 12)
 	elif String(person.job).begins_with("retired"):
 		plan[2].kind = "walk"
 		plan[2].place = "garden"
