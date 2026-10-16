@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="NpcKnowledgePack" format=3]
+[gd_resource type="Resource" script_class="NpcKnowledgePack" format=3 uid="uid://clw0y8w2ybmi8"]
 
-[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="1"]
+[ext_resource type="Script" uid="uid://wfdi2v0k72n6" path="res://game/resources/actors/npc_knowledge_pack.gd" id="1"]
 
 [resource]
 script = ExtResource("1")

@@ -1,27 +1,26 @@
 [gd_scene format=3 uid="uid://cwjssf5bv462f"]
 
-[ext_resource type="Script" path="res://game/actors/npcs/base_npc.gd" id="1_npc"]
-[ext_resource type="Resource" path="res://game/resources/actors/humans/blacksmith_npc_data.tres" id="2_npc_data"]
-[ext_resource type="Script" path="res://game/actors/states/state_machine.gd" id="3_machine"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/idle.gd" id="4_idle"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/walk.gd" id="5_walk"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/run.gd" id="6_run"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/attack.gd" id="7_attack"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/hurt.gd" id="8_hurt"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/dead.gd" id="9_dead"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/interaction.gd" id="10_interaction"]
-[ext_resource type="Script" path="res://game/ui/hud/enemy_health_bar.gd" id="11_health_bar"]
+[ext_resource type="Script" uid="uid://d0k8idv06yrut" path="res://game/actors/npcs/base_npc.gd" id="1_npc"]
+[ext_resource type="Resource" uid="uid://c7ef8xm126cr3" path="res://game/resources/actors/humans/blacksmith_npc_data.tres" id="2_npc_data"]
+[ext_resource type="Script" uid="uid://busdnmi7m5vyx" path="res://game/actors/states/state_machine.gd" id="3_machine"]
+[ext_resource type="Script" uid="uid://cte1w0ypi113u" path="res://game/actors/npcs/states/idle.gd" id="4_idle"]
+[ext_resource type="Script" uid="uid://bch4n28j5rfur" path="res://game/actors/npcs/states/walk.gd" id="5_walk"]
+[ext_resource type="Script" uid="uid://bbk307xuy4ob1" path="res://game/actors/npcs/states/run.gd" id="6_run"]
+[ext_resource type="Script" uid="uid://d1dywuavhdsiq" path="res://game/actors/npcs/states/attack.gd" id="7_attack"]
+[ext_resource type="Script" uid="uid://dp3iq413brl5t" path="res://game/actors/npcs/states/hurt.gd" id="8_hurt"]
+[ext_resource type="Script" uid="uid://cvtyw82gb12b0" path="res://game/actors/npcs/states/dead.gd" id="9_dead"]
+[ext_resource type="Script" uid="uid://hexsv4q15l45" path="res://game/actors/npcs/states/interaction.gd" id="10_interaction"]
+[ext_resource type="Script" uid="uid://dmcl570ikc1ra" path="res://game/ui/hud/enemy_health_bar.gd" id="11_health_bar"]
 [ext_resource type="PackedScene" path="res://game/ui/dialog/npc_reaction_bubble.tscn" id="reaction_bubble"]
-[ext_resource type="Script" path="res://game/actors/npcs/states/sleep.gd" id="sleep_state"]
-[ext_resource type="Theme" path="res://assets/art/ui/theme.tres" id="ui_theme"]
+[ext_resource type="Script" uid="uid://rovgyew2xgcp" path="res://game/actors/npcs/states/sleep.gd" id="sleep_state"]
+[ext_resource type="Theme" uid="uid://cl6x7v62ql3jl" path="res://assets/art/ui/theme.tres" id="ui_theme"]
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_empty"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
-size = Vector2(10, 8)
+size = Vector2(6, 6)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_interaction"]
-size = Vector2(20, 12)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
 size = Vector2(10, 8)
@@ -30,7 +29,6 @@ size = Vector2(10, 8)
 size = Vector2(12, 10)
 
 [sub_resource type="Gradient" id="Gradient_blood_particles"]
-offsets = PackedFloat32Array(0, 1)
 colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_blood_particles"]
@@ -46,24 +44,22 @@ npc_data = ExtResource("2_npc_data")
 texture_filter = 1
 sprite_frames = SubResource("SpriteFrames_empty")
 
-[node name="ReactionBubble" parent="." instance=ExtResource("reaction_bubble")]
+[node name="ReactionBubble" parent="." unique_id=2030447870 instance=ExtResource("reaction_bubble")]
 
-[node name="SleepIndicator" type="Label" parent="."]
+[node name="SleepIndicator" type="Label" parent="." unique_id=1874376318]
 visible = false
+z_index = 20
 offset_left = -3.0
 offset_top = -36.0
 offset_right = 8.0
 offset_bottom = -20.0
-mouse_filter = 2
 theme = ExtResource("ui_theme")
 theme_override_colors/font_color = Color(0.9, 0.94, 1, 1)
 theme_override_colors/font_outline_color = Color(0.08, 0.07, 0.06, 1)
 theme_override_constants/outline_size = 1
 text = "Zz"
-z_index = 20
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=442629538]
-position = Vector2(0, -1)
 shape = SubResource("RectangleShape2D_body")
 
 [node name="InteractionArea" type="Area2D" parent="." unique_id=1027827382]
@@ -95,25 +91,20 @@ debug_color = Color(0.94971234, 0.10084366, 0.50664335, 0.41960785)
 [node name="BloodParticles" type="CPUParticles2D" parent="." unique_id=667432194]
 z_index = 5
 emitting = false
-amount = 8
+texture = SubResource("GradientTexture1D_blood_particles")
 lifetime = 0.35
 one_shot = true
 explosiveness = 1.0
-local_coords = false
-direction = Vector2(1, 0)
+draw_order = 1
 spread = 30.0
 gravity = Vector2(0, 60)
 initial_velocity_min = 46.8
 initial_velocity_max = 72.0
-scale_amount_min = 1.0
-scale_amount_max = 1.0
 color = Color(0.76, 0.08, 0.08, 0.95)
-draw_order = 1
-texture = SubResource("GradientTexture1D_blood_particles")
 
 [node name="HealthBar" type="Node2D" parent="." unique_id=1733552231]
-position = Vector2(0, -12)
 z_index = 6
+position = Vector2(0, -12)
 script = ExtResource("11_health_bar")
 
 [node name="Background" type="ColorRect" parent="HealthBar" unique_id=1368892314]
@@ -153,5 +144,5 @@ script = ExtResource("9_dead")
 [node name="Interaction" type="Node" parent="StateMachine" unique_id=121794205]
 script = ExtResource("10_interaction")
 
-[node name="Sleep" type="Node" parent="StateMachine"]
+[node name="Sleep" type="Node" parent="StateMachine" unique_id=1326219108]
 script = ExtResource("sleep_state")

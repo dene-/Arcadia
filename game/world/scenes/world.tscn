@@ -1,17 +1,17 @@
-[gd_scene format=4 uid="uid://0jpkdben81jh"]
+[gd_scene format=3 uid="uid://0jpkdben81jh"]
 
-[ext_resource type="Theme" path="res://assets/art/ui/theme.tres" id="1_ic0uy"]
-[ext_resource type="Script" path="res://game/world/region/rekala_region.gd" id="1_x6m2n"]
-[ext_resource type="PackedScene" path="res://game/actors/player/base_player.tscn" id="2_5m4im"]
-[ext_resource type="Script" path="res://game/actors/base/actor_animation_clip.gd" id="4_dwbse"]
-[ext_resource type="Texture2D" path="res://assets/art/ui/Classic_UI_Only.png" id="4_k3n1d"]
-[ext_resource type="Script" path="res://game/actors/base/actor_sprite_frames.gd" id="5_pkg7o"]
-[ext_resource type="Script" path="res://game/resources/actors/player_data.gd" id="6_player_data_script"]
+[ext_resource type="Theme" uid="uid://cl6x7v62ql3jl" path="res://assets/art/ui/theme.tres" id="1_ic0uy"]
+[ext_resource type="Script" uid="uid://c5yc5m58walme" path="res://game/world/region/rekala_region.gd" id="1_x6m2n"]
+[ext_resource type="PackedScene" uid="uid://c22fi8t3oskwr" path="res://game/actors/player/base_player.tscn" id="2_5m4im"]
+[ext_resource type="Script" uid="uid://4wcs5pgu73j1" path="res://game/actors/base/actor_animation_clip.gd" id="4_dwbse"]
+[ext_resource type="Texture2D" uid="uid://bie5326q6uwyg" path="res://assets/art/ui/Classic_UI_Only.png" id="4_k3n1d"]
+[ext_resource type="Script" uid="uid://bqvotcuqn5s4c" path="res://game/actors/base/actor_sprite_frames.gd" id="5_pkg7o"]
+[ext_resource type="Script" uid="uid://bretixo0k4ska" path="res://game/resources/actors/player_data.gd" id="6_player_data_script"]
 [ext_resource type="Resource" path="res://game/resources/combat/combat_layers_default.tres" id="7_70uel"]
-[ext_resource type="Script" path="res://game/world/interaction/interaction_prompt.gd" id="9_prompt"]
-[ext_resource type="PackedScene" path="res://game/ui/inventory/inventory_panel.tscn" id="19_inventory"]
-[ext_resource type="Resource" path="res://game/items/inventory/player_inventory.tres" id="20_player_inventory"]
-[ext_resource type="Script" path="res://game/ui/hud/player_health_bar.gd" id="21_player_health_bar"]
+[ext_resource type="Script" uid="uid://cvykkaxthv2io" path="res://game/world/interaction/interaction_prompt.gd" id="9_prompt"]
+[ext_resource type="PackedScene" uid="uid://bjv1831fl1by8" path="res://game/ui/inventory/inventory_panel.tscn" id="19_inventory"]
+[ext_resource type="Resource" uid="uid://c8jt4q02ed31b" path="res://game/items/inventory/player_inventory.tres" id="20_player_inventory"]
+[ext_resource type="Script" uid="uid://cv82xrxas6nla" path="res://game/ui/hud/player_health_bar.gd" id="21_player_health_bar"]
 
 [sub_resource type="Resource" id="Resource_gbfbk"]
 script = ExtResource("4_dwbse")
@@ -153,19 +153,17 @@ theme_override_constants/margin_bottom = 6
 [node name="DialogText" type="RichTextLabel" parent="UI/Container/VBoxContainer/DialogPanel/DialogContainer" unique_id=1416040456]
 layout_mode = 2
 text = "Lorem ipsum dolor sit amet, consectetu'\"!-_r adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. U"
-autowrap_mode = 3
-visible_characters_behavior = 1
 scroll_active = false
 tab_size = 2
+visible_characters_behavior = 1
 
-[node name="SpeakerName" type="Label" parent="UI/Container/VBoxContainer/DialogPanel"]
+[node name="SpeakerName" type="Label" parent="UI/Container/VBoxContainer/DialogPanel" unique_id=84684256]
+layout_mode = 0
 offset_left = 8.0
 offset_top = 3.0
 offset_right = 218.0
 offset_bottom = 17.0
-mouse_filter = 2
 theme_override_colors/font_color = Color(0.28, 0.12, 0.06, 1)
-text = ""
 
 [node name="NextPageIndicator" type="NinePatchRect" parent="UI/Container/VBoxContainer/DialogPanel" unique_id=817155606]
 layout_mode = 1
@@ -178,7 +176,6 @@ offset_left = -6.0
 offset_top = -3.0
 grow_horizontal = 0
 grow_vertical = 0
-mouse_filter = 2
 texture = ExtResource("4_k3n1d")
 region_rect = Rect2(1813, 95, 6, 3)
 
@@ -213,7 +210,7 @@ player_path = NodePath("../BasePlayer")
 
 [node name="PromptLabel" type="Label" parent="InteractionPrompt" unique_id=1185956358]
 visible = false
-anchors_preset = 12
+anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
@@ -225,9 +222,8 @@ offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
 theme = ExtResource("1_ic0uy")
-mouse_filter = 2
-horizontal_alignment = 1
 theme_type_variation = &"InteractionPrompt"
+horizontal_alignment = 1
 autowrap_mode = 3
 
 [node name="InventoryPanel" parent="." unique_id=707344228 instance=ExtResource("19_inventory")]

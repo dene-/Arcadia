@@ -17,6 +17,15 @@ texture_margin_right = 3.0
 texture_margin_bottom = 3.0
 region_rect = Rect2(353, 497, 46, 46)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_focus"]
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.16, 0.06, 1)
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_button_hover"]
 content_margin_left = 6.0
 content_margin_top = 4.0
@@ -63,10 +72,6 @@ atlas = ExtResource("5_icons")
 region = Rect2(328, 64, 8, 8)
 margin = Rect2(1, 1, 2, 2)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_checkbox_unchecked"]
-atlas = ExtResource("4_selectors")
-region = Rect2(83, 19, 10, 10)
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_checkbox_indeterminate"]
 atlas = ExtResource("5_icons")
 region = Rect2(32, 80, 8, 8)
@@ -76,6 +81,10 @@ margin = Rect2(1, 1, 2, 2)
 atlas = ExtResource("5_icons")
 region = Rect2(216, 80, 8, 8)
 margin = Rect2(1, 1, 2, 2)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_checkbox_unchecked"]
+atlas = ExtResource("4_selectors")
+region = Rect2(83, 19, 10, 10)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_checkbutton_checked"]
 atlas = ExtResource("5_icons")
@@ -109,9 +118,39 @@ texture_margin_left = 2.0
 texture_margin_top = 2.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
-region_rect = Rect2(340, 709, 40, 6)
 expand_margin_top = -2.0
 expand_margin_bottom = -2.0
+region_rect = Rect2(340, 709, 40, 6)
+
+[sub_resource type="ImageTexture" id="ImageTexture_empty"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_grabber"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.75, 0.52, 0.27, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_hover"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.95, 0.76, 0.44, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_pressed"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.6, 0.37, 0.18, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_track"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0.35, 0.16, 0.06, 1)
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_separator_h"]
 texture = ExtResource("1_ui")
@@ -129,6 +168,25 @@ region = Rect2(498, 435, 12, 9)
 atlas = ExtResource("1_ui")
 region = Rect2(498, 435, 12, 9)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_slot"]
+bg_color = Color(0.65, 0.43, 0.23, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.47, 0.29, 0.14, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hover"]
+bg_color = Color(1, 0.89, 0.59, 0.2)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_slot_selected"]
+draw_center = false
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.89, 0.59, 1)
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_panel_secondary"]
 content_margin_left = 6.0
 content_margin_top = 4.0
@@ -140,6 +198,9 @@ texture_margin_top = 3.0
 texture_margin_right = 3.0
 texture_margin_bottom = 3.0
 region_rect = Rect2(129, 627, 46, 10)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_selection"]
+bg_color = Color(0.75, 0.52, 0.27, 1)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_option_arrow"]
 atlas = ExtResource("5_icons")
@@ -204,6 +265,10 @@ region = Rect2(80, 64, 8, 8)
 atlas = ExtResource("5_icons")
 region = Rect2(16, 64, 8, 8)
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_grabber_v"]
+atlas = ExtResource("1_ui")
+region = Rect2(420, 418, 9, 12)
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_bar_v"]
 texture = ExtResource("1_ui")
 texture_margin_left = 1.0
@@ -232,74 +297,9 @@ texture_margin_right = 1.0
 texture_margin_bottom = 1.0
 region_rect = Rect2(455, 423, 3, 34)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_grabber_v"]
-atlas = ExtResource("1_ui")
-region = Rect2(420, 418, 9, 12)
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_grabber_v_highlight"]
 atlas = ExtResource("1_ui")
 region = Rect2(420, 418, 9, 12)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_focus"]
-bg_color = Color(0, 0, 0, 0)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.35, 0.16, 0.06, 1)
-draw_center = false
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_slot"]
-bg_color = Color(0.65, 0.43, 0.23, 1)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.47, 0.29, 0.14, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_slot_selected"]
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(1, 0.89, 0.59, 1)
-draw_center = false
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hover"]
-bg_color = Color(1, 0.89, 0.59, 0.2)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_selection"]
-bg_color = Color(0.75, 0.52, 0.27, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_track"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.35, 0.16, 0.06, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_grabber"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.75, 0.52, 0.27, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_hover"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.95, 0.76, 0.44, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_scroll_pressed"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-bg_color = Color(0.6, 0.37, 0.18, 1)
-
-[sub_resource type="ImageTexture" id="ImageTexture_empty"]
 
 [resource]
 default_base_scale = 1.0
@@ -380,10 +380,10 @@ ItemList/colors/font_color = Color(0.2, 0.121569, 0.0588235, 1)
 ItemList/colors/font_hovered_color = Color(0.2, 0.121569, 0.0588235, 1)
 ItemList/colors/font_selected_color = Color(0.145098, 0.0901961, 0.0470588, 1)
 ItemList/fonts/font = ExtResource("1_7h6bm")
-ItemList/styles/panel = SubResource("StyleBoxTexture_panel_secondary")
 ItemList/styles/cursor = SubResource("StyleBoxFlat_focus")
 ItemList/styles/cursor_unfocused = SubResource("StyleBoxFlat_focus")
 ItemList/styles/hovered = SubResource("StyleBoxFlat_hover")
+ItemList/styles/panel = SubResource("StyleBoxTexture_panel_secondary")
 ItemList/styles/selected = SubResource("StyleBoxFlat_selection")
 ItemList/styles/selected_focus = SubResource("StyleBoxFlat_selection")
 Label/colors/font_color = Color(0, 0, 0, 1)
@@ -412,17 +412,17 @@ OptionButton/fonts/font = ExtResource("1_7h6bm")
 OptionButton/icons/arrow = SubResource("AtlasTexture_option_arrow")
 Panel/styles/panel = SubResource("StyleBoxTexture_panel")
 PanelContainer/styles/panel = SubResource("StyleBoxTexture_panel")
-PopupPanel/styles/panel = SubResource("StyleBoxTexture_popup")
+PopupMenu/colors/font_accelerator_color = Color(0.46, 0.33, 0.21, 1)
 PopupMenu/colors/font_color = Color(0.2, 0.121569, 0.0588235, 1)
 PopupMenu/colors/font_disabled_color = Color(0.46, 0.33, 0.21, 1)
 PopupMenu/colors/font_hover_color = Color(0.145098, 0.0901961, 0.0470588, 1)
-PopupMenu/colors/font_accelerator_color = Color(0.46, 0.33, 0.21, 1)
 PopupMenu/colors/font_separator_color = Color(0.2, 0.121569, 0.0588235, 1)
 PopupMenu/constants/h_separation = 4
 PopupMenu/constants/v_separation = 4
-PopupMenu/styles/panel = SubResource("StyleBoxTexture_popup")
 PopupMenu/styles/hover = SubResource("StyleBoxFlat_hover")
+PopupMenu/styles/panel = SubResource("StyleBoxTexture_popup")
 PopupMenu/styles/separator = SubResource("StyleBoxTexture_separator_h")
+PopupPanel/styles/panel = SubResource("StyleBoxTexture_popup")
 ProgressBar/colors/font_color = Color(0.2, 0.121569, 0.0588235, 1)
 ProgressBar/fonts/font = ExtResource("1_7h6bm")
 ProgressBar/styles/background = SubResource("StyleBoxTexture_bar_h")
@@ -476,15 +476,15 @@ Tree/icons/select_arrow = SubResource("AtlasTexture_tree_select_arrow")
 Tree/icons/unchecked = SubResource("AtlasTexture_checkbox_unchecked")
 Tree/icons/unchecked_disabled = SubResource("AtlasTexture_checkbox_unchecked")
 Tree/icons/updown = SubResource("AtlasTexture_grabber_v")
-Tree/styles/focus = SubResource("StyleBoxFlat_focus")
+Tree/styles/button_hover = SubResource("StyleBoxTexture_button_hover")
+Tree/styles/button_pressed = SubResource("StyleBoxTexture_button_pressed")
 Tree/styles/cursor = SubResource("StyleBoxFlat_focus")
 Tree/styles/cursor_unfocused = SubResource("StyleBoxFlat_focus")
+Tree/styles/focus = SubResource("StyleBoxFlat_focus")
 Tree/styles/hovered = SubResource("StyleBoxFlat_hover")
 Tree/styles/hovered_dimmed = SubResource("StyleBoxFlat_hover")
 Tree/styles/hovered_selected = SubResource("StyleBoxFlat_selection")
 Tree/styles/hovered_selected_focus = SubResource("StyleBoxFlat_selection")
-Tree/styles/button_hover = SubResource("StyleBoxTexture_button_hover")
-Tree/styles/button_pressed = SubResource("StyleBoxTexture_button_pressed")
 Tree/styles/panel = SubResource("StyleBoxTexture_panel_secondary")
 Tree/styles/selected = SubResource("StyleBoxFlat_selection")
 Tree/styles/selected_focus = SubResource("StyleBoxFlat_selection")

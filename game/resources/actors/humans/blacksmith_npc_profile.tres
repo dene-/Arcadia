@@ -1,24 +1,16 @@
 [gd_resource type="Resource" script_class="NpcProfile" format=3 uid="uid://dvu24sg5w6ufb"]
 
 [ext_resource type="Script" uid="uid://pk0koejqodv8" path="res://game/resources/actors/npc_profile.gd" id="1_profile_script"]
-
-[ext_resource type="Script" path="res://game/resources/actors/npc_cognition_profile.gd" id="cognition_script"]
-[ext_resource type="Script" path="res://game/resources/actors/npc_knowledge_pack.gd" id="knowledge_script"]
-[ext_resource type="Resource" path="res://game/resources/actors/knowledge/rekala_common.tres" id="town"]
-[ext_resource type="Script" path="res://game/resources/actors/npc_core_memory.gd" id="memory_script"]
+[ext_resource type="Script" uid="uid://dhqi022dojxom" path="res://game/resources/actors/npc_cognition_profile.gd" id="cognition_script"]
+[ext_resource type="Script" uid="uid://wfdi2v0k72n6" path="res://game/resources/actors/npc_knowledge_pack.gd" id="knowledge_script"]
+[ext_resource type="Script" uid="uid://d4m15bvcbcfnk" path="res://game/resources/actors/npc_core_memory.gd" id="memory_script"]
+[ext_resource type="Resource" uid="uid://clw0y8w2ybmi8" path="res://game/resources/actors/knowledge/rekala_common.tres" id="town"]
 
 [sub_resource type="Resource" id="Cognition"]
 script = ExtResource("cognition_script")
 factual_recall = 0.75
 social_recall = 0.5
 name_recall = 0.45
-
-[sub_resource type="Resource" id="TradeKnowledge"]
-script = ExtResource("knowledge_script")
-knowledge_id = &"blacksmith"
-title = "Blacksmith expertise"
-knowledge = "Ironworking, tool repair, horseshoes and assessing damaged metalwork."
-limitations = "Court politics, formal magical theory and distant events."
 
 [sub_resource type="Resource" id="CoreMemory"]
 script = ExtResource("memory_script")
@@ -28,10 +20,13 @@ age_turns = 500
 importance = 0.8
 emotional_intensity = 0.7
 vividness = 0.8
-topics = PackedStringArray("blacksmithing", "childhood", "learning")
-sensory_cues = PackedStringArray("ringing hammer", "sparks")
-important_details = PackedStringArray("The hammer felt enormous.", "Sparks landed on his sleeve.")
-known_gaps = PackedStringArray("The object they made.", "The exact words spoken.")
+
+[sub_resource type="Resource" id="TradeKnowledge"]
+script = ExtResource("knowledge_script")
+knowledge_id = &"blacksmith"
+title = "Blacksmith expertise"
+knowledge = "Ironworking, tool repair, horseshoes and assessing damaged metalwork."
+limitations = "Court politics, formal magical theory and distant events."
 
 [resource]
 script = ExtResource("1_profile_script")
