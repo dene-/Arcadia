@@ -7,23 +7,74 @@ extends RefCounted
 ## Coordinates are 8-pixel terrain cells. Town and landmarks are authored and stable.
 const BOUNDS := Rect2i(-152, -120, 304, 240)
 const TOWN := Rect2i(-48, -36, 106, 88)
-const PLAYER_SPAWN := Vector2(-112, 48)
+const PLAYER_SPAWN := Vector2(-112, 24)
 const RIVER_LEFT: int = 61
 const BRIDGES: Array[int] = [-68, 4, 76]
+## Every town building is placed by hand around the winding streets below. `cell` is the
+## door: the walls stand on the six rows above it and the dooryard on the four below.
+## `extra` widens the cottage by that many 8 px columns.
 const HOMES: Array[Dictionary] = [
-	{"job": "alchemist", "cell": Vector2i(-19, -15)},
-	{"job": "jeweller", "cell": Vector2i(9, -15)},
-	{"job": "tailor", "cell": Vector2i(19, -15)},
-	{"job": "blacksmith", "cell": Vector2i(-21, 1)},
-	{"job": "cooker", "cell": Vector2i(21, 1)},
-	{"job": "carpenter", "cell": Vector2i(-20, 18)},
-	{"job": "dyer", "cell": Vector2i(9, 19)},
-	{"job": "butcher", "cell": Vector2i(20, 18)},
-	{"job": "furrier", "cell": Vector2i(42, -12)},
-	{"job": "voss_house", "cell": Vector2i(-40, -14)},
-	{"job": "watch_house", "cell": Vector2i(-40, 22)},
-	{"job": "rowan_farm", "cell": Vector2i(21, 37)},
+	{"job": "alchemist", "cell": Vector2i(-14, -1), "extra": 2},
+	{"job": "jeweller", "cell": Vector2i(-6, -4), "extra": 0},
+	{"job": "tailor", "cell": Vector2i(-25, -1), "extra": 2},
+	{"job": "blacksmith", "cell": Vector2i(-31, -17), "extra": 2},
+	{"job": "cooker", "cell": Vector2i(10, -4), "extra": 6},
+	{"job": "carpenter", "cell": Vector2i(12, -15), "extra": 2},
+	{"job": "dyer", "cell": Vector2i(30, -1), "extra": 0},
+	{"job": "butcher", "cell": Vector2i(21, -2), "extra": 0},
+	{"job": "furrier", "cell": Vector2i(24, -16), "extra": 0},
+	{"job": "voss_house", "cell": Vector2i(-16, -18), "extra": 2},
+	{"job": "watch_house", "cell": Vector2i(-40, 0), "extra": 2},
+	{"job": "rowan_farm", "cell": Vector2i(26, 25), "extra": 4},
 ]
+## Public buildings with an enterable interior but no household, placed like homes.
+const PUBLIC_BUILDINGS: Array[Dictionary] = [
+	{"id": "school", "cell": Vector2i(-11, 19), "label": "the schoolhouse", "extra": 4},
+]
+## Houses seen from behind, barns and stores: solid walls without a door, so they need no
+## interior. They fill the spaces between the yards the way old towns grew.
+const OUTBUILDINGS: Array[Dictionary] = [
+	{"cell": Vector2i(-17, 12), "extra": 0},
+	{"cell": Vector2i(32, 12), "extra": 2},
+	{"cell": Vector2i(8, 30), "extra": 0},
+	{"cell": Vector2i(-6, 40), "extra": 2},
+	{"cell": Vector2i(41, 31), "extra": 2},
+]
+## Old towns grew along their tracks: the high street bends through the market place,
+## and back lanes wander between the yards. Points are cells; radius 2 for the through
+## roads, 1 for lanes. The through roads outside the fence are generated separately.
+const TOWN_STREETS: Array[Dictionary] = [
+	{"radius": 2, "points": [Vector2i(-48, 4), Vector2i(-38, 3), Vector2i(-28, 4),
+		Vector2i(-19, 2), Vector2i(-11, 3)]},
+	{"radius": 2, "points": [Vector2i(8, 2), Vector2i(17, 0), Vector2i(26, 1), Vector2i(35, 3),
+		Vector2i(46, 4), Vector2i(57, 4)]},
+	{"radius": 2, "points": [Vector2i(-1, -3), Vector2i(1, -11), Vector2i(-1, -19),
+		Vector2i(-3, -27), Vector2i(0, -36)]},
+	{"radius": 2, "points": [Vector2i(-2, 9), Vector2i(-4, 16), Vector2i(-2, 24), Vector2i(2, 31),
+		Vector2i(3, 40), Vector2i(1, 46), Vector2i(0, 51)]},
+	{"radius": 1, "points": [Vector2i(-1, -19), Vector2i(-10, -18), Vector2i(-19, -15),
+		Vector2i(-28, -16), Vector2i(-36, -13), Vector2i(-34, -5), Vector2i(-33, 2)]},
+	{"radius": 1, "points": [Vector2i(1, -12), Vector2i(8, -13), Vector2i(18, -14),
+		Vector2i(27, -13), Vector2i(34, -9), Vector2i(42, -6), Vector2i(46, -1), Vector2i(46, 3)]},
+	{"radius": 1, "points": [Vector2i(-22, 3), Vector2i(-25, 10), Vector2i(-23, 17),
+		Vector2i(-15, 21), Vector2i(-6, 21), Vector2i(-3, 20)]},
+	{"radius": 1, "points": [Vector2i(4, 6), Vector2i(7, 10), Vector2i(10, 15), Vector2i(13, 22),
+		Vector2i(16, 27), Vector2i(24, 28), Vector2i(32, 28)]},
+	{"radius": 1, "points": [Vector2i(-15, 45), Vector2i(-8, 43), Vector2i(2, 42)]},
+]
+## The irregular cobbled market place, as overlapping discs: Vector3i(x, y, radius).
+const PLAZA: Array[Vector3i] = [Vector3i(-4, 3, 6), Vector3i(3, 2, 5), Vector3i(-1, 8, 3)]
+## Outdoor gathering points for town life, in pixels.
+const TOWN_PLACES: Dictionary[String, Vector2] = {
+	"square": Vector2(16, 48),
+	"market": Vector2(-40, 56),
+	"garden": Vector2(320, 104),
+	"playground": Vector2(-80, 216),
+	"patrol_west": Vector2(-320, 32),
+	"patrol_north": Vector2(-16, -232),
+	"patrol_east": Vector2(392, 32),
+	"patrol_south": Vector2(8, 304),
+}
 const CAMPS: Array[Vector2i] = [Vector2i(-110, -70), Vector2i(-70, -45),
 	Vector2i(-100, 56), Vector2i(-48, 83), Vector2i(19, -86),
 	Vector2i(108, -70), Vector2i(118, -22), Vector2i(105, 67), Vector2i(23, 84)]
@@ -59,27 +110,22 @@ func generate(value: int) -> void:
 	enemies.clear()
 	_camp_roads.clear()
 	_paths.clear()
-	# Connected loops with three permanent river crossings.
-	_road([Vector2i(-145, 4), Vector2i(145, 4)], 2)
-	_road([Vector2i(0, -113), Vector2i(0, 111)], 2)
-	_road([Vector2i(-15, 45), Vector2i(0, 45)], 1)
+	# Connected loops with three permanent river crossings. Inside the fence the through
+	# roads give way to the town's own streets, which meet them at the four gates.
+	_road([Vector2i(-145, 4), Vector2i(145, 4)], 2, true)
+	_road([Vector2i(0, -113), Vector2i(0, 111)], 2, true)
 	_road([Vector2i(-110, 4), Vector2i(-110, -70), Vector2i(-42, -68),
 		Vector2i(108, -68), Vector2i(108, 4)], 1)
 	_road([Vector2i(-100, 4), Vector2i(-100, 56), Vector2i(-48, 76),
 		Vector2i(105, 76), Vector2i(108, 4)], 1)
+	for street: Dictionary in TOWN_STREETS:
+		var points: Array[Vector2i] = []
+		points.assign(street.points)
+		_street(points, street.radius)
 	for home: Dictionary in HOMES:
-		var cell: Vector2i = home.cell
-		if cell.y > 4:
-			# Side lanes stay inside the fence: homes near the west edge turn toward the square.
-			var side: int = -7 if cell.x - 7 > TOWN.position.x + 4 else 7
-			_road([cell + Vector2i(0, 3), cell + Vector2i(side, 3),
-				Vector2i(cell.x + side, 4)], 1)
-		else:
-			_road([cell + Vector2i(0, 3), Vector2i(cell.x, 4)], 1)
-		# A tidy dooryard rather than a round clearing hides the house's base.
-		for y: int in range(0, 4):
-			for x: int in range(-3, 4):
-				roads[cell + Vector2i(x, y)] = true
+		_dooryard(home.cell)
+	for building: Dictionary in PUBLIC_BUILDINGS:
+		_dooryard(building.cell)
 	for camp: Vector2i in CAMPS:
 		var closest := Vector2i.ZERO
 		var distance: float = INF
@@ -103,9 +149,12 @@ func generate(value: int) -> void:
 		_camp_roads[camp] = entrance
 		for index: int in range(2):
 			enemies.append({"cell": camp + Vector2i(index * 4 - 2, 0), "kind": index})
-	for y: int in range(-5, 13):
-		for x: int in range(-9, 10):
-			stone.append(Vector2i(x, y))
+	for disc: Vector3i in PLAZA:
+		for y: int in range(-disc.z, disc.z + 1):
+			for x: int in range(-disc.z, disc.z + 1):
+				var cell := Vector2i(disc.x + x, disc.y + y)
+				if x * x + y * y <= disc.z * disc.z and not stone.has(cell):
+					stone.append(cell)
 	var noise := FastNoiseLite.new()
 	noise.seed = value
 	noise.frequency = 0.055
@@ -153,7 +202,7 @@ func is_reserved(cell: Vector2i, margin: int = 0) -> bool:
 				return true
 	return false
 
-func _road(points: Array[Vector2i], radius: int) -> void:
+func _road(points: Array[Vector2i], radius: int, outside_town: bool = false) -> void:
 	for index: int in range(points.size() - 1):
 		var start: Vector2 = points[index]
 		var end: Vector2 = points[index + 1]
@@ -168,7 +217,28 @@ func _road(points: Array[Vector2i], radius: int) -> void:
 				var bend: float = sin(weight * PI) * sin(weight * TAU) * minf(steps * 0.12, 9.0)
 				var fade: float = smoothstep(14.0, 30.0, bank_distance)
 				point += normal * bend * fade * smoothstep(0.0, 12.0, town_distance)
+			if outside_town and TOWN.has_point(Vector2i(point.round())):
+				continue
 			_disc(Vector2i(point.round()), radius, true)
+
+# Town streets need no bends; a fuller stamp keeps their diagonals from turning into stairs.
+func _street(points: Array[Vector2i], radius: int) -> void:
+	for index: int in range(points.size() - 1):
+		var start: Vector2 = points[index]
+		var end: Vector2 = points[index + 1]
+		var steps: int = ceili(start.distance_to(end))
+		for step: int in range(steps + 1):
+			var center := Vector2i(start.lerp(end, float(step) / maxi(steps, 1)).round())
+			for y: int in range(-radius, radius + 1):
+				for x: int in range(-radius, radius + 1):
+					if x * x + y * y <= radius * radius + radius:
+						roads[center + Vector2i(x, y)] = true
+
+# A tidy dooryard in front of a door, rather than a round clearing that hides the base.
+func _dooryard(cell: Vector2i) -> void:
+	for y: int in range(0, 4):
+		for x: int in range(-3, 4):
+			roads[cell + Vector2i(x, y)] = true
 
 func _disc(center: Vector2i, radius: int, path: bool = false) -> void:
 	for y: int in range(-radius, radius + 1):

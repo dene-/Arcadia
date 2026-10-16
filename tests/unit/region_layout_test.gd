@@ -45,15 +45,20 @@ func test_forest_placement_keeps_routes_town_water_and_encounters_clear() -> voi
 func test_roads_reach_every_home_camp_and_crossing_without_entering_water() -> void:
 	var layout := RegionLayout.new()
 	layout.generate(274415)
-	var visited: Dictionary[Vector2i, bool] = {Vector2i(0, 4): true}
-	var queue: Array[Vector2i] = [Vector2i(0, 4)]
+	# The market place's cobbles join the streets that meet on it.
+	var walkable: Dictionary[Vector2i, bool] = layout.roads.duplicate()
+	for cell: Vector2i in layout.stone:
+		walkable[cell] = true
+	var west_gate := Vector2i(RegionLayout.TOWN.position.x, 4)
+	var visited: Dictionary[Vector2i, bool] = {west_gate: true}
+	var queue: Array[Vector2i] = [west_gate]
 	var index: int = 0
 	while index < queue.size():
 		var cell: Vector2i = queue[index]
 		index += 1
 		for direction: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 			var next: Vector2i = cell + direction
-			if visited.has(next) or not layout.roads.has(next): continue
+			if visited.has(next) or not walkable.has(next): continue
 			if layout.is_water(next) and not layout.is_bridge(next): continue
 			visited[next] = true
 			queue.append(next)
@@ -61,8 +66,8 @@ func test_roads_reach_every_home_camp_and_crossing_without_entering_water() -> v
 		assert_true(visited.has(camp), "Unreachable encounter: %s" % camp)
 	for camp: Vector2i in RegionLayout.APPROACH_CAMPS:
 		assert_true(visited.has(camp), "Unreachable approach: %s" % camp)
-	for home: Dictionary in RegionLayout.HOMES:
-		assert_true(visited.has(home.cell + Vector2i(0, 3)), "Unreachable home: %s" % home.job)
+	for home: Dictionary in RegionLayout.HOMES + RegionLayout.PUBLIC_BUILDINGS:
+		assert_true(visited.has(home.cell + Vector2i(0, 3)), "Unreachable door: %s" % home.cell)
 	for row: int in RegionLayout.BRIDGES:
 		assert_true(visited.has(Vector2i(RegionLayout.river_left_at(row) + 4, row)))
 

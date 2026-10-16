@@ -32,6 +32,8 @@ const PROPS: Dictionary[String, Array] = {
 	"sign_smith": [TOWN, Rect2i(56, 80, 24, 24), Rect2(4, 20, 16, 3)],
 	"sign_watch": [TOWN, Rect2i(80, 80, 24, 24), Rect2(4, 20, 16, 3)],
 	"sign_jewels": [TOWN, Rect2i(104, 88, 24, 16), Rect2(5, 12, 14, 3)],
+	"desk": [TOWN, Rect2i(8, 224, 16, 16), Rect2(2, 7, 12, 9)],
+	"chair": [TOWN, Rect2i(136, 224, 16, 16), Rect2(4, 10, 8, 5)],
 	"sign_board": [TOWN, Rect2i(128, 88, 16, 16), Rect2(3, 12, 10, 3)],
 	"signpost": [TOWN, Rect2i(144, 88, 16, 16), Rect2(5, 12, 6, 3)],
 	"spear_rack": [TOWN, Rect2i(96, 120, 8, 24), Rect2(0, 19, 5, 4)],

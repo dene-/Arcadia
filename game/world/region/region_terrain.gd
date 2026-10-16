@@ -20,10 +20,10 @@ func build(parent: Node2D, layout: RegionLayout) -> void:
 			ground.set_cell(Vector2i(x, y), 1, Vector2i(rng.randi_range(1, 4), 1))
 	var roads: Array[Vector2i] = []
 	roads.assign(layout.roads.keys())
-	var field: Rect2i = RegionTown.FIELD
-	for y: int in range(field.position.y, field.end.y):
-		for x: int in range(field.position.x, field.end.x):
-			roads.append(Vector2i(x, y))
+	for field: Rect2i in [RegionTown.FIELD] + RegionTown.GARDENS:
+		for y: int in range(field.position.y, field.end.y):
+			for x: int in range(field.position.x, field.end.x):
+				roads.append(Vector2i(x, y))
 	ground.set_cells_terrain_connect(roads, 0, 0)
 	ground.set_cells_terrain_connect(layout.stone, 0, 2)
 	_build_swamp(parent, layout)
