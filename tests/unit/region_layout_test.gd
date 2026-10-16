@@ -14,6 +14,20 @@ func test_saved_seed_reproduces_layout_and_generation_does_not_accumulate() -> v
 	assert_ne(first.trees, second.trees)
 	assert_eq(first.roads, second.roads, "Town, roads and landmarks must remain authored.")
 
+# Saved worlds keep their seed, so scenery passes added later must not move existing trees,
+# details or enemies. These values come from the layout before decorative props existed.
+func test_saved_seed_keeps_forest_and_enemy_positions_from_earlier_versions() -> void:
+	var layout := RegionLayout.new()
+	layout.generate(274415)
+	assert_eq(layout.trees.size(), 3225)
+	assert_eq(layout.details.size(), 1089)
+	assert_eq(layout.trees[0], {"cell": Vector2i(-146, -119), "kind": 0})
+	assert_eq(layout.trees[1612], {"cell": Vector2i(-62, -12), "kind": 0})
+	assert_eq(layout.trees[-1], {"cell": Vector2i(145, 115), "kind": 2})
+	assert_eq(layout.details[-1], {"cell": Vector2i(146, 115), "kind": 0, "wet": true})
+	assert_eq(layout.enemies[0], {"cell": Vector2i(-113, -70), "kind": 0})
+	assert_eq(layout.enemies[-1], {"cell": Vector2i(0, 68), "kind": 1})
+
 func test_forest_placement_keeps_routes_town_water_and_encounters_clear() -> void:
 	for world_seed: int in [1, 274415, 2147483646]:
 		var layout := RegionLayout.new()

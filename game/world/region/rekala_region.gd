@@ -7,6 +7,11 @@ const WET_DETAILS: Array[Rect2i] = [Rect2i(8, 176, 16, 16), Rect2i(32, 176, 16, 
 	Rect2i(56, 176, 16, 16), Rect2i(80, 176, 16, 16), Rect2i(112, 176, 16, 16)]
 const DRY_DETAILS: Array[Rect2i] = [Rect2i(72, 32, 16, 32), Rect2i(88, 32, 16, 32),
 	Rect2i(104, 32, 16, 32), Rect2i(120, 32, 16, 32), Rect2i(72, 64, 24, 16)]
+## Ruin pieces try these offsets (pixels from the clearing centre) until one is off-road.
+const RUBBLE_SPOTS: Array[Vector2] = [Vector2(30, -48), Vector2(-30, -48), Vector2(30, 56),
+	Vector2(-30, 56), Vector2(56, 0), Vector2(-56, 0)]
+const PILLAR_SPOTS: Array[Vector2] = [Vector2(-40, -8), Vector2(40, -8), Vector2(-24, -40),
+	Vector2(24, -40), Vector2(-24, 44), Vector2(24, 44)]
 @export var preview_seed: int = 274415
 @export var preview_in_editor: bool = true
 @export var town_life_enabled: bool = true
@@ -46,7 +51,7 @@ func rebuild() -> void:
 		world_seed = cognition.save_game.region_seed
 	layout.generate(world_seed)
 	RegionTerrain.new().build(generated, layout)
-	RegionTown.new().build(generated, not Engine.is_editor_hint())
+	RegionTown.new().build(generated, not Engine.is_editor_hint(), layout)
 	_build_forest(art)
 	_spawn_enemies()
 	if not Engine.is_editor_hint():
@@ -76,26 +81,46 @@ func rebuild() -> void:
 
 func _build_forest(art: RegionArt) -> void:
 	for tree: Dictionary in layout.trees:
-		var wet: bool = tree.kind == 2
-		var region := Rect2i(104, 120, 40, 48) if wet else Rect2i(152, tree.kind * 32, 24, 32)
-		var prop: Sprite2D = art.sprite(generated, RegionArt.SWAMP if wet else RegionArt.PLAINS,
-			region, Vector2(tree.cell * 8),
-			Rect2(15, 38, 15, 8) if wet else Rect2(9, 21, 10, 7))
-		var shadow_sheet: String = "Minifantasy_MurkySwampPropsShadows.png" if wet else "Minifantasy_ForgottenPlainsPropsShadows.png"
-		var shadow: Sprite2D = art.sprite(generated, shadow_sheet, region, prop.position)
-		shadow.offset = prop.offset
-		shadow.z_index = -2
+		var cell: Vector2i = tree.cell
+		var variation: int = absi(hash(cell))
+		# Species follow the wetland's actual outline; a few dead snags break up willows.
+		var prop_name: String = ["tree", "tree_fruit"][variation % 2]
+		if RegionLayout.is_swamp(cell):
+			prop_name = "willow"
+			if variation % 7 == 0:
+				prop_name = "snag" if variation % 2 == 0 else "snag_b"
+		elif tree.kind < 2:
+			prop_name = ["tree", "tree_fruit"][tree.kind]
+		var prop: Sprite2D = art.prop(generated, prop_name, Vector2(cell * 8), variation % 2 == 1)
+		# Slight tint differences keep dense stands from reading as one stamped tile.
+		var shade: float = 0.92 + float(variation % 9) * 0.02
+		prop.modulate = Color(shade, shade + 0.01 * float(variation % 3), shade)
 	for detail: Dictionary in layout.details:
 		var sheet: String = RegionArt.SWAMP if detail.wet else RegionArt.PLAINS
 		var region: Rect2i = WET_DETAILS[detail.kind] if detail.wet else DRY_DETAILS[detail.kind]
-		art.decoration(generated, sheet, region, Vector2(detail.cell * 8))
-	# Stone ruins mark encounter clearings.
+		var decoration: Sprite2D = art.decoration(generated, sheet, region, Vector2(detail.cell * 8))
+		decoration.flip_h = absi(hash(detail.cell)) % 2 == 1
+	for item: Dictionary in layout.props:
+		art.prop(generated, item.name, Vector2(item.cell * 8) + Vector2(4, 8), item.mirrored)
+	for item: Dictionary in layout.cover:
+		art.cover(generated, item.name, Vector2(item.cell * 8) + Vector2(4, 8), item.mirrored)
+	# Stone ruins mark encounter clearings, set beside the clearing rather than on its path.
 	for index: int in range(RegionLayout.CAMPS.size()):
 		var camp: Vector2 = Vector2(RegionLayout.CAMPS[index] * 8)
-		art.sprite(generated, RegionArt.PLAINS, Rect2i(0, 40, 56, 24),
-			camp + Vector2(30, -48), Rect2(8, 16, 38, 8))
-		art.sprite(generated, RegionArt.PLAINS, Rect2i(0, 0, 16, 32),
-			camp + Vector2(-40, -8), Rect2(4, 23, 8, 5))
+		art.prop(generated, "rubble", camp + _off_road(camp, RUBBLE_SPOTS, Vector2i(5, 1)))
+		art.prop(generated, "pillar", camp + _off_road(camp, PILLAR_SPOTS, Vector2i(1, 1)))
+
+# The first offset whose base cells (half-extent `size`) avoid every road cell.
+func _off_road(center: Vector2, offsets: Array[Vector2], size: Vector2i) -> Vector2:
+	for offset: Vector2 in offsets:
+		var base := Vector2i(((center + offset) / 8.0).floor())
+		var clear: bool = true
+		for y: int in range(-size.y - 1, 1):
+			for x: int in range(-size.x, size.x + 1):
+				clear = clear and not layout.roads.has(base + Vector2i(x, y))
+		if clear:
+			return offset
+	return offsets[0]
 
 func _spawn_enemies() -> void:
 	var scenes: Array[PackedScene] = [preload("res://game/actors/enemies/scenes/goblin.tscn"),

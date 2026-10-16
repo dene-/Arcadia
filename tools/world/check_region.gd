@@ -33,24 +33,37 @@ func _run() -> void:
 		for x: int in range(left - 3, left + 13):
 			if _blocked(space, Vector2(x * 8 + 4, row * 8 + 4)):
 				failures.append("Bridge blocked at %s" % Vector2i(x, row))
+		for y: int in [row * 8 - 10, row * 8 + 14, row * 8 + 20]:
+			if not _blocked(space, Vector2((left + 4) * 8, y)):
+				failures.append("Bridge side open at %s" % Vector2((left + 4) * 8, y))
 	for home: Dictionary in RegionLayout.HOMES:
 		if not _blocked(space, Vector2(home.cell * 8) + Vector2(0, -9)):
 			failures.append("Missing house collision: %s" % home.job)
-		if _blocked(space, Vector2(home.cell * 8) + Vector2(0, 24)):
-			failures.append("NPC spawned inside obstacle: %s" % home.job)
+		# Household members spawn in up to two rows of three in front of the door.
+		for member: int in range(6):
+			var spawn := Vector2(home.cell * 8) + Vector2((member % 3 - 1) * 12, 24 + member / 3 * 12)
+			if _blocked(space, spawn):
+				failures.append("NPC spawned inside obstacle: %s at %s" % [home.job, spawn])
 	if not _blocked(space, Vector2((RegionLayout.river_left_at(20) + 4) * 8, 164)):
 		failures.append("Missing river collision")
-	for point: Vector2 in [Vector2(-76, -164), Vector2(409, -60), Vector2(-132, 154)]:
+	# A tree, the windmill base and the carpenter's sawhorse.
+	for point: Vector2 in [Vector2(-76, -164), Vector2(409, -60), Vector2(-112, 150)]:
 		if not _blocked(space, point):
 			failures.append("Prop footprint misses its visible base at %s" % point)
-	if get_nodes_in_group("npc_observers").size() != 9:
-		failures.append("Expected nine named NPCs")
+	var residents: int = TownPopulation.FOUNDERS.size() + TownPopulation.MEMBERS.size()
+	if get_nodes_in_group("npc_observers").size() != residents:
+		failures.append("Expected %s residents" % residents)
 	if get_nodes_in_group("enemies").size() != 35:
 		failures.append("Expected 35 enemies")
 	var enemy: BaseNpc = world.get_node("Region/Enemy27")
 	var player: BasePlayer = world.get_node("BasePlayer")
-	if enemy.global_position.distance_to(player.global_position) > 300:
-		failures.append("First encounter is too far from the town approach")
+	var west_gate := Vector2(RegionTown.FENCE_LEFT * 8, 32)
+	if enemy.global_position.distance_to(west_gate) > 300:
+		failures.append("First encounter is too far from the west town gate")
+	for cell: Vector2i in [Vector2i(RegionTown.FENCE_LEFT, 4), Vector2i(0, RegionTown.FENCE_TOP),
+		Vector2i(0, RegionTown.FENCE_BOTTOM)]:
+		if _blocked(space, Vector2(cell * 8) + Vector2(4, 4)):
+			failures.append("Town gate blocked at %s" % cell)
 	player.global_position = enemy.global_position + Vector2(32, 0)
 	await physics_frame
 	if enemy.update_enemy_ai(0.016) != &"run":
@@ -74,6 +87,13 @@ func _check_detail_crops(failures: Array[String]) -> void:
 		var texture: Texture2D = load(RegionArt.ROOT + sheet)
 		var rectangles: Array[Rect2i] = region_script.WET_DETAILS if sheet == RegionArt.SWAMP else region_script.DRY_DETAILS
 		_check_crops(texture.get_image(), rectangles, failures)
+	# Every catalogued prop and plant must be one whole sprite inside its region.
+	var catalog: Array[Array] = []
+	catalog.append_array(RegionArt.PROPS.values())
+	catalog.append_array(RegionArt.GROUND_COVER.values())
+	for entry: Array in catalog:
+		var crop: Array[Rect2i] = [entry[1]]
+		_check_crops(load(RegionArt.ROOT + String(entry[0])).get_image(), crop, failures)
 
 func _check_crops(image: Image, rectangles: Array[Rect2i], failures: Array[String]) -> void:
 	for rect: Rect2i in rectangles:

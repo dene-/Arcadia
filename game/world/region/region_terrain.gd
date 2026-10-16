@@ -20,8 +20,9 @@ func build(parent: Node2D, layout: RegionLayout) -> void:
 			ground.set_cell(Vector2i(x, y), 1, Vector2i(rng.randi_range(1, 4), 1))
 	var roads: Array[Vector2i] = []
 	roads.assign(layout.roads.keys())
-	for y: int in range(8, 21):
-		for x: int in range(36, 56):
+	var field: Rect2i = RegionTown.FIELD
+	for y: int in range(field.position.y, field.end.y):
+		for x: int in range(field.position.x, field.end.x):
 			roads.append(Vector2i(x, y))
 	ground.set_cells_terrain_connect(roads, 0, 0)
 	ground.set_cells_terrain_connect(layout.stone, 0, 2)
@@ -45,11 +46,11 @@ func _build_swamp(parent: Node2D, layout: RegionLayout) -> void:
 	parent.add_child(swamp)
 	# A broad continuous biome with rounded, staggered borders; paths remain exposed.
 	var cells: Dictionary[Vector2i, bool] = {}
-	for y: int in range(32, RegionLayout.BOUNDS.end.y):
-		for x: int in range(76, RegionLayout.BOUNDS.end.x):
-			var edge: int = 76 + roundi(sin(y * 0.045) * 4.0)
-			if x >= edge and not layout.roads.has(Vector2i(x, y)):
-				cells[Vector2i(x, y)] = true
+	for y: int in range(26, RegionLayout.BOUNDS.end.y):
+		for x: int in range(68, RegionLayout.BOUNDS.end.x):
+			var cell := Vector2i(x, y)
+			if RegionLayout.is_swamp(cell) and not layout.roads.has(cell):
+				cells[cell] = true
 	for cell: Vector2i in cells:
 		var tx: int = 1
 		var ty: int = 1
@@ -107,25 +108,33 @@ func _copy_terrain(source: TileData, target: TileData) -> void:
 	for bit: int in [0, 3, 4, 7, 8, 11, 12, 15]:
 		target.set_terrain_peering_bit(bit, source.get_terrain_peering_bit(bit))
 
+## The pack's arched stone bridge spans the 13-cell river corridor exactly. The deck is
+## the three rows around `row`; the front parapet is drawn in front of walkers.
 func _build_bridge(parent: Node2D, row: int) -> void:
-	var bridge := TileMapLayer.new()
-	bridge.name = "Bridge%s" % row
-	bridge.z_index = -7
-	bridge.tile_set = PLAINS
-	parent.add_child(bridge)
 	var left: int = RegionLayout.river_left_at(row)
-	# Paving matches the stone plaza; rails sit above the crossing.
-	for y: int in range(row - 2, row + 3):
-		for x: int in range(left - 2, left + 11):
-			bridge.set_cell(Vector2i(x, y), 1, Vector2i(12 + posmod(x, 3), 1))
 	var art := RegionArt.new()
-	for x: int in range(left - 1, left + 10, 2):
-		for side: int in [-1, 1]:
-			var rail: Sprite2D = art.sprite(parent, RegionArt.TOWN_II, Rect2i(8, 8, 24, 16),
-				Vector2(x * 8, (row - 1 if side == -1 else row + 3) * 8))
-			rail.z_index = -1 if side == -1 else 0
-		RegionArt.barrier(parent, Vector2(x * 8, (row - 1) * 8), Vector2(16, 3))
-		RegionArt.barrier(parent, Vector2(x * 8, (row + 3) * 8), Vector2(16, 3))
+	var origin := Vector2((left - 2) * 8, (row - 2) * 8)
+	var bridge := Sprite2D.new()
+	bridge.name = "Bridge%s" % row
+	bridge.centered = false
+	bridge.texture = art.texture(RegionArt.BRIDGE)
+	bridge.region_enabled = true
+	bridge.region_rect = Rect2(104, 8, 104, 48)
+	bridge.position = origin
+	bridge.z_index = -7
+	parent.add_child(bridge)
+	var parapet := Sprite2D.new()
+	parapet.name = "Parapet%s" % row
+	parapet.centered = false
+	parapet.texture = bridge.texture
+	parapet.region_enabled = true
+	parapet.region_rect = Rect2(104, 32, 104, 8)
+	parapet.position = origin + Vector2(0, 32)
+	parapet.offset = Vector2(0, -8)
+	parent.add_child(parapet)
+	# The river barrier closes the rows beyond the deck; this closes the parapet itself.
+	RegionArt.barrier(parent, Vector2((left + 4.5) * 8, row * 8 + 14), Vector2(72, 4))
+	RegionArt.barrier(parent, Vector2((left + 4.5) * 8, row * 8 - 10), Vector2(72, 4))
 
 func _build_boundary(parent: Node2D) -> void:
 	var bounds := Rect2(RegionLayout.BOUNDS.position * 8, RegionLayout.BOUNDS.size * 8)
